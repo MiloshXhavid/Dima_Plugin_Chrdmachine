@@ -32,6 +32,11 @@ public:
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
+    // Parameter access helpers
+    float getParameterValue(const juce::String& paramID) const;
+    bool getBoolParameterValue(const juce::String& paramID) const;
+    int getIntParameterValue(const juce::String& paramID) const;
+
 private:
     juce::AudioProcessorValueTreeState apvts;
 

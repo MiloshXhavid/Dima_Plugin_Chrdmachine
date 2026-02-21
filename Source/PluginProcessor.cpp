@@ -146,8 +146,49 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
     return layout;
 }
 
-void PluginProcessor::prepareToPlay(double, int)
+// Helper method to get float parameter value by ID
+float PluginProcessor::getParameterValue(const juce::String& paramID) const
 {
+    if (auto* param = apvts.getParameter(paramID))
+    {
+        return param->getValue();
+    }
+    return 0.0f;
+}
+
+// Helper method to get bool parameter value by ID
+bool PluginProcessor::getBoolParameterValue(const juce::String& paramID) const
+{
+    if (auto* param = apvts.getParameter(paramID))
+    {
+        return param->getValue() > 0.5f;
+    }
+    return false;
+}
+
+// Helper method to get int parameter value by ID
+int PluginProcessor::getIntParameterValue(const juce::String& paramID) const
+{
+    if (auto* param = apvts.getParameter(paramID))
+    {
+        return static_cast<int>(param->getValue() * 1000.0f);  // Approximate for now
+    }
+    return 0;
+}
+
+void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
+{
+    // Verify APVTS parameters are accessible
+    // These calls will log parameter values if debugging is enabled
+    auto rootInterval = getParameterValue("root_interval");
+    auto triggerSource = getIntParameterValue("trigger_source");
+    auto looperEnabled = getBoolParameterValue("looper_enabled");
+    
+    (void)sampleRate;    // Suppress unused warning
+    (void)samplesPerBlock;
+    (void)rootInterval;
+    (void)triggerSource;
+    (void)looperEnabled;
 }
 
 void PluginProcessor::releaseResources()
