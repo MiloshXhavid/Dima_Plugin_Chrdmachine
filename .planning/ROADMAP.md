@@ -23,7 +23,12 @@ A JUCE-based MIDI plugin that generates 4-note chords controlled by dual-axis jo
   2. Plugin loads in test DAW without crashes
   3. All planned parameters exist in APVTS (velocity, channel routing, scales, intervals, octaves, transpose, attenuator, trigger source, clock, looper)
   4. Basic PluginProcessor/PluginEditor shell compiles and runs
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [x] 01-01-PLAN.md — CMake build pipeline + basic PluginProcessor/Editor shell
+- [ ] 01-02-PLAN.md — Full APVTS parameters + build verification
+
 
 ### Phase 2: Core MIDI Engine
 **Goal**: Transform parameter inputs into quantized MIDI note output
@@ -85,7 +90,7 @@ A JUCE-based MIDI plugin that generates 4-note chords controlled by dual-axis jo
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Project Setup | 0/N | Not started | - |
+| 1. Project Setup | 1/2 | In progress | 01-01 |
 | 2. Core MIDI Engine | 0/N | Not started | - |
 | 3. Input Controls | 0/N | Not started | - |
 | 4. Trigger System | 0/N | Not started | - |
