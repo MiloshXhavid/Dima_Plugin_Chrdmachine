@@ -82,12 +82,16 @@ PluginProcessor::createParameterLayout()
     addInt  (ParamID::thirdInterval,   "Third Interval",    0, 12,  4);
     addInt  (ParamID::fifthInterval,   "Fifth Interval",    0, 12,  7);
     addInt  (ParamID::tensionInterval, "Tension Interval",  0, 12, 10);
-    addInt  (ParamID::rootOctave,      "Root Octave",      -3,  3,  0);
-    addInt  (ParamID::thirdOctave,     "Third Octave",     -3,  3,  0);
-    addInt  (ParamID::fifthOctave,     "Fifth Octave",     -3,  3,  0);
-    addInt  (ParamID::tensionOctave,   "Tension Octave",   -3,  3,  0);
-    addFloat(ParamID::joystickXAtten,     "Joy X Attenuator",   0.0f, 127.0f, 48.0f);
-    addFloat(ParamID::joystickYAtten,     "Joy Y Attenuator",   0.0f, 127.0f, 48.0f);
+    addInt  (ParamID::rootOctave,      "Root Octave",       0, 12,  2);
+    addInt  (ParamID::thirdOctave,     "Third Octave",      0, 12,  2);
+    addInt  (ParamID::fifthOctave,     "Fifth Octave",      0, 12,  2);
+    addInt  (ParamID::tensionOctave,   "Tension Octave",    0, 12,  2);
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParamID::joystickXAtten, "Joy X Attenuator",
+        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 24.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParamID::joystickYAtten, "Joy Y Attenuator",
+        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 12.0f));
     addFloat(ParamID::joystickThreshold,  "Joystick Threshold", 0.001f, 0.1f, 0.015f);
 
     // ── Scale ─────────────────────────────────────────────────────────────────
