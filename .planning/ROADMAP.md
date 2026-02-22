@@ -86,19 +86,23 @@ Plans:
 **Goal:** Replace the std::mutex in LooperEngine with a lock-free design. Validate beat-locked record/playback in Ableton and Reaper.
 
 **Delivers:**
-- Lock-free LooperEngine: AbstractFifo + fixed-size event array
-- Atomic flags for UI-side destructive ops (reset, delete)
-- ppqPosition anchor recorded at loop start (no drift)
-- Hard capacity cap preventing audio-thread allocation
-- Verified 1–16 bar loop in Ableton and Reaper
+- Lock-free LooperEngine: AbstractFifo + fixed-size double-buffer design (record FIFO + playbackStore_ array)
+- Atomic flags for UI-side destructive ops (reset, delete) executed from audio thread
+- ppqPosition anchor recorded at loop start (no drift, bar-boundary snap)
+- Hard capacity cap (2048 events) with capReached_ indicator
+- [REC JOY], [REC GATES], [SYNC] buttons in PluginEditor
+- Sparse joystick recording (threshold-filtered, default 0.02)
+- 9 new Catch2 tests (multi-thread stress + loop-wrap + DAW sync anchor)
+- Verified 4-bar loop in Reaper; Ableton best-effort
 
-**Research flag:** Needs /gsd:research-phase — lock-free buffer design has multiple valid approaches.
+**Status:** in-progress (planned — 3 plans)
 
-**Status:** pending
+**Plans:** 3 plans
 
 Plans:
-- [ ] 05-01: Replace LooperEngine mutex with lock-free AbstractFifo design
-- [ ] 05-02: DAW sync validation — record/play/stop in Ableton and Reaper
+- [ ] 05-01-PLAN.md — Lock-free LooperEngine rewrite (AbstractFifo + double-buffer) + Catch2 tests + CMake TSAN option
+- [ ] 05-02-PLAN.md — PluginProcessor DAW sync wiring (JUCE 8 ppqPosition API) + PluginEditor [REC JOY]/[REC GATES]/[SYNC] buttons
+- [ ] 05-03-PLAN.md — Release build + full Catch2 suite + Reaper 4-test DAW verification (human checkpoint)
 
 ---
 
