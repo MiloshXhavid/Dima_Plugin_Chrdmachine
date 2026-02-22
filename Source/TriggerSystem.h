@@ -24,6 +24,10 @@ public:
     // (voiceIndex, midiPitch, isNoteOn, sampleOffset)
     using NoteCallback = std::function<void(int, int, bool, int)>;
 
+    // Called when a raw MIDI message must be emitted (pitch bend, CC, RPN).
+    // (midiMessage, sampleOffset)
+    using MidiCallback = std::function<void(const juce::MidiMessage&, int)>;
+
     TriggerSystem();
 
     // ── Called from UI / gamepad thread ──────────────────────────────────────
@@ -41,6 +45,7 @@ public:
     struct ProcessParams
     {
         NoteCallback   onNote;
+        MidiCallback   onMidi;          // for pitch bend / CC / RPN (may be null)
         int            blockSize        = 512;
         double         sampleRate       = 44100.0;
         double         bpm              = 120.0;
@@ -82,8 +87,9 @@ private:
     std::array<std::atomic<bool>, 4> gateOpen_     {};
     std::array<int, 4>               activePitch_  {-1,-1,-1,-1};
 
-    // Joystick continuous gate state
-    std::array<int, 4>           joyActivePitch_       {-1,-1,-1,-1};  // MIDI pitch currently sounding per JOY voice (-1 = silent)
+    // Joystick continuous gate state (pitch bend model)
+    std::array<int, 4>           joyBasePitch_         {0, 0, 0, 0};  // MIDI note that was note-on'd when gate opened (bend reference)
+    std::array<int, 4>           joyLastBendValue_     {0, 0, 0, 0};  // last pitch bend value sent, to avoid redundant messages
     std::array<int, 4>           joystickStillSamples_ {0, 0, 0, 0};  // counts samples below threshold for 50ms debounce
 
     // Random trigger clock
@@ -94,6 +100,9 @@ private:
     // Random number (LCG, audio-thread only)
     uint32_t rng_             = 0x1234ABCD;
     float    nextRandom()     { rng_ = rng_ * 1664525u + 1013904223u; return (rng_ >> 1) / float(0x7FFFFFFF); }
+
+    // Send pitch bend range RPN (±24 semitones) on the given 1-based channel
+    void sendBendRangeRPN(int ch1based, int sampleOff, const ProcessParams& p);
 
     void fireNoteOn (int voice, int pitch, int ch, int sampleOff, const ProcessParams& p);
     void fireNoteOff(int voice, int ch, int sampleOff, const ProcessParams& p);

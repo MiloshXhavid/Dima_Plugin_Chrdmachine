@@ -175,12 +175,14 @@ void PluginProcessor::processBlockBypassed(juce::AudioBuffer<float>& audio,
 
     for (int v = 0; v < 4; ++v)
     {
+        const int ch = (int)apvts.getRawParameterValue(chIDs[v])->load();  // 1-based
+
+        // Reset pitch bend to centre before note-off so receiving synth is clean.
+        midi.addEvent(juce::MidiMessage::pitchWheel(ch, 0), 0);
+
         const int pitch = trigger_.getActivePitch(v);
         if (pitch >= 0)
-        {
-            const int ch = (int)apvts.getRawParameterValue(chIDs[v])->load();
             midi.addEvent(juce::MidiMessage::noteOff(ch, pitch, (uint8_t)0), 0);
-        }
     }
     trigger_.resetAllGates();
 }
@@ -337,6 +339,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             looper_.recordGate(looper_.getPlaybackBeat(), voice, false);
             midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
         }
+    };
+    tp.onMidi = [&](const juce::MidiMessage& msg, int sampleOff)
+    {
+        midi.addEvent(msg, sampleOff);
     };
 
     tp.blockSize         = blockSize;
