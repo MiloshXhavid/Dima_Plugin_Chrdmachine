@@ -9,8 +9,8 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 ## Current Position
 
 - **Phase:** 04 of 7 — Per-Voice Trigger Sources and Random Gate
-- **Plan:** 04-01 (complete — quantized pitch bend implemented; awaiting DAW verification)
-- **Status:** Awaiting Reaper verification of JOY pitch bend gate behavior
+- **Plan:** 04-01 (complete — JOY retrigger model; awaiting DAW verification)
+- **Status:** Awaiting Reaper verification of JOY retrigger gate behavior
 
 ## Progress
 
@@ -44,7 +44,7 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 - **[NEW] DAW verification complete: all 6 Reaper tests passed — 4-voice note-on/off, retrigger safety, bypass flush, transport sustain, green LEDs, channel conflict warning (03-02)**
 - **[NEW] Continuous joystick gate model: Chebyshev magnitude threshold, joystickThreshold APVTS param (04-01)**
 - **[NEW] THRESHOLD horizontal slider in PluginEditor right column; TouchPlate pads dim and disable in JOY/RND mode (04-01)**
-- **[NEW] JOY quantized pitch bend: gate opens with RPN bend-range setup (+-24 semi) + pitchWheel(0) + noteOn(basePitch); while open sends pitchWheel for scale-degree offset; bend reset before noteOff on gate close and bypass (04-01 Fix 4)**
+- **[NEW] JOY retrigger model (final): gate opens with noteOn(pitch); when joystick crosses scale-degree boundary, fires noteOff(oldPitch) then noteOn(newPitch); closes after 50ms stillness. No pitch bend / RPN. Works with any synth. (04-01 Fix 5 / 418c2a0)**
 
 ## Key Decisions
 
@@ -71,11 +71,9 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 | 6-test structured DAW protocol | Discrete test cases: basic output, LED color, retrigger, bypass flush, transport, conflict UI — all passed 03-02 |
 | Chebyshev distance for joystick magnitude | max(abs(dx), abs(dy)) avoids diagonal bias vs Manhattan distance |
 | JOY gate holds indefinitely | No auto-close on stillness; closes only via resetAllGates() or voice mode switch |
-| Pitch bend as final JOY model | heldPitches already scale-quantized, so bend snaps to in-scale degrees only; more expressive than legato note pairs; avoids synth legato mode dependency |
-| joyBasePitch_[v] fixed for gate lifetime | Note-on pitch never changes; synth note tracking always targets joyBasePitch_[v]; pitchWheel moves sounding frequency without re-attacking |
-| Bend range +-24 semitones | RPN CC6=24 covers 2 octaves; bend value = semitones/24 * 8191; integer-semitone precision (bend cents LSB = 0) |
-| MidiCallback onMidi in ProcessParams | TriggerSystem emits raw MidiMessage for bend/CC/RPN; PluginProcessor routes to MidiBuffer; consistent with NoteCallback pattern |
-| pitchWheel reset before note-off | Prevents lingering bend state on receiving synth carrying over to next note-on |
+| JOY retrigger as final model | noteOff(old)+noteOn(new) on scale-degree change; universal synth compatibility; no RPN/pitchBend infrastructure required |
+| joyActivePitch_[v] tracks sounding pitch | -1=gate closed; updated on every retrigger; used for comparison and gate-close note-off |
+| Pitch bend model superseded | joyBasePitch_/joyLastBendValue_/sendBendRangeRPN/MidiCallback all removed; simpler and more reliable |
 | TouchPlate dimming reads APVTS in paint() | getRawParameterValue()->load() is safe from message thread (atomic<float>*) |
 
 ## Known Issues (Must Fix Before Shipping)
@@ -100,5 +98,5 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: 04-01 complete — quantized pitch bend implemented (f6e6d5f). Load ChordJoystick.vst3 in Reaper, verify JOY pitch bend gate: move joystick above threshold and confirm RPN+pitchWheel(0)+noteOn in MIDI monitor; move across scale zones and confirm pitchWheel messages (no additional noteOn/noteOff); release and confirm pitchWheel(0)+noteOff after ~50ms.
+Stopped at: 04-01 complete — JOY retrigger model implemented (418c2a0). Load ChordJoystick.vst3 in Reaper, verify JOY retrigger gate: move joystick above threshold and confirm noteOn in MIDI monitor; move across scale zones and confirm noteOff(old)+noteOn(new) pairs (no pitchWheel); release and confirm noteOff after ~50ms.
 Resume file: .planning/phases/04-per-voice-trigger-sources-and-random-gate/04-02-PLAN.md
