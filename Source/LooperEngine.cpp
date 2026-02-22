@@ -58,23 +58,30 @@ void LooperEngine::startStop()
 
 void LooperEngine::record()
 {
-    if (!playing_.load()) return;
-
-    const bool wasRecording = recording_.load();
-    if (wasRecording)
+    if (recording_.load())
     {
-        // Disarm: merge FIFO events into playbackStore_ (punch-in logic).
+        // Already recording → disarm, merge FIFO into playbackStore_ (punch-in logic).
         // INVARIANT: recording_ must be false before finaliseRecording().
         recording_.store(false);
         finaliseRecording();
+        return;
     }
-    else
+
+    if (recordPending_.load())
     {
-        // Arm: clear cap flag, reset FIFO to discard any stale events, then start recording.
-        capReached_.store(false, std::memory_order_relaxed);
-        fifo_.reset();   // ensure FIFO is clean before new recording pass begins
-        recording_.store(true);
+        // Pending record was already armed — second REC press cancels it.
+        recordPending_.store(false);
+        return;
     }
+
+    // Arm: start playing if not already (REC implies PLAY).
+    if (!playing_.load())
+        playing_.store(true);
+
+    // Defer the actual recording_.store(true) to process() so it begins on the
+    // next valid clock: immediately in free-running mode, or when DAW starts
+    // rolling in SYNC mode.
+    recordPending_.store(true);
 }
 
 void LooperEngine::reset()
@@ -306,10 +313,12 @@ LooperEngine::BlockOutput LooperEngine::process(const ProcessParams& p)
                 out.dawStopped  = true;
                 return out;
             }
-            if (dawActive && !prevDawPlaying_ && playbackCount_.load(std::memory_order_relaxed) > 0)
+            if (dawActive && !prevDawPlaying_)
             {
-                // DAW just started and looper has content → auto-restart
-                playing_.store(true, std::memory_order_relaxed);
+                // DAW just started → restart if has content or REC was armed while DAW was stopped
+                if (playbackCount_.load(std::memory_order_relaxed) > 0
+                    || recordPending_.load(std::memory_order_relaxed))
+                    playing_.store(true, std::memory_order_relaxed);
             }
             prevDawPlaying_ = dawActive;
         }
@@ -353,6 +362,16 @@ LooperEngine::BlockOutput LooperEngine::process(const ProcessParams& p)
         // Internal clock: reset DAW anchor when switching back.
         loopStartPpq_    = -1.0;
         beatAtBlockStart = std::fmod(internalBeat_, loopLen);
+    }
+
+    // Activate pending recording — we only reach here when free-running OR DAW is actively
+    // playing (the "SYNC on, DAW stopped" path returns early above), so it's safe to start.
+    if (recordPending_.load(std::memory_order_relaxed))
+    {
+        recordPending_.store(false, std::memory_order_relaxed);
+        capReached_.store(false, std::memory_order_relaxed);
+        fifo_.reset();   // clean FIFO before new recording pass begins
+        recording_.store(true, std::memory_order_relaxed);
     }
 
     const double blockBeats = static_cast<double>(p.blockSize) / samplesPerBeat;

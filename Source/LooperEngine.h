@@ -95,10 +95,11 @@ public:
     void setRecGates(bool b) { recGates_.store(b); }
     void setSyncToDaw(bool b){ syncToDaw_.store(b);}
 
-    bool isCapReached() const { return capReached_.load(); }
-    bool isSyncToDaw()  const { return syncToDaw_.load();  }
-    bool isRecJoy()     const { return recJoy_.load();     }
-    bool isRecGates()   const { return recGates_.load();   }
+    bool isCapReached()  const { return capReached_.load();                              }
+    bool isRecordArmed() const { return recording_.load() || recordPending_.load();     }
+    bool isSyncToDaw()   const { return syncToDaw_.load();                              }
+    bool isRecJoy()      const { return recJoy_.load();                                 }
+    bool isRecGates()    const { return recGates_.load();                               }
 
     // ── Audio-thread interface ─────────────────────────────────────────────────
     // All three methods must only be called from the audio thread.
@@ -128,12 +129,13 @@ private:
     std::array<LooperEvent, LOOPER_FIFO_CAPACITY> scratchMerged_ {};
 
     // ── Atomic state flags (audio + UI threads) ───────────────────────────────
-    std::atomic<bool> playing_    { false };
-    std::atomic<bool> recording_  { false };
-    std::atomic<bool> recJoy_     { false };   // [REC JOY] armed
-    std::atomic<bool> recGates_   { false };   // [REC GATES] armed
-    std::atomic<bool> syncToDaw_  { false };   // [SYNC] DAW playhead sync
-    std::atomic<bool> capReached_ { false };   // overflow indicator for UI
+    std::atomic<bool> playing_       { false };
+    std::atomic<bool> recording_     { false };
+    std::atomic<bool> recordPending_ { false }; // REC pressed, waiting for next valid clock
+    std::atomic<bool> recJoy_        { false };  // [REC JOY] armed
+    std::atomic<bool> recGates_      { false };  // [REC GATES] armed
+    std::atomic<bool> syncToDaw_     { false };  // [DAW] sync to DAW playhead
+    std::atomic<bool> capReached_    { false };  // overflow indicator for UI
 
     // ── Destructive op request flags (UI sets, audio thread executes) ─────────
     std::atomic<bool> deleteRequest_ { false };

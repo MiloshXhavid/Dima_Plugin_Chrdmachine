@@ -626,7 +626,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     // New looper mode buttons (Phase 05)
     loopRecJoyBtn_.setButtonText("REC JOY");
     loopRecGatesBtn_.setButtonText("REC GATES");
-    loopSyncBtn_.setButtonText("SYNC");
+    loopSyncBtn_.setButtonText("DAW");
 
     loopRecJoyBtn_.setClickingTogglesState(true);
     loopRecGatesBtn_.setClickingTogglesState(true);
@@ -877,6 +877,13 @@ void PluginEditor::resized()
             randomFreeTempoKnob_.setBounds(rndRow.removeFromLeft(cw));
             randomSyncButton_  .setBounds(rndRow);
         }
+
+        // BPM display: aligned under the FREE BPM knob (3rd column)
+        {
+            auto bpmRow = left.removeFromTop(16);
+            bpmRow.removeFromLeft(cw * 2);          // skip DENS + GATE columns
+            bpmDisplayLabel_.setBounds(bpmRow.removeFromLeft(cw));
+        }
     }
 
     left.removeFromTop(6);
@@ -904,20 +911,21 @@ void PluginEditor::resized()
             loopSyncBtn_    .setBounds(row2);
         }
 
-        section.removeFromTop(2);
+        section.removeFromTop(4);
 
-        // BPM display (effective BPM: free tempo or DAW BPM when synced)
-        bpmDisplayLabel_.setBounds(section.removeFromTop(18));
+        // Subdiv + length: two columns, label above control
+        {
+            auto ctrlRow = section.removeFromTop(50);
+            const int halfW = (ctrlRow.getWidth() - 6) / 2;
 
-        section.removeFromTop(2);
+            auto col1 = ctrlRow.removeFromLeft(halfW);
+            loopSubdivLabel_.setBounds(col1.removeFromTop(14));
+            loopSubdivBox_  .setBounds(col1.removeFromTop(22));
 
-        // Subdiv + length
-        auto ctrlRow = section.removeFromTop(60);
-        loopSubdivLabel_.setBounds(ctrlRow.removeFromLeft(70).removeFromTop(14));
-        loopSubdivBox_  .setBounds(ctrlRow.removeFromLeft(80).removeFromTop(22));
-        ctrlRow.removeFromLeft(10);
-        loopLengthLabel_.setBounds(ctrlRow.removeFromLeft(60).removeFromTop(14));
-        loopLengthKnob_ .setBounds(ctrlRow.removeFromLeft(60));
+            ctrlRow.removeFromLeft(6);
+            loopLengthLabel_.setBounds(ctrlRow.removeFromTop(14));
+            loopLengthKnob_ .setBounds(ctrlRow);
+        }
     }
 }
 
@@ -975,7 +983,7 @@ void PluginEditor::timerCallback()
     joystickPad_.repaint();
 
     loopPlayBtn_ .setToggleState(proc_.looperIsPlaying(),   juce::dontSendNotification);
-    loopRecBtn_  .setToggleState(proc_.looperIsRecording(), juce::dontSendNotification);
+    loopRecBtn_  .setToggleState(proc_.looperIsRecordArmed(), juce::dontSendNotification);
     loopDeleteBtn_.setEnabled(!proc_.looperIsPlaying());
 
     // Update REC JOY / REC GATES / SYNC toggle appearances

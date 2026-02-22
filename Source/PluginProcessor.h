@@ -56,8 +56,9 @@ public:
     void looperRecord()    { looper_.record();    }
     void looperReset()     { looper_.reset();     }
     void looperDelete()    { looper_.deleteLoop(); }
-    bool looperIsPlaying()   const { return looper_.isPlaying(); }
-    bool looperIsRecording() const { return looper_.isRecording(); }
+    bool looperIsPlaying()     const { return looper_.isPlaying();     }
+    bool looperIsRecording()   const { return looper_.isRecording();   }
+    bool looperIsRecordArmed() const { return looper_.isRecordArmed(); }
 
     // New looper API (Phase 05)
     void looperSetRecJoy(bool b)     { looper_.setRecJoy(b);    }
