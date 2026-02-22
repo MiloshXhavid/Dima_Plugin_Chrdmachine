@@ -73,9 +73,11 @@ Plans:
 
 **Status:** pending
 
+**Plans:** 2 plans
+
 Plans:
-- [ ] 04-01: Joystick motion trigger (threshold-based, per voice)
-- [ ] 04-02: Random gate (ppqPosition subdivisions + density knob, all 4 subdivisions)
+- [ ] 04-01-PLAN.md — Joystick motion trigger: continuous gate model, joystickThreshold APVTS param, THRESHOLD slider, TouchPlate dimming in JOY/RND mode
+- [ ] 04-02-PLAN.md — Random gate: per-voice subdivision clock (ppqPosition sync + wall-clock fallback), density 1–8 hits/bar, randomGateTime knob, 4 per-voice subdiv combo boxes
 
 ---
 
