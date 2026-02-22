@@ -1,7 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <cmath>
-#include <limits>
 
 // ─── Parameter IDs ────────────────────────────────────────────────────────────
 namespace ParamID
@@ -337,28 +336,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         {
             looper_.recordGate(looper_.getPlaybackBeat(), voice, false);
             midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
-        }
-    };
-
-    tp.onBend = [&](int voice, int bendValue, int sampleOff)
-    {
-        const int midiCh = voiceChs[voice];   // 1-based MIDI channel
-
-        if (bendValue == std::numeric_limits<int>::min())
-        {
-            // Sentinel value: emit RPN 0 (pitch bend range) = ±12 semitones,
-            // followed by RPN null to deselect, then reset pitch bend to 0.
-            midi.addEvent(juce::MidiMessage::controllerEvent(midiCh, 101, 0),   sampleOff);
-            midi.addEvent(juce::MidiMessage::controllerEvent(midiCh, 100, 0),   sampleOff);
-            midi.addEvent(juce::MidiMessage::controllerEvent(midiCh, 6,   12),  sampleOff);
-            midi.addEvent(juce::MidiMessage::controllerEvent(midiCh, 38,  0),   sampleOff);
-            midi.addEvent(juce::MidiMessage::controllerEvent(midiCh, 101, 127), sampleOff);
-            midi.addEvent(juce::MidiMessage::controllerEvent(midiCh, 100, 127), sampleOff);
-            midi.addEvent(juce::MidiMessage::pitchWheel(midiCh, 0),             sampleOff);
-        }
-        else
-        {
-            midi.addEvent(juce::MidiMessage::pitchWheel(midiCh, bendValue), sampleOff);
         }
     };
 
