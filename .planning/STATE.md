@@ -9,8 +9,8 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 ## Current Position
 
 - **Phase:** 04 of 7 — Per-Voice Trigger Sources and Random Gate
-- **Plan:** 04-02 (Tasks 1+2 complete — per-voice random clock + UI; awaiting DAW verification of Task 3)
-- **Status:** Awaiting Reaper verification of random gate behavior (04-02 Task 3 checkpoint)
+- **Plan:** 04-02 COMPLETE — proceeding to 04-03 (if planned) or phase 05
+- **Status:** 04-02 complete — all tasks done, human checkpoint approved in Reaper
 
 ## Progress
 
@@ -18,12 +18,12 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 Phase 01 [████░░░░░░]   Build Foundation    (partial — plugin crashes in Ableton)
 Phase 02 [██████████]   Engine Validation   (COMPLETE — ScaleQuantizer+ChordEngine 15 tests green, checkpoint approved)
 Phase 03 [██████████]   Core MIDI Output    (COMPLETE — 2/2 plans done, all 6 DAW tests passed in Reaper)
-Phase 04 [████░░░░░░]   Trigger Sources     (IN PROGRESS — 04-02 Tasks 1+2 done, checkpoint pending DAW verify)
+Phase 04 [████████░░]   Trigger Sources     (IN PROGRESS — 04-01+04-02 COMPLETE, 04-03 pending if planned)
 Phase 05 [░░░░░░░░░░]   Looper Hardening
 Phase 06 [░░░░░░░░░░]   SDL2 Gamepad
 Phase 07 [░░░░░░░░░░]   Distribution
 
-Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 complete 2/2, Phase 03 complete 2/2)
+Overall: [████░░░░░░] ~45% (Phase 01 partial, Phase 02 complete 2/2, Phase 03 complete 2/2, Phase 04 2/2 plans done)
 ```
 
 ## What's Been Built
@@ -48,6 +48,9 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 - **[NEW] Per-voice ppqPosition-synced random clock: prevSubdivIndex_[4] integer comparison fires on boundary; sample-count fallback when transport stopped (04-02 / 2b256a9)**
 - **[NEW] randomDensity 1..8 hits-per-bar model with hitsPerBarToProbability(); randomGateTime knob (fraction of subdivision, 10ms floor) for note duration (04-02 / 2b256a9)**
 - **[NEW] randomSubdiv0..3 per-voice APVTS params; 4 per-voice combo boxes in PluginEditor column-aligned under trigger source selectors; randomGateTimeKnob_ rotary (04-02 / 448556c)**
+- **[NEW] randomClockSync APVTS bool (default true): sync mode = DAW-only triggers, free mode = internal BPM accumulator; randomFreeTempo APVTS float (30-240 BPM, default 120) for free-running clock (04-02 / 30f52d4)**
+- **[NEW] 4-column DENS/GATE/FREE BPM/SYNC random controls row; randomDensityKnob_ changed to NoTextBox rotary for visual consistency; labels visible above knob row (04-02 / 43f0724, 65f069c)**
+- **[NEW] 04-02 human checkpoint APPROVED in Reaper — all 5 random gate tests passed (per-voice independence, DAW sync, density, gate time, mode switch clean)**
 
 ## Key Decisions
 
@@ -82,6 +85,9 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 | randomDensity range 1..8 hits-per-bar | More intuitive than 0..1 probability; hitsPerBarToProbability() converts to per-event probability |
 | randomGateTime × samplesPerSubdiv with 10ms floor | Prevents inaudible staccato at extreme settings; block-granular countdown is sufficient for musical timing |
 | wasPlaying_ edge detection for transport restart | prevSubdivIndex_[4] reset to -1 on play start; prevents spurious fire on the subdivision already seen before stop |
+| randomClockSync sync/free mode | sync=true fires only when isDawPlaying (DAW stop = silence from RND voices); sync=false uses internal BPM at randomFreeTempo — wall-clock fallback from plan spec replaced with explicit user-controlled toggle |
+| randomFreeTempo param (30-240 BPM, default 120) | BPM for free-running random clock; only active when randomClockSync=false |
+| 4-column DENS/GATE/FREE BPM/SYNC row | randomDensityKnob_ changed to NoTextBox rotary to match Gate/FreeTempo knobs — visual consistency in random controls section |
 
 ## Known Issues (Must Fix Before Shipping)
 
@@ -105,5 +111,5 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: 04-02 Tasks 1+2 complete — per-voice random clock + UI built (2b256a9, 448556c). Load ChordJoystick.vst3 in Reaper. Verify: (1) RND fires without transport at subdivision rate; (2) RND syncs to 1/8-note grid when playing; (3) density 1 = sparse, density 8 = dense; (4) gate time knob controls note duration; (5) ROOT 1/4 + THIRD 1/32 fire independently. Type "approved" to continue to 04-03.
-Resume file: .planning/phases/04-per-voice-trigger-sources-and-random-gate/04-02-PLAN.md (Task 3 checkpoint)
+Stopped at: 04-02 COMPLETE — all tasks done, human checkpoint APPROVED in Reaper. Plan 04-02 summary written. Ready for 04-03 or Phase 05 if no further Phase 04 plans exist.
+Resume file: .planning/phases/04-per-voice-trigger-sources-and-random-gate/ (check for 04-03-PLAN.md, or proceed to Phase 05)

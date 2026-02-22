@@ -71,13 +71,13 @@ Plans:
 - Joystick motion trigger with configurable threshold
 - AudioPlayHead integration for ppqPosition-based timing
 
-**Status:** in-progress (1/2 plans complete)
+**Status:** COMPLETE (2/2 plans done — 04-01 + 04-02 both approved in Reaper)
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
-- [x] 04-01-PLAN.md — Joystick motion trigger: continuous gate model, joystickThreshold APVTS param, THRESHOLD slider, TouchPlate dimming in JOY/RND mode, legato note-on/note-off tracking — DONE: build clean, VST3 installed, awaiting DAW verify
-- [ ] 04-02-PLAN.md — Random gate: per-voice subdivision clock (ppqPosition sync + wall-clock fallback), density 1–8 hits/bar, randomGateTime knob, 4 per-voice subdiv combo boxes
+- [x] 04-01-PLAN.md — Joystick motion trigger: continuous gate model, joystickThreshold APVTS param, THRESHOLD slider, TouchPlate dimming in JOY/RND mode, legato note-on/note-off tracking — DONE: build clean, VST3 installed, DAW verified
+- [x] 04-02-PLAN.md — Random gate: per-voice subdivision clock (ppqPosition sync + sync/free toggle), density 1–8 hits/bar, randomGateTime knob, randomClockSync + randomFreeTempo params, 4-column DENS/GATE/FREE BPM/SYNC row — DONE: all 5 Reaper tests passed, human checkpoint APPROVED
 
 ---
 
