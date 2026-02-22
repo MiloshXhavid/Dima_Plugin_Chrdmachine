@@ -50,13 +50,15 @@ void TriggerSystem::processBlock(const ProcessParams& p)
     const double samplesPerSubdiv = samplesPerBeat * subdivBeats;
 
     // ── Joystick continuous gate model ───────────────────────────────────────
+    // Magnitude is Chebyshev distance of per-block delta (not absolute position).
     const float dx = p.joystickX - static_cast<float>(prevJoystickX_);
     const float dy = p.joystickY - static_cast<float>(prevJoystickY_);
     prevJoystickX_ = p.joystickX;
     prevJoystickY_ = p.joystickY;
-    const float magnitude        = std::max(std::abs(dx), std::abs(dy));  // Chebyshev distance
+    const float magnitude         = std::max(std::abs(dx), std::abs(dy));  // Chebyshev distance
     const bool  joyAboveThreshold = magnitude > p.joystickThreshold;
-    const int   minGateSamples   = static_cast<int>(0.050 * p.sampleRate);  // 50ms floor
+    // 500ms stillness window for retrigger check (NOT a gate-close timer)
+    const int   retriggerSamples  = static_cast<int>(0.500 * p.sampleRate);
 
     // ── Per-sample random clock ───────────────────────────────────────────────
     // We advance the random clock and check for subdivision crossings.
@@ -105,16 +107,42 @@ void TriggerSystem::processBlock(const ProcessParams& p)
         {
             if (joyAboveThreshold)
             {
+                // Joystick is moving — reset stillness counter
                 joystickStillSamples_[v] = 0;
+
                 if (!gateOpen_[v].load())
-                    trigger = true;           // open gate on threshold-crossing
+                {
+                    // Gate was closed — open it and record the sounding pitch
+                    int pitch = p.heldPitches[v];
+                    fireNoteOn(v, pitch, ch, 0, p);
+                    joyActivePitch_[v] = pitch;
+                    // trigger flag already handled by fireNoteOn — skip common trigger path
+                }
+                // Gate already open: hold note, no retrigger during motion
             }
             else
             {
+                // Joystick is still — accumulate stillness samples
                 joystickStillSamples_[v] += p.blockSize;
-                if (gateOpen_[v].load() && joystickStillSamples_[v] >= minGateSamples)
-                    fireNoteOff(v, ch, 0, p);  // close gate after 50ms stillness
+
+                if (gateOpen_[v].load() && joystickStillSamples_[v] >= retriggerSamples)
+                {
+                    // 500ms of stillness — check if quantized pitch has changed
+                    int currentPitch = p.heldPitches[v];
+                    if (currentPitch != joyActivePitch_[v])
+                    {
+                        // Pitch changed — retrigger: note-off then note-on at new pitch
+                        fireNoteOff(v, ch, 0, p);
+                        fireNoteOn(v, currentPitch, ch, 0, p);
+                        joyActivePitch_[v] = currentPitch;
+                    }
+                    // Reset counter so we don't retrigger again next block
+                    joystickStillSamples_[v] = 0;
+                }
+                // Gate stays open indefinitely — never closed by stillness alone
             }
+            // Skip the common trigger path for Joystick source (handled inline above)
+            trigger = false;
         }
         else if (src == TriggerSource::Random)
         {
@@ -144,6 +172,7 @@ void TriggerSystem::resetAllGates()
         padPressed_[v].store(false);
         padJustFired_[v].store(false);
         joystickStillSamples_[v] = 0;
+        joyActivePitch_[v]       = -1;
     }
     allTrigger_.store(false);
     joystickTrig_.store(false);

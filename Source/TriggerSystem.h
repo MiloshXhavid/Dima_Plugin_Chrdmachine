@@ -84,6 +84,7 @@ private:
 
     // Joystick continuous gate state
     std::array<int, 4>           joystickStillSamples_ {};  // samples below threshold per voice
+    std::array<int, 4>           joyActivePitch_       {-1,-1,-1,-1};  // MIDI pitch currently sounding per JOY voice (-1 = silent)
 
     // Random trigger clock
     double   randomPhase_     = 0.0;  // samples since last subdivision
