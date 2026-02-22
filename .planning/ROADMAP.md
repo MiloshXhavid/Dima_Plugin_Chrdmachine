@@ -51,12 +51,12 @@ Plans:
 - Per-voice MIDI channel routing verified
 - Visual gate LED feedback in PluginEditor updating at 30 Hz
 
-**Status:** pending
+**Status:** in-progress (1/2 plans done)
 
-**Plans:** 2 plans
+**Plans:** 2 plans (1 complete)
 
 Plans:
-- [ ] 03-01-PLAN.md — Note-off guarantee and LED fix (TriggerSystem::resetAllGates, processBlockBypassed, releaseResources, green gate LED, channel conflict warning)
+- [x] 03-01-PLAN.md — Note-off guarantee and LED fix (TriggerSystem::resetAllGates, processBlockBypassed, releaseResources, green gate LED, channel conflict warning) — DONE: build clean, 15/15 tests pass
 - [ ] 03-02-PLAN.md — Build + DAW verification in Reaper (6-test structured verification, checkpoint)
 
 ---
