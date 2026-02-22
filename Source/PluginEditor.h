@@ -36,19 +36,47 @@ private:
     juce::String     label_;
 };
 
-// ─── ScaleKeyboard ────────────────────────────────────────────────────────────
-// 12 piano-style toggle buttons for custom scale entry
+// ─── GlobalTouchPlate ─────────────────────────────────────────────────────────
+// Wide pad that triggers all PAD-mode voices simultaneously.
 
-class ScaleKeyboard : public juce::Component
+class GlobalTouchPlate : public juce::Component
+{
+public:
+    explicit GlobalTouchPlate(PluginProcessor& p);
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseUp  (const juce::MouseEvent&) override;
+
+private:
+    PluginProcessor& proc_;
+    bool pressed_ = false;
+};
+
+// ─── ScaleKeyboard ────────────────────────────────────────────────────────────
+// 12 piano-style toggle buttons for custom scale entry.
+// Also highlights which pitch classes are active in the current scale preset,
+// shifted by the globalTranspose parameter.
+
+class ScaleKeyboard : public juce::Component,
+                      private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     explicit ScaleKeyboard(juce::AudioProcessorValueTreeState& apvts);
+    ~ScaleKeyboard() override;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
 
 private:
     juce::AudioProcessorValueTreeState& apvts_;
+
+    // Bitmask of which pitch classes (0..11) are in the active scale
+    // after applying transpose. Bit 0 = C, bit 1 = C#, etc.
+    uint16_t activeScaleMask_ = 0;
+
+    void parameterChanged(const juce::String& paramID, float newValue) override;
+    void updateScaleMask();
 
     static const bool kIsBlack[12];
     bool isNoteActive(int note) const;
@@ -87,7 +115,8 @@ private:
     juce::Label   rootOctLabel_, thirdOctLabel_, fifthOctLabel_, tensionOctLabel_;
 
     // ── Touchplates ───────────────────────────────────────────────────────────
-    TouchPlate    padRoot_, padThird_, padFifth_, padTension_;
+    TouchPlate       padRoot_, padThird_, padFifth_, padTension_;
+    GlobalTouchPlate padAll_;
 
     // ── Scale ─────────────────────────────────────────────────────────────────
     ScaleKeyboard scaleKeys_;

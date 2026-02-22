@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "ScaleQuantizer.h"
 #include <cmath>
 
 // ─── Colours ─────────────────────────────────────────────────────────────────
@@ -113,13 +114,148 @@ void TouchPlate::paint(juce::Graphics& g)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// GlobalTouchPlate
+// ═══════════════════════════════════════════════════════════════════════════════
+
+GlobalTouchPlate::GlobalTouchPlate(PluginProcessor& p) : proc_(p) {}
+
+void GlobalTouchPlate::mouseDown(const juce::MouseEvent&)
+{
+    pressed_ = true;
+    // Trigger only voices that are in PAD mode (triggerSource == 0)
+    for (int v = 0; v < 4; ++v)
+    {
+        const int src = static_cast<int>(
+            proc_.apvts.getRawParameterValue("triggerSource" + juce::String(v))->load());
+        if (src == 0)
+            proc_.setPadState(v, true);
+    }
+    repaint();
+}
+
+void GlobalTouchPlate::mouseUp(const juce::MouseEvent&)
+{
+    pressed_ = false;
+    for (int v = 0; v < 4; ++v)
+    {
+        const int src = static_cast<int>(
+            proc_.apvts.getRawParameterValue("triggerSource" + juce::String(v))->load());
+        if (src == 0)
+            proc_.setPadState(v, false);
+    }
+    repaint();
+}
+
+void GlobalTouchPlate::paint(juce::Graphics& g)
+{
+    // Check if at least one voice is in PAD mode
+    bool anyPadMode = false;
+    for (int v = 0; v < 4; ++v)
+    {
+        const int src = static_cast<int>(
+            proc_.apvts.getRawParameterValue("triggerSource" + juce::String(v))->load());
+        if (src == 0) { anyPadMode = true; break; }
+    }
+
+    // Distinct colour: a teal/cyan hue, different from the per-voice pads
+    static const juce::Colour allGateOff  { 0xFF1A3A5C };  // teal-navy
+    static const juce::Colour allGateOn   { 0xFF00BCD4 };  // cyan/teal when pressed
+    static const juce::Colour allDisabled { 0xFF1A1A2E };  // same as bg when all JOY/RND
+
+    const juce::Colour fillClr = !anyPadMode ? allDisabled
+                                : pressed_   ? allGateOn
+                                             : allGateOff;
+
+    g.setColour(fillClr);
+    g.fillRoundedRectangle(getLocalBounds().toFloat(), 8.0f);
+
+    g.setColour(anyPadMode ? Clr::text : Clr::textDim);
+    g.setFont(juce::Font(14.0f, juce::Font::bold));
+    g.drawText("ALL", getLocalBounds(), juce::Justification::centred);
+
+    const juce::Colour borderClr = pressed_ ? allGateOn.brighter(0.3f)
+                                             : (anyPadMode ? allGateOff.brighter(0.4f)
+                                                           : Clr::accent);
+    g.setColour(borderClr);
+    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 8.0f, 1.5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // ScaleKeyboard
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const bool ScaleKeyboard::kIsBlack[12] = {0,1,0,1,0,0,1,0,1,0,1,0};
 
 ScaleKeyboard::ScaleKeyboard(juce::AudioProcessorValueTreeState& apvts)
-    : apvts_(apvts) {}
+    : apvts_(apvts)
+{
+    // Listen for scale/transpose parameter changes so we can repaint highlights
+    apvts_.addParameterListener("scalePreset",    this);
+    apvts_.addParameterListener("useCustomScale", this);
+    apvts_.addParameterListener("globalTranspose", this);
+    for (int i = 0; i < 12; ++i)
+        apvts_.addParameterListener("scaleNote" + juce::String(i), this);
+
+    // Compute initial mask
+    updateScaleMask();
+}
+
+ScaleKeyboard::~ScaleKeyboard()
+{
+    apvts_.removeParameterListener("scalePreset",    this);
+    apvts_.removeParameterListener("useCustomScale", this);
+    apvts_.removeParameterListener("globalTranspose", this);
+    for (int i = 0; i < 12; ++i)
+        apvts_.removeParameterListener("scaleNote" + juce::String(i), this);
+}
+
+void ScaleKeyboard::parameterChanged(const juce::String& /*paramID*/, float /*newValue*/)
+{
+    updateScaleMask();
+    // Parameter listeners fire on a background thread — repaint must be on
+    // the message thread.
+    juce::MessageManager::callAsync([this] { repaint(); });
+}
+
+void ScaleKeyboard::updateScaleMask()
+{
+    const bool useCustom = apvts_.getRawParameterValue("useCustomScale")->load() > 0.5f;
+    const int  transpose = static_cast<int>(
+        apvts_.getRawParameterValue("globalTranspose")->load());
+
+    // Build a set of which pitch classes are in the scale (before transpose)
+    bool pitchClasses[12] = {};
+
+    if (useCustom)
+    {
+        for (int i = 0; i < 12; ++i)
+            pitchClasses[i] =
+                apvts_.getRawParameterValue("scaleNote" + juce::String(i))->load() > 0.5f;
+    }
+    else
+    {
+        const int presetIdx = static_cast<int>(
+            apvts_.getRawParameterValue("scalePreset")->load());
+        const ScalePreset preset = static_cast<ScalePreset>(
+            juce::jlimit(0, (int)ScalePreset::COUNT - 1, presetIdx));
+        const int* pattern = ScaleQuantizer::getScalePattern(preset);
+        const int  size    = ScaleQuantizer::getScaleSize(preset);
+        for (int i = 0; i < size; ++i)
+            pitchClasses[pattern[i]] = true;
+    }
+
+    // Apply transpose: shift each active pitch class by transpose semitones (mod 12)
+    uint16_t mask = 0;
+    for (int pc = 0; pc < 12; ++pc)
+    {
+        if (pitchClasses[pc])
+        {
+            int shifted = ((pc + transpose) % 12 + 12) % 12;
+            mask |= static_cast<uint16_t>(1u << shifted);
+        }
+    }
+    activeScaleMask_ = mask;
+}
 
 bool ScaleKeyboard::isNoteActive(int note) const
 {
@@ -167,13 +303,38 @@ void ScaleKeyboard::mouseDown(const juce::MouseEvent& e)
 
 void ScaleKeyboard::paint(juce::Graphics& g)
 {
+    // Colours for scale-highlight states:
+    //   custom-toggle active (editing mode)  -> use highlight red as before
+    //   scale preset active note             -> teal / active-teal
+    //   normal inactive                      -> white / black
+    static const juce::Colour scaleNatural { 0xFF4DD0E1 };   // light cyan-teal (white key in scale)
+    static const juce::Colour scaleSharp   { 0xFF00838F };   // darker teal (black key in scale)
+
+    // When Custom toggle is on, show user-toggled notes (edit mode).
+    // When off, show preset scale highlights shifted by transpose.
+    const bool editingCustom =
+        apvts_.getRawParameterValue("useCustomScale")->load() > 0.5f;
+
     // White keys first
     for (int n = 0; n < 12; ++n)
     {
         if (kIsBlack[n]) continue;
-        const bool active = isNoteActive(n);
         auto r = noteRect(n);
-        g.setColour(active ? Clr::highlight : juce::Colours::white);
+
+        juce::Colour fill;
+        if (editingCustom)
+        {
+            // Custom editing mode: highlight = user-toggled note (red)
+            fill = isNoteActive(n) ? Clr::highlight : juce::Colours::white;
+        }
+        else
+        {
+            // Preset mode: highlight = scale pitch class after transpose
+            const bool inScale = (activeScaleMask_ >> n) & 1;
+            fill = inScale ? scaleNatural : juce::Colours::white;
+        }
+
+        g.setColour(fill);
         g.fillRect(r);
         g.setColour(juce::Colours::black);
         g.drawRect(r);
@@ -182,10 +343,29 @@ void ScaleKeyboard::paint(juce::Graphics& g)
     for (int n = 0; n < 12; ++n)
     {
         if (!kIsBlack[n]) continue;
-        const bool active = isNoteActive(n);
         auto r = noteRect(n);
-        g.setColour(active ? Clr::highlight : juce::Colours::black);
+
+        juce::Colour fill;
+        if (editingCustom)
+        {
+            fill = isNoteActive(n) ? Clr::highlight : juce::Colours::black;
+        }
+        else
+        {
+            const bool inScale = (activeScaleMask_ >> n) & 1;
+            fill = inScale ? scaleSharp : juce::Colours::black;
+        }
+
+        g.setColour(fill);
         g.fillRect(r);
+    }
+
+    // Draw borders on black keys for visibility
+    g.setColour(juce::Colours::darkgrey.withAlpha(0.5f));
+    for (int n = 0; n < 12; ++n)
+    {
+        if (!kIsBlack[n]) continue;
+        g.drawRect(noteRect(n), 0.5f);
     }
 }
 
@@ -241,6 +421,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
       padThird_  (p, 1, "3RD"),
       padFifth_  (p, 2, "5TH"),
       padTension_(p, 3, "TEN"),
+      padAll_    (p),
       scaleKeys_ (p.apvts)
 {
     setSize(920, 700);
@@ -258,6 +439,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     // ── Touchplates ───────────────────────────────────────────────────────────
     addAndMakeVisible(padRoot_); addAndMakeVisible(padThird_);
     addAndMakeVisible(padFifth_); addAndMakeVisible(padTension_);
+    addAndMakeVisible(padAll_);
 
     // ── Chord intervals ───────────────────────────────────────────────────────
     styleKnob(transposeKnob_);   styleLabel(transposeLabel_,  "Transpose");
@@ -446,7 +628,7 @@ void PluginEditor::resized()
 
     right.removeFromTop(6);
 
-    // Touchplates
+    // Touchplates (4 individual pads)
     {
         auto row = right.removeFromTop(70);
         const int pw = (row.getWidth() - 9) / 4;
@@ -456,7 +638,15 @@ void PluginEditor::resized()
         padTension_.setBounds(row.removeFromLeft(pw));
     }
 
-    right.removeFromTop(6);
+    right.removeFromTop(3);
+
+    // Global ALL pad (wide bar spanning the full width of the individual pads)
+    {
+        auto row = right.removeFromTop(36);
+        padAll_.setBounds(row);
+    }
+
+    right.removeFromTop(3);
 
     // Filter attenuators
     {
@@ -617,6 +807,7 @@ void PluginEditor::timerCallback()
 {
     // Refresh gates, joystick position, looper buttons
     padRoot_.repaint(); padThird_.repaint(); padFifth_.repaint(); padTension_.repaint();
+    padAll_.repaint();
     joystickPad_.repaint();
 
     loopPlayBtn_ .setToggleState(proc_.looperIsPlaying(),   juce::dontSendNotification);
