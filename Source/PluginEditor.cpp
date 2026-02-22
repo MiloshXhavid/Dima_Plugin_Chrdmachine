@@ -505,8 +505,13 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         trigSrcAtt_[i] = std::make_unique<ComboAtt>(p.apvts, trigSrcIDs[i], trigSrc_[i]);
     }
 
-    styleKnob(randomDensityKnob_); styleLabel(randomDensityLabel_, "Rand Dens");
-    addAndMakeVisible(randomDensityKnob_); addAndMakeVisible(randomDensityLabel_);
+    randomDensityKnob_.setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    randomDensityKnob_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    randomDensityKnob_.setTooltip("Random density (hits per bar, 1-8)");
+    randomDensityKnob_.setColour(juce::Slider::rotarySliderFillColourId,   Clr::highlight);
+    randomDensityKnob_.setColour(juce::Slider::rotarySliderOutlineColourId, Clr::accent);
+    randomDensityKnob_.setColour(juce::Slider::thumbColourId,              Clr::text);
+    addAndMakeVisible(randomDensityKnob_);
     randomDensityAtt_ = std::make_unique<SliderAtt>(p.apvts, "randomDensity", randomDensityKnob_);
 
     styleLabel(randomSubdivLabel_, "SUBDIV");
@@ -793,26 +798,14 @@ void PluginEditor::resized()
 
         left.removeFromTop(4);
 
-        // Random density + gate-time knobs row
-        auto rRow = left.removeFromTop(60);
+        // Random controls row — one control per voice column, aligned under subdiv combos
+        // [DENS knob] | [GATE knob] | [FREE BPM knob] | [SYNC button]
         {
-            auto densityCol = rRow.removeFromLeft(rRow.getWidth() / 2);
-            randomDensityLabel_.setBounds(densityCol.removeFromTop(14));
-            randomDensityKnob_ .setBounds(densityCol);
-        }
-        {
-            // Gate time knob takes the right half
-            // Paint will draw the "GATE" label in paint() via tooltip
-            randomGateTimeKnob_.setBounds(rRow);
-        }
-
-        // Sync button + free tempo knob row (compact, 30px)
-        {
-            auto syncRow = left.removeFromTop(30);
-            const int syncBtnW = 50;
-            randomSyncButton_   .setBounds(syncRow.removeFromLeft(syncBtnW));
-            syncRow.removeFromLeft(4);
-            randomFreeTempoKnob_.setBounds(syncRow.removeFromLeft(30));
+            auto rndRow = left.removeFromTop(60);
+            randomDensityKnob_ .setBounds(rndRow.removeFromLeft(cw));
+            randomGateTimeKnob_.setBounds(rndRow.removeFromLeft(cw));
+            randomFreeTempoKnob_.setBounds(rndRow.removeFromLeft(cw));
+            randomSyncButton_  .setBounds(rndRow);
         }
     }
 
@@ -869,25 +862,18 @@ void PluginEditor::paint(juce::Graphics& g)
                    60, 12, juce::Justification::left);
     }
 
-    // GATE label above randomGateTimeKnob_
-    if (randomGateTimeKnob_.isVisible())
+    // Labels above the 3 random knobs (SYNC button has its own text)
+    g.setColour(Clr::textDim);
+    g.setFont(juce::Font(9.5f));
+    auto drawAbove = [&](juce::Component& c, const juce::String& t)
     {
-        g.setColour(Clr::textDim);
-        g.setFont(juce::Font(9.5f));
-        g.drawText("GATE",
-                   randomGateTimeKnob_.getX(), randomGateTimeKnob_.getY() - 2,
-                   randomGateTimeKnob_.getWidth(), 12, juce::Justification::centred);
-    }
-
-    // FREE BPM label to the right of the sync button
-    if (randomFreeTempoKnob_.isVisible())
-    {
-        g.setColour(Clr::textDim);
-        g.setFont(juce::Font(9.5f));
-        g.drawText("FREE BPM",
-                   randomFreeTempoKnob_.getX(), randomFreeTempoKnob_.getY() - 2,
-                   randomFreeTempoKnob_.getWidth() + 20, 12, juce::Justification::centred);
-    }
+        if (c.isVisible())
+            g.drawText(t, c.getX(), c.getY() - 12, c.getWidth(), 12,
+                       juce::Justification::centred);
+    };
+    drawAbove(randomDensityKnob_,  "DENS");
+    drawAbove(randomGateTimeKnob_, "GATE");
+    drawAbove(randomFreeTempoKnob_, "FREE BPM");
 
     g.setColour(Clr::accent);
     g.drawRect(getLocalBounds().reduced(4), 1);
