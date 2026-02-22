@@ -153,7 +153,33 @@ void PluginProcessor::prepareToPlay(double sr, int /*blockSize*/)
     sampleRate_ = sr;
 }
 
-void PluginProcessor::releaseResources() {}
+void PluginProcessor::releaseResources()
+{
+    // Cannot write MIDI here — audio thread already stopped.
+    // Reset all gate state so next prepareToPlay starts clean.
+    trigger_.resetAllGates();
+}
+
+void PluginProcessor::processBlockBypassed(juce::AudioBuffer<float>& audio,
+                                            juce::MidiBuffer& midi)
+{
+    audio.clear();
+    midi.clear();
+
+    static const juce::String chIDs[4] = {
+        "voiceCh0", "voiceCh1", "voiceCh2", "voiceCh3" };
+
+    for (int v = 0; v < 4; ++v)
+    {
+        const int pitch = trigger_.getActivePitch(v);
+        if (pitch >= 0)
+        {
+            const int ch = (int)apvts.getRawParameterValue(chIDs[v])->load();
+            midi.addEvent(juce::MidiMessage::noteOff(ch, pitch, (uint8_t)0), 0);
+        }
+    }
+    trigger_.resetAllGates();
+}
 
 bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
@@ -305,7 +331,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         else
         {
             looper_.recordGate(looper_.getPlaybackBeat(), voice, false);
-            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch), sampleOff);
+            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
         }
     };
 

@@ -1,56 +1,11 @@
 #pragma once
-
 #include <juce_audio_processors/juce_audio_processors.h>
-
-// ============================================================
-// Scale Preset Enum
-// ============================================================
-enum class ScalePreset
-{
-    Major = 0,
-    Minor = 1,
-    HarmonicMinor = 2,
-    MelodicMinor = 3,
-    Dorian = 4,
-    Phrygian = 5,
-    Lydian = 6,
-    Mixolydian = 7,
-    PentatonicMajor = 8,
-    PentatonicMinor = 9,
-    Blues = 10,
-    Chromatic = 11
-};
-
-// ============================================================
-// Scale Quantization Helper
-// ============================================================
-class ScaleQuantizer
-{
-public:
-    // Returns array of semitones from root (0-11) for each scale preset
-    static const int* getScalePattern(ScalePreset scale);
-    static int getScaleSize(ScalePreset scale);
-    
-    // Build custom scale from 12 boolean flags (one per semitone)
-    static void buildCustomPattern(const bool scaleNotes[12], int customPattern[12], int& customSize);
-    
-    // Quantize a raw MIDI pitch to the nearest note in the given scale
-    static int quantizeToScale(int rawPitch, const int* scalePattern, int scaleSize, int transpose = 0);
-    
-private:
-    static const int majorPattern[];
-    static const int minorPattern[];
-    static const int harmonicMinorPattern[];
-    static const int melodicMinorPattern[];
-    static const int dorianPattern[];
-    static const int phrygianPattern[];
-    static const int lydianPattern[];
-    static const int mixolydianPattern[];
-    static const int pentatonicMajorPattern[];
-    static const int pentatonicMinorPattern[];
-    static const int bluesPattern[];
-    static const int chromaticPattern[];
-};
+#include "ChordEngine.h"
+#include "TriggerSystem.h"
+#include "LooperEngine.h"
+#include "GamepadInput.h"
+#include <atomic>
+#include <array>
 
 class PluginProcessor : public juce::AudioProcessor
 {
@@ -58,46 +13,68 @@ public:
     PluginProcessor();
     ~PluginProcessor() override;
 
-    void prepareToPlay(double, int) override;
+    // ── AudioProcessor overrides ──────────────────────────────────────────────
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
-
     bool isBusesLayoutSupported(const BusesLayout&) const override;
-
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override;
+    bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override;
-    bool acceptsMidi() const override;
-    bool producesMidi() const override;
-    bool isMidiEffect() const override;
-    double getTailLengthSeconds() const override;
+    const juce::String getName() const override { return "ChordJoystick"; }
+    bool acceptsMidi()   const override { return false; }
+    bool producesMidi()  const override { return true;  }
+    bool isMidiEffect()  const override { return false; }
+    double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override;
-    int getCurrentProgram() override;
-    void setCurrentProgram(int) override;
-    const juce::String getProgramName(int) override;
-    void changeProgramName(int, const juce::String&) override;
+    int  getNumPrograms() override { return 1; }
+    int  getCurrentProgram() override { return 0; }
+    void setCurrentProgram(int) override {}
+    const juce::String getProgramName(int) override { return {}; }
+    void changeProgramName(int, const juce::String&) override {}
 
     void getStateInformation(juce::MemoryBlock&) override;
     void setStateInformation(const void*, int) override;
 
-    // Parameter access helpers
-    float getParameterValue(const juce::String& paramID) const;
-    bool getBoolParameterValue(const juce::String& paramID) const;
-    int getIntParameterValue(const juce::String& paramID) const;
+    // ── Public state (read by UI, written by UI / gamepad) ────────────────────
+    // Live joystick position from UI drag (-1..+1)
+    std::atomic<float> joystickX {0.0f};
+    std::atomic<float> joystickY {0.0f};
 
-    // Scale quantization methods
-    ScalePreset getCurrentScale() const;
-    int getQuantizedNote(int rawPitch) const;
-    int getScaleDegree(int degree) const;
-    int getCustomScaleNote(int index) const;
+    // Touch-plate state (UI → processor)
+    void setPadState(int voice, bool pressed) { trigger_.setPadState(voice, pressed); }
+    bool isGateOpen(int voice) const          { return trigger_.isGateOpen(voice); }
+
+    // Looper transport (UI / gamepad)
+    void looperStartStop() { looper_.startStop(); }
+    void looperRecord()    { looper_.record();    }
+    void looperReset()     { looper_.reset();     }
+    void looperDelete()    { looper_.deleteLoop(); }
+    bool looperIsPlaying()   const { return looper_.isPlaying(); }
+    bool looperIsRecording() const { return looper_.isRecording(); }
+
+    // Gamepad
+    GamepadInput& getGamepad() { return gamepad_; }
+
+    // ── APVTS ─────────────────────────────────────────────────────────────────
+    juce::AudioProcessorValueTreeState apvts;
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
 private:
-    juce::AudioProcessorValueTreeState apvts;
+    ChordEngine   chord_;
+    TriggerSystem trigger_;
+    LooperEngine  looper_;
+    GamepadInput  gamepad_;
 
-    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    double sampleRate_ = 44100.0;
+
+    // Held (sample-and-hold) pitches for each voice
+    std::array<int, 4> heldPitch_ {60, 64, 67, 70};
+
+    // Build ChordEngine::Params from current APVTS + joystick state
+    ChordEngine::Params buildChordParams() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };
