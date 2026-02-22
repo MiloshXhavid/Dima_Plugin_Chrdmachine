@@ -86,6 +86,10 @@ private:
     std::array<int, 4>           joyActivePitch_       {-1,-1,-1,-1}; // pitch currently sounding per voice, -1 = none
     std::array<int, 4>           joystickStillSamples_ {0, 0, 0, 0};  // counts samples below threshold for 50ms debounce
 
+    // Pitch-change debounce: pending candidate pitch + accumulated samples at that pitch
+    std::array<int, 4>           joyPendingPitch_       {-1,-1,-1,-1}; // candidate new pitch (-1 = none)
+    std::array<int, 4>           joyPendingSamples_     {0, 0, 0, 0};  // samples spent at joyPendingPitch_
+
     // Random trigger clock
     double   randomPhase_     = 0.0;  // samples since last subdivision
     double   prevJoystickX_   = 0.0;

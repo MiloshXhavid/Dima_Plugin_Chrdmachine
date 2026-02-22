@@ -8,6 +8,8 @@ TriggerSystem::TriggerSystem()
     for (auto& a : gateOpen_)     a.store(false);
     joyActivePitch_.fill(-1);
     joystickStillSamples_.fill(0);
+    joyPendingPitch_.fill(-1);
+    joyPendingSamples_.fill(0);
 }
 
 // ── UI / gamepad thread ───────────────────────────────────────────────────────
@@ -51,13 +53,21 @@ void TriggerSystem::processBlock(const ProcessParams& p)
     const double subdivBeats      = subdivisionBeats(p.randomSubdiv);
     const double samplesPerSubdiv = samplesPerBeat * subdivBeats;
 
-    // ── Joystick magnitude (Chebyshev distance of per-block delta) ────────────
-    const float dx = p.joystickX - static_cast<float>(prevJoystickX_);
-    const float dy = p.joystickY - static_cast<float>(prevJoystickY_);
+    // ── Per-axis absolute position for per-voice threshold detection ──────────
+    // Voices 0+1 (Root/Third) are driven by the Y axis.
+    // Voices 2+3 (Fifth/Tension) are driven by the X axis.
+    // We still track deltas only to update prevJoystick* for any legacy callers,
+    // but threshold detection now uses absolute position per voice.
     prevJoystickX_ = p.joystickX;
     prevJoystickY_ = p.joystickY;
-    const float magnitude         = std::max(std::abs(dx), std::abs(dy));
-    const bool  joyAboveThreshold = magnitude > p.joystickThreshold;
+
+    const float absX = std::abs(p.joystickX);
+    const float absY = std::abs(p.joystickY);
+
+    // Returns the relevant axis magnitude for a given voice
+    auto axisForVoice = [&](int v) -> float {
+        return (v < 2) ? absY : absX;
+    };
 
     // ── Per-sample random clock ───────────────────────────────────────────────
     const bool allTrig = allTrigger_.exchange(false);
@@ -98,9 +108,12 @@ void TriggerSystem::processBlock(const ProcessParams& p)
         }
         else if (src == TriggerSource::Joystick)
         {
+            const float axisMag           = axisForVoice(v);
+            const bool  joyAboveThreshold = axisMag > p.joystickThreshold;
+
             if (joyAboveThreshold)
             {
-                // Joystick is moving — reset stillness counter.
+                // Axis is active — reset gate-close stillness counter.
                 joystickStillSamples_[v] = 0;
 
                 if (!gateOpen_[v].load())
@@ -108,47 +121,78 @@ void TriggerSystem::processBlock(const ProcessParams& p)
                     // ── Gate OPENS ────────────────────────────────────────────
                     const int pitch = p.heldPitches[v];
                     fireNoteOn(v, pitch, ch - 1, 0, p);   // sets gateOpen_ and activePitch_
-                    joyActivePitch_[v] = pitch;
+                    joyActivePitch_[v]    = pitch;
+                    joyPendingPitch_[v]   = -1;
+                    joyPendingSamples_[v] = 0;
                 }
                 else
                 {
-                    // ── Gate OPEN + above threshold (joystick moving) ─────────
-                    const int newPitch = p.heldPitches[v];
-                    if (newPitch != joyActivePitch_[v])
+                    // ── Gate OPEN + above threshold ───────────────────────────
+                    // Retrigger only after the new pitch has been stable for 30ms.
+                    const int newPitch    = p.heldPitches[v];
+                    const int debounce    = static_cast<int>(0.030f * static_cast<float>(p.sampleRate));
+
+                    if (newPitch == joyActivePitch_[v])
                     {
-                        fireNoteOff(v, ch - 1, 0, p);     // old pitch off first
-                        fireNoteOn (v, newPitch, ch - 1, 0, p);  // new pitch on
-                        joyActivePitch_[v] = newPitch;
+                        // Still on same pitch — reset pending candidate.
+                        joyPendingPitch_[v]   = -1;
+                        joyPendingSamples_[v] = 0;
+                    }
+                    else
+                    {
+                        if (newPitch == joyPendingPitch_[v])
+                        {
+                            // Same candidate as last block — accumulate dwell time.
+                            joyPendingSamples_[v] += p.blockSize;
+
+                            if (joyPendingSamples_[v] >= debounce)
+                            {
+                                // Pitch committed after 30ms — retrigger.
+                                fireNoteOff(v, ch - 1, 0, p);
+                                fireNoteOn (v, newPitch, ch - 1, 0, p);
+                                joyActivePitch_[v]    = newPitch;
+                                joyPendingPitch_[v]   = -1;
+                                joyPendingSamples_[v] = 0;
+                            }
+                        }
+                        else
+                        {
+                            // New candidate pitch — start fresh debounce.
+                            joyPendingPitch_[v]   = newPitch;
+                            joyPendingSamples_[v] = 0;
+                        }
                     }
                 }
             }
             else
             {
                 // Below open threshold — apply hysteresis:
-                // Only count toward gate-close when the joystick is near rest
+                // Only count toward gate-close when the axis is near rest
                 // (< 15% of open threshold).  A brief dip just below threshold
                 // (e.g. mid-movement) resets the counter instead, keeping the
                 // gate open and preventing spurious same-pitch retriggering.
                 const float closeThreshold = p.joystickThreshold * 0.15f;
-                const int   closeAfter     = static_cast<int>(0.050f * p.sampleRate); // 50ms debounce
+                const int   closeAfter     = static_cast<int>(0.050f * static_cast<float>(p.sampleRate)); // 50ms debounce
 
-                if (magnitude < closeThreshold)
+                if (axisMag < closeThreshold)
                 {
-                    // Joystick is near rest — accumulate stillness counter.
+                    // Axis is near rest — accumulate stillness counter.
                     joystickStillSamples_[v] += p.blockSize;
 
                     if (gateOpen_[v].load() && joystickStillSamples_[v] >= closeAfter)
                     {
-                        // Joystick has been near rest for 50ms — close the gate.
+                        // Axis has been near rest for 50ms — close the gate.
                         fireNoteOff(v, ch - 1, 0, p);   // clears gateOpen_ and activePitch_
                         joyActivePitch_[v]       = -1;
                         joystickStillSamples_[v] = 0;
+                        joyPendingPitch_[v]      = -1;
+                        joyPendingSamples_[v]    = 0;
                     }
                 }
                 else
                 {
                     // Magnitude between closeThreshold and joystickThreshold —
-                    // joystick is hovering near threshold mid-movement.
+                    // axis is hovering near threshold mid-movement.
                     // Reset the stillness counter so a brief dip doesn't
                     // eventually close the gate.
                     joystickStillSamples_[v] = 0;
@@ -188,6 +232,8 @@ void TriggerSystem::resetAllGates()
         activePitch_[v]          = -1;
         joyActivePitch_[v]       = -1;
         joystickStillSamples_[v] = 0;
+        joyPendingPitch_[v]      = -1;
+        joyPendingSamples_[v]    = 0;
         padPressed_[v].store(false);
         padJustFired_[v].store(false);
     }
