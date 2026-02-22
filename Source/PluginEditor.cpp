@@ -796,7 +796,7 @@ void PluginEditor::resized()
             }
         }
 
-        left.removeFromTop(4);
+        left.removeFromTop(14);
 
         // Random controls row — one control per voice column, aligned under subdiv combos
         // [DENS knob] | [GATE knob] | [FREE BPM knob] | [SYNC button]
