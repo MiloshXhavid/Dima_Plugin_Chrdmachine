@@ -15,10 +15,10 @@
 - Static CRT configured for distribution (no MSVC runtime dependency)
 - `COPY_PLUGIN_AFTER_BUILD` set for dev builds
 
-**Status:** pending
+**Status:** in-progress (1/2 plans complete)
 
 Plans:
-- [ ] 01-01: Fix CMakeLists.txt (pin JUCE tag, static CRT, validate plugin target)
+- [x] 01-01: Fix CMakeLists.txt (pin JUCE tag, static CRT, validate plugin target) — DONE: build verified, VST3 installed
 - [ ] 01-02: Smoke test — plugin loads in Reaper, APVTS round-trip verified
 
 ---
