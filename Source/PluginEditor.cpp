@@ -453,8 +453,10 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         {
             const bool nowHeld = padHoldBtn_[v].getToggleState();
             proc_.padHold_[v].store(nowHeld);
-            if (!nowHeld)
-                proc_.setPadState(v, false);
+            if (nowHeld)
+                proc_.setPadState(v, true);   // note-on when hold activates
+            else
+                proc_.setPadState(v, false);  // note-off when hold releases
         };
     }
 
