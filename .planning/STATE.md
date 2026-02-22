@@ -9,8 +9,8 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 ## Current Position
 
 - **Phase:** 04 of 7 — Per-Voice Trigger Sources and Random Gate
-- **Plan:** 04-01 (complete — JOY retrigger model; awaiting DAW verification)
-- **Status:** Awaiting Reaper verification of JOY retrigger gate behavior
+- **Plan:** 04-02 (Tasks 1+2 complete — per-voice random clock + UI; awaiting DAW verification of Task 3)
+- **Status:** Awaiting Reaper verification of random gate behavior (04-02 Task 3 checkpoint)
 
 ## Progress
 
@@ -18,7 +18,7 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 Phase 01 [████░░░░░░]   Build Foundation    (partial — plugin crashes in Ableton)
 Phase 02 [██████████]   Engine Validation   (COMPLETE — ScaleQuantizer+ChordEngine 15 tests green, checkpoint approved)
 Phase 03 [██████████]   Core MIDI Output    (COMPLETE — 2/2 plans done, all 6 DAW tests passed in Reaper)
-Phase 04 [████░░░░░░]   Trigger Sources     (IN PROGRESS — 04-01 Tasks 1+2 done, checkpoint pending)
+Phase 04 [████░░░░░░]   Trigger Sources     (IN PROGRESS — 04-02 Tasks 1+2 done, checkpoint pending DAW verify)
 Phase 05 [░░░░░░░░░░]   Looper Hardening
 Phase 06 [░░░░░░░░░░]   SDL2 Gamepad
 Phase 07 [░░░░░░░░░░]   Distribution
@@ -45,6 +45,9 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 - **[NEW] Continuous joystick gate model: Chebyshev magnitude threshold, joystickThreshold APVTS param (04-01)**
 - **[NEW] THRESHOLD horizontal slider in PluginEditor right column; TouchPlate pads dim and disable in JOY/RND mode (04-01)**
 - **[NEW] JOY retrigger model (final): gate opens with noteOn(pitch); when joystick crosses scale-degree boundary, fires noteOff(oldPitch) then noteOn(newPitch); closes after 50ms stillness. No pitch bend / RPN. Works with any synth. (04-01 Fix 5 / 418c2a0)**
+- **[NEW] Per-voice ppqPosition-synced random clock: prevSubdivIndex_[4] integer comparison fires on boundary; sample-count fallback when transport stopped (04-02 / 2b256a9)**
+- **[NEW] randomDensity 1..8 hits-per-bar model with hitsPerBarToProbability(); randomGateTime knob (fraction of subdivision, 10ms floor) for note duration (04-02 / 2b256a9)**
+- **[NEW] randomSubdiv0..3 per-voice APVTS params; 4 per-voice combo boxes in PluginEditor column-aligned under trigger source selectors; randomGateTimeKnob_ rotary (04-02 / 448556c)**
 
 ## Key Decisions
 
@@ -75,6 +78,10 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 | joyActivePitch_[v] tracks sounding pitch | -1=gate closed; updated on every retrigger; used for comparison and gate-close note-off |
 | Pitch bend model superseded | joyBasePitch_/joyLastBendValue_/sendBendRangeRPN/MidiCallback all removed; simpler and more reliable |
 | TouchPlate dimming reads APVTS in paint() | getRawParameterValue()->load() is safe from message thread (atomic<float>*) |
+| PPQ subdivision index (int64_t) for DAW sync | Integer comparison avoids float equality issues; fires exactly once per boundary crossing |
+| randomDensity range 1..8 hits-per-bar | More intuitive than 0..1 probability; hitsPerBarToProbability() converts to per-event probability |
+| randomGateTime × samplesPerSubdiv with 10ms floor | Prevents inaudible staccato at extreme settings; block-granular countdown is sufficient for musical timing |
+| wasPlaying_ edge detection for transport restart | prevSubdivIndex_[4] reset to -1 on play start; prevents spurious fire on the subdivision already seen before stop |
 
 ## Known Issues (Must Fix Before Shipping)
 
@@ -98,5 +105,5 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: 04-01 complete — JOY retrigger model implemented (418c2a0). Load ChordJoystick.vst3 in Reaper, verify JOY retrigger gate: move joystick above threshold and confirm noteOn in MIDI monitor; move across scale zones and confirm noteOff(old)+noteOn(new) pairs (no pitchWheel); release and confirm noteOff after ~50ms.
-Resume file: .planning/phases/04-per-voice-trigger-sources-and-random-gate/04-02-PLAN.md
+Stopped at: 04-02 Tasks 1+2 complete — per-voice random clock + UI built (2b256a9, 448556c). Load ChordJoystick.vst3 in Reaper. Verify: (1) RND fires without transport at subdivision rate; (2) RND syncs to 1/8-note grid when playing; (3) density 1 = sparse, density 8 = dense; (4) gate time knob controls note duration; (5) ROOT 1/4 + THIRD 1/32 fire independently. Type "approved" to continue to 04-03.
+Resume file: .planning/phases/04-per-voice-trigger-sources-and-random-gate/04-02-PLAN.md (Task 3 checkpoint)
