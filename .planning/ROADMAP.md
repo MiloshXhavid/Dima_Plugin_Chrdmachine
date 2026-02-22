@@ -53,10 +53,11 @@ Plans:
 
 **Status:** pending
 
+**Plans:** 2 plans
+
 Plans:
-- [ ] 03-01: Wire TriggerSystem to processBlock (TouchPlate → MIDI note-on/off)
-- [ ] 03-02: Implement releaseResources() note-off flush and bypass handling
-- [ ] 03-03: Verify per-voice MIDI channel routing in Reaper
+- [ ] 03-01-PLAN.md — Note-off guarantee and LED fix (TriggerSystem::resetAllGates, processBlockBypassed, releaseResources, green gate LED, channel conflict warning)
+- [ ] 03-02-PLAN.md — Build + DAW verification in Reaper (6-test structured verification, checkpoint)
 
 ---
 
