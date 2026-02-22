@@ -8,9 +8,9 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 
 ## Current Position
 
-- **Phase:** 03 of 7 — Core MIDI Output and Note-Off Guarantee
-- **Plan:** 03-02 (complete)
-- **Status:** Milestone complete
+- **Phase:** 04 of 7 — Per-Voice Trigger Sources and Random Gate
+- **Plan:** 04-01 (paused at human-verify checkpoint — Task 3)
+- **Status:** Awaiting Reaper verification of JOY gate and pad dimming
 
 ## Progress
 
@@ -18,7 +18,7 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 Phase 01 [████░░░░░░]   Build Foundation    (partial — plugin crashes in Ableton)
 Phase 02 [██████████]   Engine Validation   (COMPLETE — ScaleQuantizer+ChordEngine 15 tests green, checkpoint approved)
 Phase 03 [██████████]   Core MIDI Output    (COMPLETE — 2/2 plans done, all 6 DAW tests passed in Reaper)
-Phase 04 [░░░░░░░░░░]   Trigger Sources
+Phase 04 [████░░░░░░]   Trigger Sources     (IN PROGRESS — 04-01 Tasks 1+2 done, checkpoint pending)
 Phase 05 [░░░░░░░░░░]   Looper Hardening
 Phase 06 [░░░░░░░░░░]   SDL2 Gamepad
 Phase 07 [░░░░░░░░░░]   Distribution
@@ -42,6 +42,8 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 - **[NEW] ChordEngine 9-case test suite added; combined suite 15 tests, 0 failures; axis routing, transpose, octave offsets, MIDI clamping, scale quantization verified (02-02)**
 - **[NEW] TriggerSystem::resetAllGates() added; processBlockBypassed() flushes note-offs on bypass; releaseResources() calls resetAllGates(); noteOff uses explicit (uint8_t)0; green gate LEDs; channel conflict warning (03-01)**
 - **[NEW] DAW verification complete: all 6 Reaper tests passed — 4-voice note-on/off, retrigger safety, bypass flush, transport sustain, green LEDs, channel conflict warning (03-02)**
+- **[NEW] Continuous joystick gate model: Chebyshev magnitude threshold, 50ms note-off floor, joystickStillSamples_[4], joystickThreshold APVTS param (04-01)**
+- **[NEW] THRESHOLD horizontal slider in PluginEditor right column; TouchPlate pads dim and disable in JOY/RND mode (04-01)**
 
 ## Key Decisions
 
@@ -66,6 +68,9 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 | channelConflictShown_ cache | Prevents setVisible() being called every 30 Hz tick when state is stable |
 | Reaper as DAW verification target | Ableton crashes on instantiation (deferred); Reaper provides full MIDI monitoring without the crash |
 | 6-test structured DAW protocol | Discrete test cases: basic output, LED color, retrigger, bypass flush, transport, conflict UI — all passed 03-02 |
+| Chebyshev distance for joystick magnitude | max(abs(dx), abs(dy)) avoids diagonal bias vs Manhattan distance |
+| 50ms gate floor via sample counter | joystickStillSamples_[v] += blockSize — simple, no heap allocation |
+| TouchPlate dimming reads APVTS in paint() | getRawParameterValue()->load() is safe from message thread (atomic<float>*) |
 
 ## Known Issues (Must Fix Before Shipping)
 
@@ -89,5 +94,5 @@ Overall: [████░░░░░░] ~40% (Phase 01 partial, Phase 02 compl
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: 03-02-PLAN.md fully complete. Phase 03 complete. All 6 Reaper DAW verification tests passed. Next: Phase 04 (Trigger Sources).
-Resume file: .planning/phases/04-trigger-sources/ (next phase)
+Stopped at: 04-01-PLAN.md Tasks 1+2 complete, paused at Task 3 human-verify checkpoint. Load ChordJoystick.vst3 in Reaper, verify JOY gate sustain + pad dimming + 50ms floor, type "approved" to continue.
+Resume file: .planning/phases/04-per-voice-trigger-sources-and-random-gate/04-01-PLAN.md (Task 3 checkpoint)
