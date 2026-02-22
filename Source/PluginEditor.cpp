@@ -615,6 +615,39 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(loopPlayBtn_); addAndMakeVisible(loopRecBtn_);
     addAndMakeVisible(loopResetBtn_); addAndMakeVisible(loopDeleteBtn_);
 
+    // New looper mode buttons (Phase 05)
+    loopRecJoyBtn_.setButtonText("REC JOY");
+    loopRecGatesBtn_.setButtonText("REC GATES");
+    loopSyncBtn_.setButtonText("SYNC");
+
+    loopRecJoyBtn_.setClickingTogglesState(true);
+    loopRecGatesBtn_.setClickingTogglesState(true);
+    loopSyncBtn_.setClickingTogglesState(true);
+
+    styleButton(loopRecJoyBtn_,   juce::Colour(0xFF8B0000));
+    styleButton(loopRecGatesBtn_, juce::Colour(0xFF8B0000));
+    styleButton(loopSyncBtn_);
+
+    loopRecJoyBtn_.onClick = [this] {
+        const bool newVal = !proc_.looperIsRecJoy();
+        proc_.looperSetRecJoy(newVal);
+        loopRecJoyBtn_.setToggleState(newVal, juce::dontSendNotification);
+    };
+    loopRecGatesBtn_.onClick = [this] {
+        const bool newVal = !proc_.looperIsRecGates();
+        proc_.looperSetRecGates(newVal);
+        loopRecGatesBtn_.setToggleState(newVal, juce::dontSendNotification);
+    };
+    loopSyncBtn_.onClick = [this] {
+        const bool newVal = !proc_.looperIsSyncToDaw();
+        proc_.looperSetSyncToDaw(newVal);
+        loopSyncBtn_.setToggleState(newVal, juce::dontSendNotification);
+    };
+
+    addAndMakeVisible(loopRecJoyBtn_);
+    addAndMakeVisible(loopRecGatesBtn_);
+    addAndMakeVisible(loopSyncBtn_);
+
     loopSubdivBox_.addItem("3/4", 1); loopSubdivBox_.addItem("4/4", 2);
     loopSubdivBox_.addItem("5/4", 3); loopSubdivBox_.addItem("7/8", 4);
     loopSubdivBox_.addItem("9/8", 5); loopSubdivBox_.addItem("11/8", 6);
@@ -838,7 +871,7 @@ void PluginEditor::resized()
     {
         auto section = left;
 
-        // Buttons row
+        // Buttons row 1: PLAY / REC / RST / DEL
         auto btnRow = section.removeFromTop(36);
         const int bw = btnRow.getWidth() / 4 - 2;
         loopPlayBtn_  .setBounds(btnRow.removeFromLeft(bw)); btnRow.removeFromLeft(2);
@@ -846,7 +879,18 @@ void PluginEditor::resized()
         loopResetBtn_ .setBounds(btnRow.removeFromLeft(bw)); btnRow.removeFromLeft(2);
         loopDeleteBtn_.setBounds(btnRow.removeFromLeft(bw));
 
-        section.removeFromTop(6);
+        section.removeFromTop(2);
+
+        // Buttons row 2: REC JOY / REC GATES / SYNC (three columns)
+        {
+            auto row2 = section.removeFromTop(28);
+            const int bw3 = (row2.getWidth() - 4) / 3;
+            loopRecJoyBtn_  .setBounds(row2.removeFromLeft(bw3)); row2.removeFromLeft(2);
+            loopRecGatesBtn_.setBounds(row2.removeFromLeft(bw3)); row2.removeFromLeft(2);
+            loopSyncBtn_    .setBounds(row2);
+        }
+
+        section.removeFromTop(4);
 
         // Subdiv + length
         auto ctrlRow = section.removeFromTop(60);
@@ -914,6 +958,27 @@ void PluginEditor::timerCallback()
     loopPlayBtn_ .setToggleState(proc_.looperIsPlaying(),   juce::dontSendNotification);
     loopRecBtn_  .setToggleState(proc_.looperIsRecording(), juce::dontSendNotification);
     loopDeleteBtn_.setEnabled(!proc_.looperIsPlaying());
+
+    // Update REC JOY / REC GATES / SYNC toggle appearances
+    loopRecJoyBtn_  .setToggleState(proc_.looperIsRecJoy(),    juce::dontSendNotification);
+    loopRecGatesBtn_.setToggleState(proc_.looperIsRecGates(),  juce::dontSendNotification);
+    loopSyncBtn_    .setToggleState(proc_.looperIsSyncToDaw(), juce::dontSendNotification);
+
+    // Cap-reached visual indicator: flash the REC JOY / REC GATES button text when buffer is full
+    static int capFlashCounter = 0;
+    if (proc_.looperIsCapReached())
+    {
+        capFlashCounter = (capFlashCounter + 1) % 6;  // 30 Hz / 6 ≈ ~5 Hz flash
+        const bool flashOn = (capFlashCounter < 3);
+        loopRecJoyBtn_  .setButtonText(flashOn ? "CAP!" : "REC JOY");
+        loopRecGatesBtn_.setButtonText(flashOn ? "CAP!" : "REC GATES");
+    }
+    else
+    {
+        loopRecJoyBtn_  .setButtonText("REC JOY");
+        loopRecGatesBtn_.setButtonText("REC GATES");
+        capFlashCounter = 0;
+    }
 
     // Mirror gamepad right stick to joystick if active
     const float gpX = proc_.getGamepad().getPitchX();
