@@ -288,15 +288,29 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     if (gamepad_.consumeLooperDelete())    looper_.deleteLoop();
 
     // ── Looper ────────────────────────────────────────────────────────────────
-    juce::AudioPlayHead::CurrentPositionInfo pos {};
-    const bool hasDaw = getPlayHead() && getPlayHead()->getCurrentPosition(pos);
+    // Extract DAW position using JUCE 8 API (Optional<PositionInfo>)
+    double ppqPos       = -1.0;
+    double dawBpm       = 120.0;
+    bool   isDawPlaying = false;
+    if (auto* head = getPlayHead())
+    {
+        if (auto posOpt = head->getPosition(); posOpt.hasValue())
+        {
+            isDawPlaying = posOpt->getIsPlaying();
+            if (auto ppq = posOpt->getPpqPosition(); ppq.hasValue())
+                ppqPos = *ppq;
+            if (auto bpmOpt = posOpt->getBpm(); bpmOpt.hasValue())
+                dawBpm = *bpmOpt;
+        }
+    }
+    const bool hasDaw = isDawPlaying;
 
     LooperEngine::ProcessParams lp;
     lp.sampleRate   = sampleRate_;
-    lp.bpm          = (hasDaw && pos.bpm > 0.0) ? pos.bpm : 120.0;
-    lp.ppqPosition  = (hasDaw && pos.isPlaying) ? pos.ppqPosition : -1.0;
+    lp.bpm          = (dawBpm > 0.0) ? dawBpm : 120.0;
+    lp.ppqPosition  = ppqPos;
     lp.blockSize    = blockSize;
-    lp.isDawPlaying = hasDaw && pos.isPlaying;
+    lp.isDawPlaying = isDawPlaying;
 
     const auto loopOut = looper_.process(lp);
 
@@ -314,13 +328,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     for (int v = 0; v < 4; ++v)
         freshPitches[v] = ChordEngine::computePitch(v, chordP);
 
-    // Looper gate overrides
-    for (int v = 0; v < 4; ++v)
-    {
-        if (loopOut.gateOn[v])  trigger_.setPadState(v, true);
-        if (loopOut.gateOff[v]) trigger_.setPadState(v, false);
-    }
-
     // ── Trigger system ────────────────────────────────────────────────────────
     const int voiceChs[4] =
     {
@@ -329,6 +336,22 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         (int)apvts.getRawParameterValue(ParamID::voiceCh2)->load(),
         (int)apvts.getRawParameterValue(ParamID::voiceCh3)->load(),
     };
+
+    // Looper gate playback: emit MIDI directly, bypassing TriggerSystem.
+    // This satisfies the locked decision: live pad input passes through independently
+    // because TriggerSystem is not informed of looper events — it only sees live pad state.
+    for (int v = 0; v < 4; ++v)
+    {
+        const int ch0 = voiceChs[v] - 1;  // 0-based for MIDI message
+        if (loopOut.gateOn[v])
+        {
+            midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, heldPitch_[v], (uint8_t)100), 0);
+        }
+        if (loopOut.gateOff[v])
+        {
+            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, heldPitch_[v], (uint8_t)0), 0);
+        }
+    }
 
     TriggerSource src[4];
     const juce::String srcIDs[4] = {
@@ -349,9 +372,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const int ch0 = voiceChs[voice] - 1;  // 0-based
         if (isOn)
         {
-            // Record gate event in looper
-            const double beatPos = (hasDaw && pos.isPlaying)
-                ? pos.ppqPosition
+            // Record gate event in looper (using JUCE 8 ppqPos variable)
+            const double beatPos = (hasDaw && ppqPos >= 0.0)
+                ? ppqPos
                 : looper_.getPlaybackBeat();
             looper_.recordGate(beatPos, voice, true);
 
@@ -360,7 +383,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         }
         else
         {
-            looper_.recordGate(looper_.getPlaybackBeat(), voice, false);
+            const double beatPos = (hasDaw && ppqPos >= 0.0)
+                ? ppqPos
+                : looper_.getPlaybackBeat();
+            looper_.recordGate(beatPos, voice, false);
             midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
         }
     };
@@ -391,10 +417,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             *apvts.getRawParameterValue("randomSubdiv" + juce::String(v)));
         tp.randomSubdiv[v] = static_cast<RandomSubdiv>(subdivIdx);
     }
-    // ppqPosition and isDawPlaying (from the existing AudioPlayHead query above)
-    if (hasDaw && pos.isPlaying)
+    // ppqPosition and isDawPlaying (from the JUCE 8 AudioPlayHead query above)
+    if (isDawPlaying && ppqPos >= 0.0)
     {
-        tp.ppqPosition  = pos.ppqPosition;
+        tp.ppqPosition  = ppqPos;
         tp.isDawPlaying = true;
     }
     else
@@ -409,8 +435,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
     // ── Looper joystick recording ─────────────────────────────────────────────
     {
-        const double beatPos = (hasDaw && pos.isPlaying)
-            ? pos.ppqPosition : looper_.getPlaybackBeat();
+        const double beatPos = (isDawPlaying && ppqPos >= 0.0)
+            ? ppqPos : looper_.getPlaybackBeat();
         looper_.recordJoystick(beatPos, chordP.joystickX, chordP.joystickY);
     }
 

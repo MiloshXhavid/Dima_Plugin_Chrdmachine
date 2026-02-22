@@ -59,6 +59,15 @@ public:
     bool looperIsPlaying()   const { return looper_.isPlaying(); }
     bool looperIsRecording() const { return looper_.isRecording(); }
 
+    // New looper API (Phase 05)
+    void looperSetRecJoy(bool b)     { looper_.setRecJoy(b);    }
+    void looperSetRecGates(bool b)   { looper_.setRecGates(b);  }
+    void looperSetSyncToDaw(bool b)  { looper_.setSyncToDaw(b); }
+    bool looperIsCapReached()  const { return looper_.isCapReached(); }
+    bool looperIsSyncToDaw()   const { return looper_.isSyncToDaw();  }
+    bool looperIsRecJoy()      const { return looper_.isRecJoy();     }
+    bool looperIsRecGates()    const { return looper_.isRecGates();   }
+
     // Gamepad
     GamepadInput& getGamepad() { return gamepad_; }
 
