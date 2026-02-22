@@ -179,7 +179,7 @@ PluginProcessor::createParameterLayout()
 // ─── Constructor ──────────────────────────────────────────────────────────────
 
 PluginProcessor::PluginProcessor()
-    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), false)),
+    : AudioProcessor(BusesProperties()),
       apvts(*this, nullptr, "ChordJoystick", createParameterLayout())
 {
 }
@@ -222,12 +222,9 @@ void PluginProcessor::processBlockBypassed(juce::AudioBuffer<float>& audio,
 
 bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
-    // No audio input ever
-    if (layouts.getMainInputChannels() != 0) return false;
-    // Allow zero output (Reaper/Bitwig/standalone) or stereo dummy output (Ableton Live)
-    const int outCh = layouts.getMainOutputChannels();
-    if (outCh != 0 && outCh != 2) return false;
-    return true;
+    // Pure MIDI effect — no audio buses
+    return layouts.getMainInputChannels() == 0
+        && layouts.getMainOutputChannels() == 0;
 }
 
 // ─── ChordParams builder ──────────────────────────────────────────────────────
