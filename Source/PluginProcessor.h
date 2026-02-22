@@ -71,6 +71,11 @@ private:
 
     double sampleRate_ = 44100.0;
 
+    // Previous joystick position — used to compute per-block deltas for JOY gate detection.
+    // Initialised to match joystickX/joystickY defaults so the first delta is 0.
+    float prevJoyX_ = 0.0f;
+    float prevJoyY_ = -1.0f;
+
     // Held (sample-and-hold) pitches for each voice
     std::array<int, 4> heldPitch_ {60, 64, 67, 70};
 

@@ -53,9 +53,14 @@ public:
         RandomSubdiv   randomSubdiv     = RandomSubdiv::Eighth;
         float          randomDensity    = 0.5f; // 0..1 probability
 
-        // Joystick movement threshold for joystick-source trigger
+        // Joystick absolute position (used by ChordEngine for pitch — kept for reference)
         float          joystickX        = 0.0f;
         float          joystickY        = 0.0f;
+
+        // Joystick delta since last block (used by JOY gate detection)
+        float          deltaX           = 0.0f;
+        float          deltaY           = 0.0f;
+
         float          joystickThreshold = 0.015f;  // configurable threshold (0.001..0.1)
     };
 

@@ -346,6 +346,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     tp.bpm               = lp.bpm;
     tp.joystickX         = chordP.joystickX;
     tp.joystickY         = chordP.joystickY;
+    // Compute per-block deltas for JOY gate detection.
+    // When the joystick is still these are 0 regardless of absolute position.
+    tp.deltaX            = chordP.joystickX - prevJoyX_;
+    tp.deltaY            = chordP.joystickY - prevJoyY_;
+    prevJoyX_            = chordP.joystickX;
+    prevJoyY_            = chordP.joystickY;
     tp.joystickThreshold = apvts.getRawParameterValue(ParamID::joystickThreshold)->load();
     for (int v = 0; v < 4; ++v)
     {

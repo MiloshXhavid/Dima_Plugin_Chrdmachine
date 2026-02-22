@@ -53,20 +53,25 @@ void TriggerSystem::processBlock(const ProcessParams& p)
     const double subdivBeats      = subdivisionBeats(p.randomSubdiv);
     const double samplesPerSubdiv = samplesPerBeat * subdivBeats;
 
-    // ── Per-axis absolute position for per-voice threshold detection ──────────
-    // Voices 0+1 (Root/Third) are driven by the Y axis.
-    // Voices 2+3 (Fifth/Tension) are driven by the X axis.
-    // We still track deltas only to update prevJoystick* for any legacy callers,
-    // but threshold detection now uses absolute position per voice.
+    // ── Per-axis delta magnitude for per-voice gate detection ─────────────────
+    // Gate detection uses how much the joystick MOVED this block (delta),
+    // not its absolute position.  A joystick resting at Y=-1.0 has absY=1.0
+    // which would permanently exceed any threshold; delta is 0 when still.
+    //
+    // Voices 0+1 (Root/Third) → Y-axis delta
+    // Voices 2+3 (Fifth/Tension) → X-axis delta
+    //
+    // prevJoystickX_/Y_ are kept in sync here so legacy callers still compile,
+    // but the JOY gate now uses the pre-computed deltaX/deltaY from ProcessParams.
     prevJoystickX_ = p.joystickX;
     prevJoystickY_ = p.joystickY;
 
-    const float absX = std::abs(p.joystickX);
-    const float absY = std::abs(p.joystickY);
+    const float absDeltaX = std::abs(p.deltaX);
+    const float absDeltaY = std::abs(p.deltaY);
 
-    // Returns the relevant axis magnitude for a given voice
+    // Returns the relevant axis delta magnitude for a given voice
     auto axisForVoice = [&](int v) -> float {
-        return (v < 2) ? absY : absX;
+        return (v < 2) ? absDeltaY : absDeltaX;
     };
 
     // ── Per-sample random clock ───────────────────────────────────────────────
