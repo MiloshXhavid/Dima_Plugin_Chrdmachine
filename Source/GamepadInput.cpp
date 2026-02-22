@@ -14,12 +14,14 @@ GamepadInput::GamepadInput()
     // Without this, SDL2 on Windows tries to process WM_DEVICECHANGE on the
     // calling thread. DAW plugin threads have no message loop → crash on load.
     SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 
     if (SDL_Init(SDL_INIT_GAMECONTROLLER) != 0)
     {
         DBG("SDL_Init failed: " << SDL_GetError());
         return;
     }
+    sdlInitialised_ = true;
 
     tryOpenController();
     startTimerHz(60);
@@ -29,7 +31,8 @@ GamepadInput::~GamepadInput()
 {
     stopTimer();
     closeController();
-    SDL_Quit();
+    if (sdlInitialised_)
+        SDL_Quit();
 }
 
 void GamepadInput::tryOpenController()

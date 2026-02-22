@@ -51,6 +51,12 @@ namespace ParamID
     // Looper
     static const juce::String looperSubdiv     = "looperSubdiv";
     static const juce::String looperLength     = "looperLength";
+
+    // Slew (portamento per voice)
+    static const juce::String slewVoice0       = "slewVoice0";
+    static const juce::String slewVoice1       = "slewVoice1";
+    static const juce::String slewVoice2       = "slewVoice2";
+    static const juce::String slewVoice3       = "slewVoice3";
 }
 
 // ─── Parameter layout ─────────────────────────────────────────────────────────
@@ -161,16 +167,19 @@ PluginProcessor::createParameterLayout()
               { "3/4", "4/4", "5/4", "7/8", "9/8", "11/8" }, 1);
     addInt   (ParamID::looperLength, "Loop Length (bars)", 1, 16, 2);
 
+    // ── Slew (portamento per voice) ───────────────────────────────────────────
+    addInt(ParamID::slewVoice0, "Root Slew",    0, 127, 0);
+    addInt(ParamID::slewVoice1, "Third Slew",   0, 127, 0);
+    addInt(ParamID::slewVoice2, "Fifth Slew",   0, 127, 0);
+    addInt(ParamID::slewVoice3, "Tension Slew", 0, 127, 0);
+
     return layout;
 }
 
 // ─── Constructor ──────────────────────────────────────────────────────────────
 
 PluginProcessor::PluginProcessor()
-    : AudioProcessor(
-          juce::PluginHostType().isAbletonLive()
-              ? BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), false)
-              : BusesProperties()),
+    : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), false)),
       apvts(*this, nullptr, "ChordJoystick", createParameterLayout())
 {
 }
@@ -383,6 +392,19 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const int ch0 = voiceChs[voice] - 1;  // 0-based
         if (isOn)
         {
+            // Slew (portamento): CC65 (on/off) + CC5 (time) before note-on
+            const int slewVal = (int)apvts.getRawParameterValue(
+                "slewVoice" + juce::String(voice))->load();
+            if (slewVal > 0)
+            {
+                midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 65, 127), sampleOff);  // portamento on
+                midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1,  5, slewVal), sampleOff);  // portamento time
+            }
+            else
+            {
+                midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 65, 0), sampleOff);  // portamento off
+            }
+
             // Record gate event in looper (using JUCE 8 ppqPos variable)
             const double beatPos = (hasDaw && ppqPos >= 0.0)
                 ? ppqPos

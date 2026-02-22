@@ -567,7 +567,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         *p.apvts.getParameter("randomGateTime"), randomGateTimeKnob_);
 
     // Sync toggle
-    randomSyncButton_.setButtonText("SYNC");
+    randomSyncButton_.setButtonText("RND SYNC");
     randomSyncButton_.setClickingTogglesState(true);
     randomSyncButton_.setToggleState(true, juce::dontSendNotification);
     randomSyncButton_.setTooltip("When ON: random triggers only fire while DAW plays. When OFF: free tempo.");
@@ -626,7 +626,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     // New looper mode buttons (Phase 05)
     loopRecJoyBtn_.setButtonText("REC JOY");
     loopRecGatesBtn_.setButtonText("REC GATES");
-    loopSyncBtn_.setButtonText("DAW");
+    loopSyncBtn_.setButtonText("DAW SYNC");
 
     loopRecJoyBtn_.setClickingTogglesState(true);
     loopRecGatesBtn_.setClickingTogglesState(true);
@@ -688,6 +688,19 @@ PluginEditor::PluginEditor(PluginProcessor& p)
                                         juce::dontSendNotification);
         });
     };
+
+    // ── Slew knobs ────────────────────────────────────────────────────────────
+    {
+        static const juce::String slewLabels[4] = { "Root Slew", "3rd Slew", "5th Slew", "Ten Slew" };
+        for (int v = 0; v < 4; ++v)
+        {
+            styleKnob(slewKnob_[v]);
+            styleLabel(slewLabel_[v], slewLabels[v]);
+            addAndMakeVisible(slewKnob_[v]);
+            addAndMakeVisible(slewLabel_[v]);
+            slewAtt_[v] = std::make_unique<SliderAtt>(p.apvts, "slewVoice" + juce::String(v), slewKnob_[v]);
+        }
+    }
 
     // Channel conflict warning
     channelConflictLabel_.setText("! Channel conflict", juce::dontSendNotification);
@@ -838,6 +851,20 @@ void PluginEditor::resized()
 
     left.removeFromTop(6);
 
+    // Slew knobs (per voice, aligned with chord/octave columns)
+    {
+        auto section = left.removeFromTop(66);
+        const int kw = section.getWidth() / 4;
+        for (int v = 0; v < 4; ++v)
+        {
+            auto col = section.removeFromLeft(kw);
+            slewLabel_[v].setBounds(col.removeFromTop(14));
+            slewKnob_[v] .setBounds(col);
+        }
+    }
+
+    left.removeFromTop(6);
+
     // Trigger sources
     {
         const int cw = left.getWidth() / 4;
@@ -915,7 +942,7 @@ void PluginEditor::resized()
 
         // Subdiv + length: two columns, label above control
         {
-            auto ctrlRow = section.removeFromTop(50);
+            auto ctrlRow = section.removeFromTop(70);
             const int halfW = (ctrlRow.getWidth() - 6) / 2;
 
             auto col1 = ctrlRow.removeFromLeft(halfW);
@@ -924,7 +951,8 @@ void PluginEditor::resized()
 
             ctrlRow.removeFromLeft(6);
             loopLengthLabel_.setBounds(ctrlRow.removeFromTop(14));
-            loopLengthKnob_ .setBounds(ctrlRow);
+            // Square knob: use height as side length so the rotary renders properly
+            loopLengthKnob_.setBounds(ctrlRow.removeFromLeft(ctrlRow.getHeight()));
         }
     }
 }

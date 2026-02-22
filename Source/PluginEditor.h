@@ -179,5 +179,10 @@ private:
     std::unique_ptr<ComboAtt>  trigSrcAtt_[4];
     std::unique_ptr<ComboAtt>  loopSubdivAtt_;
 
+    // ── Slew (portamento per voice) ───────────────────────────────────────────
+    std::array<juce::Slider, 4>               slewKnob_;
+    std::array<juce::Label,  4>               slewLabel_;
+    std::array<std::unique_ptr<SliderAtt>, 4> slewAtt_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };
