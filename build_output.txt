@@ -1,0 +1,45 @@
+05-03 Task 1: Release VST3 Build + Full Test Suite
+===================================================
+Date: 2026-02-22
+
+STEP 1 — CMake configure
+  Generator: Visual Studio 18 2026
+  Status: Configuring done / Generating done / Build files written
+  Result: PASS
+
+STEP 2 — Release VST3 build
+  Target: ChordJoystick_VST3
+  Config: Release
+  Output: build\ChordJoystick_artefacts\Release\VST3\ChordJoystick.vst3\Contents\x86_64-win\ChordJoystick.vst3
+  Errors: 0
+  Warnings: 0
+  Auto-installed to: C:\Program Files\Common Files\VST3\ChordJoystick.vst3
+  Result: PASS
+
+STEP 3 — Catch2 test suite (Debug config)
+  Target: ChordJoystickTests
+  Runner: ctest --build-config Debug --output-on-failure
+  Tests run: 26 / 26
+  Tests passed: 26
+  Tests failed: 0
+  Total time: 0.74 sec
+  Result: PASS
+
+  Test breakdown:
+    01-06  ScaleQuantizer tests (6/6 passed)
+    07-15  ChordEngine tests (9/9 passed)
+    16-26  LooperEngine tests (11/11 passed)
+
+STEP 4 — Mutex grep verification
+  Files checked: Source/LooperEngine.h, Source/LooperEngine.cpp
+  Patterns: std::mutex, lock_guard, eventsMutex_
+  Matches in LooperEngine.h: 1 comment only ("// LOCK-FREE DESIGN: No std::mutex anywhere in the audio-thread call path.")
+  Matches in LooperEngine.cpp: 0
+  Actual mutex declarations/uses: NONE
+  Result: PASS
+
+SUMMARY
+  Release VST3 built and installed: YES
+  26/26 Catch2 tests passing: YES
+  No mutex in LooperEngine audio path: YES
+  All Task 1 criteria met: YES
