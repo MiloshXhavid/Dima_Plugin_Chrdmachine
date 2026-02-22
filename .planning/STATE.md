@@ -8,22 +8,22 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 
 ## Current Position
 
-- **Phase:** 01 of 7 — Build Foundation and JUCE Version Lock
-- **Plan:** 01-02 (next)
-- **Status:** in-progress
+- **Phase:** 03 of 7 — Core MIDI Output and Note-Off Guarantee
+- **Plan:** 03-01 (not started)
+- **Status:** pending
 
 ## Progress
 
 ```
-Phase 01 [██░░░░░░░░]   Build Foundation    (1/2 plans complete)
-Phase 02 [░░░░░░░░░░]   Engine Validation
+Phase 01 [████░░░░░░]   Build Foundation    (partial — plugin crashes in Ableton)
+Phase 02 [──────────]   Engine Validation   (skipped — no Catch2 per user preference)
 Phase 03 [░░░░░░░░░░]   Core MIDI Output
 Phase 04 [░░░░░░░░░░]   Trigger Sources
 Phase 05 [░░░░░░░░░░]   Looper Hardening
 Phase 06 [░░░░░░░░░░]   SDL2 Gamepad
 Phase 07 [░░░░░░░░░░]   Distribution
 
-Overall: [░░░░░░░░░░] ~7% (plan 01-01 complete)
+Overall: [░░░░░░░░░░] ~10% (Phase 01 partial, Phase 02 skipped)
 ```
 
 ## What's Been Built
@@ -56,10 +56,12 @@ Overall: [░░░░░░░░░░] ~7% (plan 01-01 complete)
 ## Known Issues (Must Fix Before Shipping)
 
 1. ~~**JUCE pinned to `origin/master`**~~ — FIXED in 01-01 (now 8.0.4).
-2. **std::mutex in LooperEngine processBlock** — Blocks audio thread. Fix in Phase 05.
-3. **Filter CC (CC71/CC74) emitted unconditionally** — Floods synth at ~175 msgs/sec when no gamepad. Fix in Phase 06.
-4. **releaseResources() is empty** — Stuck notes on transport stop. Fix in Phase 03.
-5. **SDL_Init/SDL_Quit per instance** — Multi-instance race condition. Fix in Phase 06.
+2. **[BLOCKER] Plugin crashes on load in Ableton Live 11** — appears in browser, crashes on instantiation. SDL_HINT_JOYSTICK_THREAD fix applied, root cause unresolved. Must fix before Phase 03 DAW testing.
+3. **std::mutex in LooperEngine processBlock** — Blocks audio thread. Fix in Phase 05.
+4. **Filter CC (CC71/CC74) emitted unconditionally** — Floods synth at ~175 msgs/sec when no gamepad. Fix in Phase 06.
+5. **releaseResources() is empty** — Stuck notes on transport stop. Fix in Phase 03.
+6. **SDL_Init/SDL_Quit per instance** — Multi-instance race condition. Fix in Phase 06.
+7. **COPY_PLUGIN_AFTER_BUILD requires elevated process** — manual copy needed each rebuild.
 
 ## Pending Todos
 
@@ -67,11 +69,11 @@ Overall: [░░░░░░░░░░] ~7% (plan 01-01 complete)
 
 ## Blockers / Concerns
 
-- SDL2 testing: confirm SDL_INIT_GAMECONTROLLER works without video subsystem in DAW
+- **[ACTIVE BLOCKER]** Plugin crashes on Ableton instantiation — PluginEditor or COM threading likely cause
 - Ableton MIDI routing: empirical testing required (no definitive documentation)
 
 ## Session Continuity
 
 Last session: 2026-02-22
-Stopped at: Completed 01-01-PLAN.md — build verified, ChordJoystick.vst3 installed
-Resume file: .planning/phases/01-build-foundation-and-juce-version-lock/01-02-PLAN.md
+Stopped at: Phase 01 partial — advancing to Phase 03 by user decision. Phase 02 skipped (no Catch2).
+Resume file: .planning/phases/03-core-midi-output/
