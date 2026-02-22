@@ -12,22 +12,27 @@ FetchContent_Declare(
   GIT_TAG origin/master
 )
 
-# Configure JUCE
+# Configure JUCE - Disable AUv3/Standalone for now (not needed for current task)
 set(JUCE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(JUCE_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
 set(JUCE_AUDIO_PLUGINS_AS_VST3 ON CACHE BOOL "" FORCE)
-set(JUCE_AUDIO_PLUGINS_AS_AUV3 ON CACHE BOOL "" FORCE)
-set(JUCE_AUDIO_PLUGINS_AS_STANDALONE ON CACHE BOOL "" FORCE)
+set(JUCE_AUDIO_PLUGINS_AS_AUV3 OFF CACHE BOOL "" FORCE)
+set(JUCE_AUDIO_PLUGINS_AS_STANDALONE OFF CACHE BOOL "" FORCE)
+set(JUCE_AUDIO_PLUGINS_AS_VST2 OFF CACHE BOOL "" FORCE)
+set(JUCE_FORCE_USE_LEGACY_PARAM_IDS ON CACHE BOOL "" FORCE)
+
+# Add explicit compile definition for VST3
+add_compile_definitions(JUCE_VST3_CAN_REPLACE_VST2=0)
 
 FetchContent_MakeAvailable(juce)
 
-# Plugin configuration
+# Plugin configuration - MIDI Controller (not Synth)
 juce_add_plugin(ChordJoystick
   PRODUCT_NAME "ChordJoystick"
-  FORMATS VST3 AUv3 Standalone
+  FORMATS VST3
   PLUGIN_MANUFACTURER_CODE "ChJo"
   PLUGIN_CODE "ChJo"
-  VST3_CATEGORIES Instrument
+  VST3_CATEGORIES Effect
   COPY_PLUGIN_AFTER_BUILD TRUE
 )
 
