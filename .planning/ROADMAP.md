@@ -33,7 +33,7 @@ Plans:
 
 **Status:** COMPLETE (2/2 plans done — checkpoint approved)
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 02-01-PLAN.md — Add Catch2 v3.8.1 FetchContent + ChordJoystickTests CMake target + ScaleQuantizer test suite — DONE: 218 assertions green

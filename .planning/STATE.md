@@ -10,7 +10,7 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 
 - **Phase:** 02 of 7 — Core Engine Validation
 - **Plan:** 02-02 (complete — checkpoint approved by user)
-- **Status:** complete — Phase 02 fully done; ready for Phase 03
+- **Status:** Milestone complete
 
 ## Progress
 
