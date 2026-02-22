@@ -6,6 +6,7 @@ TriggerSystem::TriggerSystem()
     for (auto& a : padPressed_)   a.store(false);
     for (auto& a : padJustFired_) a.store(false);
     for (auto& a : gateOpen_)     a.store(false);
+    joystickStillSamples_.fill(0);
 }
 
 // ── UI / gamepad thread ───────────────────────────────────────────────────────
@@ -98,6 +99,9 @@ void TriggerSystem::processBlock(const ProcessParams& p)
         {
             if (joyAboveThreshold)
             {
+                // Reset stillness counter — joystick is moving.
+                joystickStillSamples_[v] = 0;
+
                 if (!gateOpen_[v].load())
                 {
                     // Gate was closed — open it with a note-on at the current pitch.
@@ -123,7 +127,22 @@ void TriggerSystem::processBlock(const ProcessParams& p)
                     // else: same pitch zone, gate holds — do nothing.
                 }
             }
-            // else: below threshold — gate stays open at joyActivePitch_[v], do nothing.
+            else
+            {
+                // Below threshold — accumulate stillness samples.
+                joystickStillSamples_[v] += p.blockSize;
+                const int closeAfter = static_cast<int>(0.050f * p.sampleRate); // 50ms debounce
+                if (gateOpen_[v].load() && joystickStillSamples_[v] >= closeAfter)
+                {
+                    // Joystick has been still for 50ms — close the gate.
+                    const int oldPitch = joyActivePitch_[v];
+                    p.onNote(v, oldPitch, false, 0);
+                    gateOpen_[v].store(false);
+                    activePitch_[v]          = -1;
+                    joyActivePitch_[v]       = -1;
+                    joystickStillSamples_[v] = 0;
+                }
+            }
 
             // Skip the common trigger path for Joystick source (handled inline above).
             trigger = false;
@@ -155,8 +174,9 @@ void TriggerSystem::resetAllGates()
         // (We cannot call p.onNote here since there is no active ProcessParams,
         //  so callers must flush MIDI from processBlockBypassed before calling this.)
         gateOpen_[v].store(false);
-        activePitch_[v]    = -1;
-        joyActivePitch_[v] = -1;
+        activePitch_[v]          = -1;
+        joyActivePitch_[v]       = -1;
+        joystickStillSamples_[v] = 0;
         padPressed_[v].store(false);
         padJustFired_[v].store(false);
     }
