@@ -167,6 +167,11 @@ PluginProcessor::createParameterLayout()
               { "3/4", "4/4", "5/4", "7/8", "9/8", "11/8" }, 1);
     addInt   (ParamID::looperLength, "Loop Length (bars)", 1, 16, 2);
 
+    // ── Filter CC live display (read-only from DAW perspective) ──────────────
+    // Updated every timer tick from audio-thread atomics so DAW can see stick movement.
+    addFloat("filterCutLive", "Filter Cut CC", 0.0f, 127.0f, 0.0f);
+    addFloat("filterResLive", "Filter Res CC", 0.0f, 127.0f, 0.0f);
+
     // ── Slew (portamento per voice) ───────────────────────────────────────────
     addInt(ParamID::slewVoice0, "Root Slew",    0, 127, 0);
     addInt(ParamID::slewVoice1, "Third Slew",   0, 127, 0);
@@ -302,20 +307,39 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
     const int blockSize = audio.getNumSamples();
 
-    // ── Poll gamepad triggers (consume edge-flags) ────────────────────────────
+    // ── Poll gamepad triggers (momentary held-state gates + D-pad) ───────────
     if (gamepad_.isConnected() && gamepadActive_.load(std::memory_order_relaxed))
     {
+        // Momentary voice gates: rising edge → note-on, falling edge → note-off
         for (int v = 0; v < 4; ++v)
-            if (gamepad_.consumeVoiceTrigger(v))
-                trigger_.setPadState(v, true);    // instant press
+        {
+            const bool held = gamepad_.getVoiceHeld(v);
+            if (held && !gamepadVoiceWasHeld_[v])       trigger_.setPadState(v, true);
+            else if (!held && gamepadVoiceWasHeld_[v])  trigger_.setPadState(v, false);
+            gamepadVoiceWasHeld_[v] = held;
+        }
 
-        if (gamepad_.consumeAllNotesTrigger())
-            trigger_.triggerAllNotes();
+        if (gamepad_.consumeAllNotesTrigger()) trigger_.triggerAllNotes();
 
         if (gamepad_.consumeLooperStartStop()) looper_.startStop();
         if (gamepad_.consumeLooperRecord())    looper_.record();
         if (gamepad_.consumeLooperReset())     looper_.reset();
         if (gamepad_.consumeLooperDelete())    looper_.deleteLoop();
+
+        // D-pad: BPM and looper recording toggles
+        if (gamepad_.consumeDpadUp())    pendingBpmDelta_.fetch_add(1,  std::memory_order_relaxed);
+        if (gamepad_.consumeDpadDown())  pendingBpmDelta_.fetch_add(-1, std::memory_order_relaxed);
+        if (gamepad_.consumeDpadLeft())  looperSetRecGates(!looperIsRecGates());
+        if (gamepad_.consumeDpadRight()) looperSetRecJoy(!looperIsRecJoy());
+    }
+    else
+    {
+        // Gamepad inactive or disconnected — release any previously held voices
+        for (int v = 0; v < 4; ++v)
+        {
+            if (gamepadVoiceWasHeld_[v]) trigger_.setPadState(v, false);
+            gamepadVoiceWasHeld_[v] = false;
+        }
     }
 
     // ── Looper ────────────────────────────────────────────────────────────────
@@ -445,6 +469,24 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
         }
     };
+    tp.onPitchBend = [&](int voice, int bendVal14, int ch0, int sampleOff)
+    {
+        // bendVal14: bipolar -8192..+8191; JUCE pitchWheel expects 0..16383 (8192 = centre).
+        // On gate-open TriggerSystem passes bendVal14 == 0, so we also send the RPN to
+        // configure the synth pitch-bend range to ±24 semitones (matching kBendSemitones).
+        const int juceWheel = juce::jlimit(0, 16383, bendVal14 + 8192);
+        if (bendVal14 == 0)
+        {
+            // Set pitch-bend range via RPN 0: ±24 semitones, then null-select RPN.
+            midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 101,   0), sampleOff);  // RPN MSB
+            midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 100,   0), sampleOff);  // RPN LSB = 0 (pitch bend range)
+            midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1,   6,  24), sampleOff);  // data MSB = 24 semitones
+            midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1,  38,   0), sampleOff);  // data LSB = 0 cents
+            midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 101, 127), sampleOff);  // null RPN
+            midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 100, 127), sampleOff);  // null RPN
+        }
+        midi.addEvent(juce::MidiMessage::pitchWheel(ch0 + 1, juceWheel), sampleOff);
+    };
     tp.blockSize         = blockSize;
     tp.sampleRate        = sampleRate_;
     tp.bpm               = lp.bpm;
@@ -542,6 +584,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, ccRes), 0);
                 prevCcRes_.store(ccRes, std::memory_order_relaxed);
             }
+            // Expose live CC values to DAW parameter display (consumed on message thread).
+            filterCutDisplay_.store(static_cast<float>(ccCut), std::memory_order_relaxed);
+            filterResDisplay_.store(static_cast<float>(ccRes), std::memory_order_relaxed);
         }
     }
 

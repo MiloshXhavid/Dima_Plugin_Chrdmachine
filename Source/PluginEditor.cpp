@@ -46,17 +46,17 @@ void JoystickPad::paint(juce::Graphics& g)
     g.fillRoundedRectangle(b, 6.0f);
 
     // 12-step grid: 11 interior lines per axis (one per semitone at 1-octave range)
-    g.setColour(Clr::panel.withAlpha(0.35f));
+    g.setColour(juce::Colours::white.withAlpha(0.18f));
     for (int i = 1; i < 12; ++i)
     {
         const float t = static_cast<float>(i) / 12.0f;
-        g.drawLine(b.getX() + t * b.getWidth(),  b.getY(), b.getX() + t * b.getWidth(),  b.getBottom(), 0.5f);
-        g.drawLine(b.getX(), b.getY() + t * b.getHeight(), b.getRight(), b.getY() + t * b.getHeight(), 0.5f);
+        g.drawLine(b.getX() + t * b.getWidth(),  b.getY(), b.getX() + t * b.getWidth(),  b.getBottom(), 1.0f);
+        g.drawLine(b.getX(), b.getY() + t * b.getHeight(), b.getRight(), b.getY() + t * b.getHeight(), 1.0f);
     }
-    // Centre cross slightly brighter (root/unison reference)
-    g.setColour(Clr::panel);
-    g.drawLine(b.getCentreX(), b.getY(),    b.getCentreX(), b.getBottom(), 1.0f);
-    g.drawLine(b.getX(),       b.getCentreY(), b.getRight(), b.getCentreY(), 1.0f);
+    // Centre cross brighter (root/unison reference)
+    g.setColour(juce::Colours::white.withAlpha(0.38f));
+    g.drawLine(b.getCentreX(), b.getY(),    b.getCentreX(), b.getBottom(), 1.5f);
+    g.drawLine(b.getX(),       b.getCentreY(), b.getRight(), b.getCentreY(), 1.5f);
 
     // Cursor dot
     const float cx = (proc_.joystickX.load() + 1.0f) * 0.5f * b.getWidth()  + b.getX();
@@ -312,11 +312,9 @@ void ScaleKeyboard::mouseDown(const juce::MouseEvent& e)
 void ScaleKeyboard::paint(juce::Graphics& g)
 {
     // Colours for scale-highlight states:
-    //   custom-toggle active (editing mode)  -> use highlight red as before
-    //   scale preset active note             -> teal / active-teal
-    //   normal inactive                      -> white / black
-    static const juce::Colour scaleNatural { 0xFF4DD0E1 };   // light cyan-teal (white key in scale)
-    static const juce::Colour scaleSharp   { 0xFF00838F };   // darker teal (black key in scale)
+    //   custom-toggle active (editing mode)  -> red highlight (editing)
+    //   scale preset active note             -> red highlight / darker red
+    //   normal inactive                      -> white / black like piano keys
 
     // When Custom toggle is on, show user-toggled notes (edit mode).
     // When off, show preset scale highlights shifted by transpose.
@@ -339,7 +337,7 @@ void ScaleKeyboard::paint(juce::Graphics& g)
         {
             // Preset mode: highlight = scale pitch class after transpose
             const bool inScale = (activeScaleMask_ >> n) & 1;
-            fill = inScale ? scaleNatural : juce::Colours::white;
+            fill = inScale ? Clr::highlight : juce::Colours::white;
         }
 
         g.setColour(fill);
@@ -361,7 +359,7 @@ void ScaleKeyboard::paint(juce::Graphics& g)
         else
         {
             const bool inScale = (activeScaleMask_ >> n) & 1;
-            fill = inScale ? scaleSharp : juce::Colours::black;
+            fill = inScale ? Clr::highlight.darker(0.35f) : juce::Colours::black;
         }
 
         g.setColour(fill);
@@ -436,8 +434,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     // ── Joystick ──────────────────────────────────────────────────────────────
     addAndMakeVisible(joystickPad_);
-    styleKnob(joyXAttenKnob_); styleLabel(joyXAttenLabel_, "X Range");
-    styleKnob(joyYAttenKnob_); styleLabel(joyYAttenLabel_, "Y Range");
+    styleKnob(joyXAttenKnob_); joyXAttenKnob_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); styleLabel(joyXAttenLabel_, "X Range");
+    styleKnob(joyYAttenKnob_); joyYAttenKnob_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); styleLabel(joyYAttenLabel_, "Y Range");
     addAndMakeVisible(joyXAttenKnob_); addAndMakeVisible(joyXAttenLabel_);
     addAndMakeVisible(joyYAttenKnob_); addAndMakeVisible(joyYAttenLabel_);
 
@@ -588,8 +586,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         *p.apvts.getParameter("randomFreeTempo"), randomFreeTempoKnob_);
 
     // ── Filter attenuators ────────────────────────────────────────────────────
-    styleKnob(filterXAttenKnob_); styleLabel(filterXAttenLabel_, "Cut Atten");
-    styleKnob(filterYAttenKnob_); styleLabel(filterYAttenLabel_, "Res Atten");
+    styleKnob(filterXAttenKnob_); filterXAttenKnob_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); styleLabel(filterXAttenLabel_, "Cut Atten");
+    styleKnob(filterYAttenKnob_); filterYAttenKnob_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0); styleLabel(filterYAttenLabel_, "Res Atten");
     addAndMakeVisible(filterXAttenKnob_); addAndMakeVisible(filterXAttenLabel_);
     addAndMakeVisible(filterYAttenKnob_); addAndMakeVisible(filterYAttenLabel_);
     filterXAttenAtt_ = std::make_unique<SliderAtt>(p.apvts, "filterXAtten", filterXAttenKnob_);
@@ -602,7 +600,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     thresholdSlider_.setColour(juce::Slider::trackColourId,      Clr::highlight);
     thresholdSlider_.setColour(juce::Slider::backgroundColourId, Clr::accent);
     thresholdSlider_.setColour(juce::Slider::thumbColourId,      Clr::text);
-    addAndMakeVisible(thresholdSlider_);
+    addChildComponent(thresholdSlider_);  // hidden — default 0.015f is the tuned value
     thresholdSliderAtt_ = std::make_unique<juce::SliderParameterAttachment>(
         *p.apvts.getParameter("joystickThreshold"), thresholdSlider_);
 
@@ -612,7 +610,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     loopResetBtn_.setButtonText("RST");
     loopDeleteBtn_.setButtonText("DEL");
 
-    styleButton(loopPlayBtn_);  styleButton(loopRecBtn_, juce::Colour(0xFF8B0000));
+    styleButton(loopPlayBtn_);  styleButton(loopRecBtn_);
     styleButton(loopResetBtn_); styleButton(loopDeleteBtn_);
 
     loopPlayBtn_.onClick  = [this] { proc_.looperStartStop(); };
@@ -632,8 +630,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     loopRecGatesBtn_.setClickingTogglesState(true);
     loopSyncBtn_.setClickingTogglesState(true);
 
-    styleButton(loopRecJoyBtn_,   juce::Colour(0xFF8B0000));
-    styleButton(loopRecGatesBtn_, juce::Colour(0xFF8B0000));
+    styleButton(loopRecJoyBtn_);
+    styleButton(loopRecGatesBtn_);
     styleButton(loopSyncBtn_);
 
     loopRecJoyBtn_.onClick = [this] {
@@ -670,7 +668,14 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(loopSubdivBox_); addAndMakeVisible(loopSubdivLabel_);
     loopSubdivAtt_ = std::make_unique<ComboAtt>(p.apvts, "looperSubdiv", loopSubdivBox_);
 
-    styleKnob(loopLengthKnob_); styleLabel(loopLengthLabel_, "Bars");
+    loopLengthKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
+    loopLengthKnob_.setTextBoxStyle(juce::Slider::TextBoxRight, false, 28, 18);
+    loopLengthKnob_.setColour(juce::Slider::trackColourId,          Clr::highlight);
+    loopLengthKnob_.setColour(juce::Slider::backgroundColourId,     Clr::accent);
+    loopLengthKnob_.setColour(juce::Slider::thumbColourId,          Clr::text);
+    loopLengthKnob_.setColour(juce::Slider::textBoxTextColourId,    Clr::textDim);
+    loopLengthKnob_.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    styleLabel(loopLengthLabel_, "Bars");
     addAndMakeVisible(loopLengthKnob_); addAndMakeVisible(loopLengthLabel_);
     loopLengthAtt_ = std::make_unique<SliderAtt>(p.apvts, "looperLength", loopLengthKnob_);
 
@@ -770,17 +775,24 @@ void PluginEditor::resized()
 
     right.removeFromTop(6);
 
-    // Attenuators
+    // Attenuator knobs: one per pad column — X Range / Y Range / Cut / Res
     {
-        auto row = right.removeFromTop(70);
-        joyXAttenLabel_.setBounds(row.removeFromLeft(60).removeFromTop(16));
-        joyXAttenKnob_ .setBounds(row.removeFromLeft(60));
-        row.removeFromLeft(8);
-        joyYAttenLabel_.setBounds(row.removeFromLeft(60).removeFromTop(16));
-        joyYAttenKnob_ .setBounds(row.removeFromLeft(60));
+        auto row = right.removeFromTop(74);
+        const int pw = (row.getWidth() - 9) / 4;
+        juce::Slider* knobs[4]  = { &joyXAttenKnob_,   &joyYAttenKnob_,
+                                    &filterXAttenKnob_, &filterYAttenKnob_ };
+        juce::Label*  lbls[4]   = { &joyXAttenLabel_,  &joyYAttenLabel_,
+                                    &filterXAttenLabel_, &filterYAttenLabel_ };
+        for (int v = 0; v < 4; ++v)
+        {
+            auto col = row.removeFromLeft(pw);
+            lbls[v]->setBounds(col.removeFromTop(14));
+            knobs[v]->setBounds(col);
+            if (v < 3) row.removeFromLeft(3);
+        }
     }
 
-    right.removeFromTop(6);
+    right.removeFromTop(4);
 
     // Touchplates + hold buttons (HOLD overlaid on top 18px of each pad)
     {
@@ -804,27 +816,7 @@ void PluginEditor::resized()
         padAll_.setBounds(row);
     }
 
-    right.removeFromTop(3);
-
-    // Filter attenuators
-    {
-        auto row = right.removeFromTop(70);
-        filterXAttenLabel_.setBounds(row.removeFromLeft(60).removeFromTop(16));
-        filterXAttenKnob_ .setBounds(row.removeFromLeft(60));
-        row.removeFromLeft(8);
-        filterYAttenLabel_.setBounds(row.removeFromLeft(60).removeFromTop(16));
-        filterYAttenKnob_ .setBounds(row.removeFromLeft(60));
-    }
-
     right.removeFromTop(6);
-
-    // Threshold slider row (THRESH label + horizontal slider)
-    {
-        auto threshRow = right.removeFromTop(24);
-        thresholdSlider_.setBounds(threshRow);
-    }
-
-    right.removeFromTop(4);
 
     // Gamepad status row: [GAMEPAD ON/OFF] button + status label side by side
     {
@@ -969,26 +961,25 @@ void PluginEditor::resized()
         {
             auto row2 = section.removeFromTop(28);
             const int bw3 = (row2.getWidth() - 4) / 3;
-            loopRecJoyBtn_  .setBounds(row2.removeFromLeft(bw3)); row2.removeFromLeft(2);
             loopRecGatesBtn_.setBounds(row2.removeFromLeft(bw3)); row2.removeFromLeft(2);
+            loopRecJoyBtn_  .setBounds(row2.removeFromLeft(bw3)); row2.removeFromLeft(2);
             loopSyncBtn_    .setBounds(row2);
         }
 
         section.removeFromTop(4);
 
-        // Subdiv + length: two columns, label above control
+        // Subdiv + length: narrow combo for time sig, slider for bars
         {
-            auto ctrlRow = section.removeFromTop(70);
-            const int halfW = (ctrlRow.getWidth() - 6) / 2;
+            auto ctrlRow = section.removeFromTop(46);
+            const int subdivW = 58;  // enough for "11/8" + arrow
 
-            auto col1 = ctrlRow.removeFromLeft(halfW);
+            auto col1 = ctrlRow.removeFromLeft(subdivW);
             loopSubdivLabel_.setBounds(col1.removeFromTop(14));
             loopSubdivBox_  .setBounds(col1.removeFromTop(22));
 
             ctrlRow.removeFromLeft(6);
             loopLengthLabel_.setBounds(ctrlRow.removeFromTop(14));
-            // Square knob: use height as side length so the rotary renders properly
-            loopLengthKnob_.setBounds(ctrlRow.removeFromLeft(ctrlRow.getHeight()));
+            loopLengthKnob_.setBounds(ctrlRow.removeFromTop(22));
         }
     }
 }
@@ -1076,6 +1067,33 @@ void PluginEditor::timerCallback()
         const float bpm = proc_.getEffectiveBpm();
         bpmDisplayLabel_.setText(juce::String(bpm, 1) + " BPM", juce::dontSendNotification);
     }
+
+    // Update DAW-visible filter CC display parameters from live audio-thread values
+    {
+        auto* pCut = proc_.apvts.getParameter("filterCutLive");
+        auto* pRes = proc_.apvts.getParameter("filterResLive");
+        if (pCut && pRes)
+        {
+            pCut->setValueNotifyingHost(pCut->convertTo0to1(proc_.filterCutDisplay_.load(std::memory_order_relaxed)));
+            pRes->setValueNotifyingHost(pRes->convertTo0to1(proc_.filterResDisplay_.load(std::memory_order_relaxed)));
+        }
+    }
+
+    // Apply pending BPM delta from D-pad (audio thread sets, message thread applies)
+    {
+        const int bpmDelta = proc_.pendingBpmDelta_.exchange(0, std::memory_order_relaxed);
+        if (bpmDelta != 0)
+        {
+            auto* p = proc_.apvts.getParameter("randomFreeTempo");
+            const float cur = proc_.apvts.getRawParameterValue("randomFreeTempo")->load();
+            const float newVal = juce::jlimit(30.0f, 240.0f, cur + static_cast<float>(bpmDelta));
+            p->setValueNotifyingHost(p->convertTo0to1(newVal));
+        }
+    }
+
+    // Sync looper recording buttons (gamepad D-pad may have toggled them from audio thread)
+    loopRecGatesBtn_.setToggleState(proc_.looperIsRecGates(), juce::dontSendNotification);
+    loopRecJoyBtn_  .setToggleState(proc_.looperIsRecJoy(),   juce::dontSendNotification);
 
     // Mirror gamepad right stick to joystick if active
     const float gpX = proc_.getGamepad().getPitchX();

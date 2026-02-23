@@ -8,8 +8,8 @@ TriggerSystem::TriggerSystem()
     for (auto& a : gateOpen_)     a.store(false);
     joyActivePitch_.fill(-1);
     joystickStillSamples_.fill(0);
-    joyPendingPitch_.fill(-1);
-    joyPendingSamples_.fill(0);
+    joyOpenPitch_.fill(-1);
+    joyLastBend_.fill(0);
 }
 
 // ── UI / gamepad thread ───────────────────────────────────────────────────────
@@ -158,95 +158,75 @@ void TriggerSystem::processBlock(const ProcessParams& p)
             const float axisMag           = axisForVoice(v);
             const bool  joyAboveThreshold = axisMag > p.joystickThreshold;
 
+            // Pitch bend range for JOY mode: ±kBendSemitones semitones maps to full 14-bit range.
+            static constexpr int kBendSemitones = 24;
+
             if (joyAboveThreshold)
             {
-                // Axis is active — reset gate-close stillness counter.
+                // Axis is moving — reset gate-close stillness counter.
                 joystickStillSamples_[v] = 0;
 
                 if (!gateOpen_[v].load())
                 {
                     // ── Gate OPENS ────────────────────────────────────────────
                     const int pitch = p.heldPitches[v];
-                    fireNoteOn(v, pitch, ch - 1, 0, p);   // sets gateOpen_ and activePitch_
-                    joyActivePitch_[v]    = pitch;
-                    joyPendingPitch_[v]   = -1;
-                    joyPendingSamples_[v] = 0;
+                    // Reset pitch bend to centre before note-on so the synth starts clean.
+                    if (p.onPitchBend) p.onPitchBend(v, 0, ch - 1, 0);
+                    joyLastBend_[v] = 0;
+                    fireNoteOn(v, pitch, ch - 1, 0, p);
+                    joyActivePitch_[v] = pitch;
+                    joyOpenPitch_[v]   = pitch;
                 }
                 else
                 {
-                    // ── Gate OPEN + above threshold ───────────────────────────
-                    // Retrigger only after the new pitch has been stable for 30ms.
-                    const int newPitch    = p.heldPitches[v];
-                    const int debounce    = static_cast<int>(0.030f * static_cast<float>(p.sampleRate));
-
-                    if (newPitch == joyActivePitch_[v])
+                    // ── Gate OPEN + moving: pitch CV via pitch bend ───────────
+                    // No retrigger — shift pitch by bending from the open-pitch reference.
+                    if (p.onPitchBend && joyOpenPitch_[v] >= 0)
                     {
-                        // Still on same pitch — reset pending candidate.
-                        joyPendingPitch_[v]   = -1;
-                        joyPendingSamples_[v] = 0;
-                    }
-                    else
-                    {
-                        if (newPitch == joyPendingPitch_[v])
+                        const int semiOffset = p.heldPitches[v] - joyOpenPitch_[v];
+                        const int bendVal    = juce::jlimit(-8192, 8191,
+                            static_cast<int>(semiOffset * (8191.0f / (float)kBendSemitones)));
+                        if (bendVal != joyLastBend_[v])
                         {
-                            // Same candidate as last block — accumulate dwell time.
-                            joyPendingSamples_[v] += p.blockSize;
-
-                            if (joyPendingSamples_[v] >= debounce)
-                            {
-                                // Pitch committed after 30ms — retrigger.
-                                fireNoteOff(v, ch - 1, 0, p);
-                                fireNoteOn (v, newPitch, ch - 1, 0, p);
-                                joyActivePitch_[v]    = newPitch;
-                                joyPendingPitch_[v]   = -1;
-                                joyPendingSamples_[v] = 0;
-                            }
-                        }
-                        else
-                        {
-                            // New candidate pitch — start fresh debounce.
-                            joyPendingPitch_[v]   = newPitch;
-                            joyPendingSamples_[v] = 0;
+                            p.onPitchBend(v, bendVal, ch - 1, 0);
+                            joyLastBend_[v] = bendVal;
                         }
                     }
                 }
             }
             else
             {
-                // Below open threshold — apply hysteresis:
-                // Only count toward gate-close when the axis is near rest
-                // (< 15% of open threshold).  A brief dip just below threshold
-                // (e.g. mid-movement) resets the counter instead, keeping the
-                // gate open and preventing spurious same-pitch retriggering.
+                // Below open threshold — hysteresis: only count toward gate-close
+                // when axis is very near rest (< 15% of threshold).
                 const float closeThreshold = p.joystickThreshold * 0.15f;
-                const int   closeAfter     = static_cast<int>(0.050f * static_cast<float>(p.sampleRate)); // 50ms debounce
+                const int   closeAfter     = static_cast<int>(1.0f * static_cast<float>(p.sampleRate)); // 1 second
 
                 if (axisMag < closeThreshold)
                 {
-                    // Axis is near rest — accumulate stillness counter.
                     joystickStillSamples_[v] += p.blockSize;
 
                     if (gateOpen_[v].load() && joystickStillSamples_[v] >= closeAfter)
                     {
-                        // Axis has been near rest for 50ms — close the gate.
-                        fireNoteOff(v, ch - 1, 0, p);   // clears gateOpen_ and activePitch_
+                        // 1 second of stillness — reset bend then close gate.
+                        if (p.onPitchBend && joyLastBend_[v] != 0)
+                        {
+                            p.onPitchBend(v, 0, ch - 1, 0);
+                            joyLastBend_[v] = 0;
+                        }
+                        fireNoteOff(v, ch - 1, 0, p);
                         joyActivePitch_[v]       = -1;
+                        joyOpenPitch_[v]         = -1;
                         joystickStillSamples_[v] = 0;
-                        joyPendingPitch_[v]      = -1;
-                        joyPendingSamples_[v]    = 0;
                     }
                 }
                 else
                 {
-                    // Magnitude between closeThreshold and joystickThreshold —
-                    // axis is hovering near threshold mid-movement.
-                    // Reset the stillness counter so a brief dip doesn't
-                    // eventually close the gate.
+                    // Hovering near threshold — reset counter to prevent premature close.
                     joystickStillSamples_[v] = 0;
                 }
             }
 
-            // Skip the common trigger path for Joystick source (handled inline above).
+            // Skip the common trigger path — JOY source handled inline above.
             trigger = false;
         }
         else if (src == TriggerSource::Random)
@@ -313,9 +293,9 @@ void TriggerSystem::resetAllGates()
         gateOpen_[v].store(false);
         activePitch_[v]          = -1;
         joyActivePitch_[v]       = -1;
+        joyOpenPitch_[v]         = -1;
+        joyLastBend_[v]          = 0;
         joystickStillSamples_[v] = 0;
-        joyPendingPitch_[v]      = -1;
-        joyPendingSamples_[v]    = 0;
         padPressed_[v].store(false);
         padJustFired_[v].store(false);
 

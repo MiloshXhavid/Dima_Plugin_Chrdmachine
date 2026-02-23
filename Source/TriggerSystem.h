@@ -22,7 +22,12 @@ class TriggerSystem
 public:
     // Called when a note-on or note-off must fire.
     // (voiceIndex, midiPitch, isNoteOn, sampleOffset)
-    using NoteCallback = std::function<void(int, int, bool, int)>;
+    using NoteCallback      = std::function<void(int, int, bool, int)>;
+
+    // Called when pitch bend must be emitted for a JOY-mode voice.
+    // (voiceIndex, bipolar14bit [-8192..+8191], channel0based, sampleOffset)
+    // +8191 = full up (bend range semitones), 0 = centre, -8192 = full down.
+    using PitchBendCallback = std::function<void(int, int, int, int)>;
 
     TriggerSystem();
 
@@ -40,7 +45,8 @@ public:
     // ── Called from audio thread (processBlock) ───────────────────────────────
     struct ProcessParams
     {
-        NoteCallback   onNote;
+        NoteCallback        onNote;
+        PitchBendCallback   onPitchBend;   // optional — null = no pitch bend
         int            blockSize        = 512;
         double         sampleRate       = 44100.0;
         double         bpm              = 120.0;
@@ -96,13 +102,11 @@ private:
     std::array<std::atomic<bool>, 4> gateOpen_     {};
     std::array<int, 4>               activePitch_  {-1,-1,-1,-1};
 
-    // Joystick continuous gate state (retrigger model)
+    // Joystick continuous gate state
     std::array<int, 4>           joyActivePitch_       {-1,-1,-1,-1}; // pitch currently sounding per voice, -1 = none
-    std::array<int, 4>           joystickStillSamples_ {0, 0, 0, 0};  // counts samples below threshold for 50ms debounce
-
-    // Pitch-change debounce: pending candidate pitch + accumulated samples at that pitch
-    std::array<int, 4>           joyPendingPitch_       {-1,-1,-1,-1}; // candidate new pitch (-1 = none)
-    std::array<int, 4>           joyPendingSamples_     {0, 0, 0, 0};  // samples spent at joyPendingPitch_
+    std::array<int, 4>           joystickStillSamples_ {0, 0, 0, 0};  // counts samples below threshold for 1s gate-close
+    std::array<int, 4>           joyOpenPitch_         {-1,-1,-1,-1}; // pitch at gate-open (pitch bend reference)
+    std::array<int, 4>           joyLastBend_          {0, 0, 0, 0};  // last sent pitch bend value (dedup)
 
     // Random trigger clock (per-voice)
     std::array<double,   4> randomPhase_         {};           // samples since last subdiv (fallback clock)

@@ -79,6 +79,14 @@ public:
     void setGamepadActive(bool b) { gamepadActive_.store(b, std::memory_order_relaxed); }
     bool isGamepadActive()  const { return gamepadActive_.load(std::memory_order_relaxed); }
 
+    // D-pad BPM delta: set from processBlock (audio thread), consumed on message thread
+    std::atomic<int> pendingBpmDelta_ { 0 };
+
+    // Live filter CC values — written by audio thread, read by message thread (timerCallback)
+    // to call setValueNotifyingHost on "filterCutLive" / "filterResLive" APVTS params.
+    std::atomic<float> filterCutDisplay_ { 0.f };
+    std::atomic<float> filterResDisplay_ { 0.f };
+
     // ── APVTS ─────────────────────────────────────────────────────────────────
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -101,6 +109,8 @@ private:
     // Written by PluginEditor toggle button (message thread).
     // Read in processBlock (audio thread). No mutex — atomic only.
     std::atomic<bool> gamepadActive_ { true };
+
+    bool gamepadVoiceWasHeld_[4] = {};  // audio thread only — tracks previous gamepad held state
 
     // ── CC dedup: last emitted integer values for CC74 and CC71 ──────────────
     // -1 = never sent; forces emission on first connect.

@@ -14,10 +14,10 @@ typedef struct _SDL_GameController SDL_GameController;
 //
 // PS Controller mapping:
 //   Right stick X/Y  → pitch joystick
-//   R1 (RightShoulder) → voice 0 (Root)
-//   R2 (RightTrigger)  → voice 1 (Third)
-//   L1 (LeftShoulder)  → voice 2 (Fifth)
-//   L2 (LeftTrigger)   → voice 3 (Tension)
+//   L1 (LeftShoulder)  → voice 0 (Root)
+//   L2 (LeftTrigger)   → voice 1 (Third)
+//   R1 (RightShoulder) → voice 2 (Fifth)
+//   R2 (RightTrigger)  → voice 3 (Tension)
 //   Left stick X       → filter cutoff (CC74)
 //   Left stick Y       → filter resonance (CC71)
 //   L3 (LeftStick btn) → all-notes trigger
@@ -40,6 +40,7 @@ public:
 
     // ── Voice trigger rising-edge flags (consume = clear after read) ──────────
     bool consumeVoiceTrigger(int voice);  // returns true once per press
+    bool getVoiceHeld(int v) const { return (v >= 0 && v < 4) ? voiceHeld_[v].load() : false; }
 
     // ── Special button rising-edge flags ─────────────────────────────────────
     bool consumeAllNotesTrigger();
@@ -47,6 +48,10 @@ public:
     bool consumeLooperRecord();
     bool consumeLooperReset();
     bool consumeLooperDelete();
+    bool consumeDpadUp()    { return dpadUpTrig_.exchange(false); }
+    bool consumeDpadDown()  { return dpadDownTrig_.exchange(false); }
+    bool consumeDpadLeft()  { return dpadLeftTrig_.exchange(false); }
+    bool consumeDpadRight() { return dpadRightTrig_.exchange(false); }
 
     // Whether a gamepad is connected
     bool isConnected() const { return controller_ != nullptr; }
@@ -90,6 +95,13 @@ private:
     float lastFilterY_ = 0.0f;
 
     std::atomic<bool>  voiceTrig_[4]    {};
+    std::atomic<bool>  voiceHeld_[4]    {};  // current debounced held state (for note-off)
+
+    std::atomic<bool>  dpadUpTrig_    {false};
+    std::atomic<bool>  dpadDownTrig_  {false};
+    std::atomic<bool>  dpadLeftTrig_  {false};
+    std::atomic<bool>  dpadRightTrig_ {false};
+
     std::atomic<bool>  allNotesTrig_    {false};
     std::atomic<bool>  looperStartStop_ {false};
     std::atomic<bool>  looperRecord_    {false};
@@ -110,6 +122,10 @@ private:
     ButtonState btnRecord_;
     ButtonState btnReset_;
     ButtonState btnDelete_;
+    ButtonState btnDpadUp_;
+    ButtonState btnDpadDown_;
+    ButtonState btnDpadLeft_;
+    ButtonState btnDpadRight_;
 
     bool sdlInitialised_    = false;  // guard: SdlContext::release() only if acquire() succeeded
 };

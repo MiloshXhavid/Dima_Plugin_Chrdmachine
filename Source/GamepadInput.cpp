@@ -125,22 +125,23 @@ void GamepadInput::timerCallback()
         filterY_.store(lastFilterY_, std::memory_order_relaxed);
     }
 
-    // ── Voice triggers: R1/R2/L1/L2 (debounced) ──────────────────────────────
-    // R1 = right shoulder button  → voice 0 (Root)
-    // R2 = right trigger (axis)   → voice 1 (Third)
-    // L1 = left  shoulder button  → voice 2 (Fifth)
-    // L2 = left  trigger  (axis)  → voice 3 (Tension)
+    // ── Voice triggers: L1/L2/R1/R2 (debounced) ──────────────────────────────
+    // L1 = left  shoulder button  → voice 0 (Root)
+    // L2 = left  trigger  (axis)  → voice 1 (Third)
+    // R1 = right shoulder button  → voice 2 (Fifth)
+    // R2 = right trigger (axis)   → voice 3 (Tension)
     const bool curVoice[4] =
     {
-        SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) != 0,
-        triggerPressed(SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_TRIGGERRIGHT)),
         SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_LEFTSHOULDER)  != 0,
         triggerPressed(SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_TRIGGERLEFT)),
+        SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) != 0,
+        triggerPressed(SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_TRIGGERRIGHT)),
     };
     for (int i = 0; i < 4; ++i)
     {
         if (debounce(curVoice[i], btnVoice_[i]) && btnVoice_[i].prev)
             voiceTrig_[i].store(true);  // rising edge after debounce
+        voiceHeld_[i].store(btnVoice_[i].prev, std::memory_order_relaxed);
     }
 
     // ── L3 (left stick click) → all-notes trigger ─────────────────────────────
@@ -162,6 +163,19 @@ void GamepadInput::timerCallback()
         if (debounce(curDel, btnDelete_)    && btnDelete_.prev)    looperDelete_.store(true);
         if (debounce(curRst, btnReset_)     && btnReset_.prev)     looperReset_.store(true);
         if (debounce(curRec, btnRecord_)    && btnRecord_.prev)    looperRecord_.store(true);
+    }
+
+    // ── D-pad: BPM and looper recording toggles ──────────────────────────────
+    {
+        const bool curUp    = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_DPAD_UP)    != 0;
+        const bool curDown  = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_DPAD_DOWN)  != 0;
+        const bool curLeft  = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_DPAD_LEFT)  != 0;
+        const bool curRight = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) != 0;
+
+        if (debounce(curUp,    btnDpadUp_)    && btnDpadUp_.prev)    dpadUpTrig_.store(true);
+        if (debounce(curDown,  btnDpadDown_)  && btnDpadDown_.prev)  dpadDownTrig_.store(true);
+        if (debounce(curLeft,  btnDpadLeft_)  && btnDpadLeft_.prev)  dpadLeftTrig_.store(true);
+        if (debounce(curRight, btnDpadRight_) && btnDpadRight_.prev) dpadRightTrig_.store(true);
     }
 }
 
