@@ -152,7 +152,8 @@ private:
     juce::TextButton  loopPlayBtn_, loopRecBtn_, loopResetBtn_, loopDeleteBtn_;
     juce::TextButton  loopRecJoyBtn_;    // [REC JOY]
     juce::TextButton  loopRecGatesBtn_;  // [REC GATES]
-    juce::TextButton  loopSyncBtn_;      // [SYNC]
+    juce::TextButton  loopSyncBtn_;      // [DAW SYNC]
+    juce::TextButton  loopRecWaitBtn_;   // [REC TOUCH] wait-for-trigger toggle
     juce::Label       bpmDisplayLabel_;  // shows effective BPM (free tempo or DAW BPM)
     juce::ComboBox    loopSubdivBox_;
     juce::Label       loopSubdivLabel_;

@@ -294,18 +294,44 @@ juce::Rectangle<float> ScaleKeyboard::noteRect(int note) const
 
 void ScaleKeyboard::mouseDown(const juce::MouseEvent& e)
 {
-    // Find which key was clicked and toggle it
     for (int n = 0; n < 12; ++n)
     {
-        if (noteRect(n).contains(e.position))
+        if (!noteRect(n).contains(e.position))
+            continue;
+
+        // If in preset mode, copy the current preset (pre-transpose) into
+        // scaleNote0..11 before switching to edit mode, so the first click
+        // feels like "edit this preset" rather than "start from blank".
+        const bool useCustom = apvts_.getRawParameterValue("useCustomScale")->load() > 0.5f;
+        if (!useCustom)
         {
-            const bool cur = isNoteActive(n);
+            const int presetIdx = static_cast<int>(
+                apvts_.getRawParameterValue("scalePreset")->load());
+            const ScalePreset preset = static_cast<ScalePreset>(
+                juce::jlimit(0, (int)ScalePreset::COUNT - 1, presetIdx));
+            const int* pattern = ScaleQuantizer::getScalePattern(preset);
+            const int  size    = ScaleQuantizer::getScaleSize(preset);
+            bool pitchClasses[12] = {};
+            for (int i = 0; i < size; ++i)
+                pitchClasses[pattern[i]] = true;
+            for (int i = 0; i < 12; ++i)
+            {
+                if (auto* p = dynamic_cast<juce::AudioParameterBool*>(
+                        apvts_.getParameter("scaleNote" + juce::String(i))))
+                    *p = pitchClasses[i];
+            }
             if (auto* p = dynamic_cast<juce::AudioParameterBool*>(
-                    apvts_.getParameter("scaleNote" + juce::String(n))))
-                *p = !cur;
-            repaint();
-            return;
+                    apvts_.getParameter("useCustomScale")))
+                *p = true;
         }
+
+        // Toggle the clicked note
+        const bool cur = isNoteActive(n);
+        if (auto* p = dynamic_cast<juce::AudioParameterBool*>(
+                apvts_.getParameter("scaleNote" + juce::String(n))))
+            *p = !cur;
+        repaint();
+        return;
     }
 }
 
@@ -500,7 +526,6 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(scaleKeys_);
     addAndMakeVisible(scalePresetBox_);
     addAndMakeVisible(scalePresetLabel_);
-    addAndMakeVisible(customScaleToggle_);
 
     styleLabel(scalePresetLabel_, "Scale Preset");
     customScaleToggle_.setButtonText("Custom");
@@ -653,6 +678,16 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(loopRecJoyBtn_);
     addAndMakeVisible(loopRecGatesBtn_);
     addAndMakeVisible(loopSyncBtn_);
+
+    loopRecWaitBtn_.setButtonText("REC TOUCH");
+    loopRecWaitBtn_.setClickingTogglesState(true);
+    styleButton(loopRecWaitBtn_);
+    loopRecWaitBtn_.onClick = [this] {
+        const bool newVal = !proc_.looperIsRecWaitForTrigger();
+        proc_.looperSetRecWaitForTrigger(newVal);
+        loopRecWaitBtn_.setToggleState(newVal, juce::dontSendNotification);
+    };
+    addAndMakeVisible(loopRecWaitBtn_);
 
     bpmDisplayLabel_.setText("120.0 BPM", juce::dontSendNotification);
     bpmDisplayLabel_.setJustificationType(juce::Justification::centred);
@@ -833,12 +868,10 @@ void PluginEditor::resized()
 
     // Scale section
     {
-        auto section = left.removeFromTop(100);
+        auto section = left.removeFromTop(120);
         scalePresetLabel_.setBounds(section.removeFromTop(16));
         scalePresetBox_  .setBounds(section.removeFromTop(24));
-        customScaleToggle_.setBounds(section.removeFromLeft(70).removeFromTop(22));
-        section.removeFromTop(4);
-        scaleKeys_.setBounds(section.removeFromTop(50));
+        scaleKeys_       .setBounds(section.removeFromTop(80));
     }
 
     left.removeFromTop(6);
@@ -957,13 +990,14 @@ void PluginEditor::resized()
 
         section.removeFromTop(2);
 
-        // Buttons row 2: REC JOY / REC GATES / SYNC (three columns)
+        // Buttons row 2: REC GATES / REC JOY / DAW SYNC / REC TOUCH (four columns)
         {
             auto row2 = section.removeFromTop(28);
-            const int bw3 = (row2.getWidth() - 4) / 3;
-            loopRecGatesBtn_.setBounds(row2.removeFromLeft(bw3)); row2.removeFromLeft(2);
-            loopRecJoyBtn_  .setBounds(row2.removeFromLeft(bw3)); row2.removeFromLeft(2);
-            loopSyncBtn_    .setBounds(row2);
+            const int bw4 = (row2.getWidth() - 6) / 4;
+            loopRecGatesBtn_.setBounds(row2.removeFromLeft(bw4)); row2.removeFromLeft(2);
+            loopRecJoyBtn_  .setBounds(row2.removeFromLeft(bw4)); row2.removeFromLeft(2);
+            loopSyncBtn_    .setBounds(row2.removeFromLeft(bw4)); row2.removeFromLeft(2);
+            loopRecWaitBtn_ .setBounds(row2);
         }
 
         section.removeFromTop(4);
@@ -1041,10 +1075,11 @@ void PluginEditor::timerCallback()
     loopRecBtn_  .setToggleState(proc_.looperIsRecordArmed(), juce::dontSendNotification);
     loopDeleteBtn_.setEnabled(!proc_.looperIsPlaying());
 
-    // Update REC JOY / REC GATES / SYNC toggle appearances
-    loopRecJoyBtn_  .setToggleState(proc_.looperIsRecJoy(),    juce::dontSendNotification);
-    loopRecGatesBtn_.setToggleState(proc_.looperIsRecGates(),  juce::dontSendNotification);
-    loopSyncBtn_    .setToggleState(proc_.looperIsSyncToDaw(), juce::dontSendNotification);
+    // Update REC JOY / REC GATES / SYNC / REC TOUCH toggle appearances
+    loopRecJoyBtn_  .setToggleState(proc_.looperIsRecJoy(),             juce::dontSendNotification);
+    loopRecGatesBtn_.setToggleState(proc_.looperIsRecGates(),           juce::dontSendNotification);
+    loopSyncBtn_    .setToggleState(proc_.looperIsSyncToDaw(),          juce::dontSendNotification);
+    loopRecWaitBtn_ .setToggleState(proc_.looperIsRecWaitForTrigger(),  juce::dontSendNotification);
 
     // Cap-reached visual indicator: flash the REC JOY / REC GATES button text when buffer is full
     static int capFlashCounter = 0;

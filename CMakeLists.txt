@@ -103,11 +103,11 @@ juce_add_plugin(ChordJoystick
     FORMATS                 VST3
     PLUGIN_MANUFACTURER_CODE "MxCJ"
     PLUGIN_CODE             "CJoy"
-    VST3_CATEGORIES         "Instrument"
+    VST3_CATEGORIES         "Fx|MIDI"
     IS_SYNTH                FALSE
-    NEEDS_MIDI_INPUT        FALSE
+    NEEDS_MIDI_INPUT        TRUE
     NEEDS_MIDI_OUTPUT       TRUE
-    IS_MIDI_EFFECT          FALSE
+    IS_MIDI_EFFECT          TRUE
     COPY_PLUGIN_AFTER_BUILD TRUE
 )
 

@@ -432,9 +432,13 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     for (int v = 0; v < 4; ++v)
         heldPitch_[v] = freshPitches[v];
 
+    bool anyNoteOnThisBlock = false;
+
     TriggerSystem::ProcessParams tp;
     tp.onNote = [&](int voice, int pitch, bool isOn, int sampleOff)
     {
+        if (isOn) anyNoteOnThisBlock = true;
+
         const int ch0 = voiceChs[voice] - 1;  // 0-based
         if (isOn)
         {
@@ -529,6 +533,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     tp.randomFreeTempo = *apvts.getRawParameterValue("randomFreeTempo");
 
     trigger_.processBlock(tp);
+
+    // If looper is waiting for first trigger, activate recording on note-on.
+    if (anyNoteOnThisBlock)
+        looper_.activateRecordingNow();  // no-op if not wait-armed
 
     // ── Looper joystick recording ─────────────────────────────────────────────
     {

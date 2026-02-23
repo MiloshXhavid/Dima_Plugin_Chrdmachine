@@ -69,6 +69,10 @@ public:
     bool looperIsRecJoy()      const { return looper_.isRecJoy();     }
     bool looperIsRecGates()    const { return looper_.isRecGates();   }
 
+    void looperSetRecWaitForTrigger(bool b) { looper_.setRecWaitForTrigger(b); }
+    bool looperIsRecWaitForTrigger()  const { return looper_.isRecWaitForTrigger(); }
+    bool looperIsRecWaitArmed()       const { return looper_.isRecWaitArmed(); }
+
     // Effective BPM (DAW BPM when synced, free tempo otherwise) — read by UI
     float getEffectiveBpm() const { return effectiveBpm_.load(std::memory_order_relaxed); }
 

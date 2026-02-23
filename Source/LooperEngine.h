@@ -95,11 +95,18 @@ public:
     void setRecGates(bool b) { recGates_.store(b); }
     void setSyncToDaw(bool b){ syncToDaw_.store(b);}
 
-    bool isCapReached()  const { return capReached_.load();                              }
-    bool isRecordArmed() const { return recording_.load() || recordPending_.load();     }
-    bool isSyncToDaw()   const { return syncToDaw_.load();                              }
-    bool isRecJoy()      const { return recJoy_.load();                                 }
-    bool isRecGates()    const { return recGates_.load();                               }
+    bool isCapReached()  const { return capReached_.load();                                                    }
+    bool isRecordArmed() const { return recording_.load() || recordPending_.load() || recWaitArmed_.load(); }
+    bool isSyncToDaw()   const { return syncToDaw_.load();                                                  }
+    bool isRecJoy()      const { return recJoy_.load();                                                     }
+    bool isRecGates()    const { return recGates_.load();                                                   }
+
+    void setRecWaitForTrigger(bool b) { recWaitForTrigger_.store(b); }
+    bool isRecWaitForTrigger()  const { return recWaitForTrigger_.load(); }
+    bool isRecWaitArmed()       const { return recWaitArmed_.load(); }
+
+    // Called from audio thread when a note-on fires and recWaitArmed_ is set.
+    void activateRecordingNow();
 
     // ── Audio-thread interface ─────────────────────────────────────────────────
     // All three methods must only be called from the audio thread.
@@ -132,10 +139,12 @@ private:
     std::atomic<bool> playing_       { false };
     std::atomic<bool> recording_     { false };
     std::atomic<bool> recordPending_ { false }; // REC pressed, waiting for next valid clock
-    std::atomic<bool> recJoy_        { false };  // [REC JOY] armed
-    std::atomic<bool> recGates_      { false };  // [REC GATES] armed
-    std::atomic<bool> syncToDaw_     { false };  // [DAW] sync to DAW playhead
-    std::atomic<bool> capReached_    { false };  // overflow indicator for UI
+    std::atomic<bool> recJoy_            { false };  // [REC JOY] armed
+    std::atomic<bool> recGates_          { false };  // [REC GATES] armed
+    std::atomic<bool> syncToDaw_         { false };  // [DAW] sync to DAW playhead
+    std::atomic<bool> capReached_        { false };  // overflow indicator for UI
+    std::atomic<bool> recWaitForTrigger_ { false };  // mode: wait for trigger to start rec
+    std::atomic<bool> recWaitArmed_      { false };  // waiting for first note-on
 
     // ── Destructive op request flags (UI sets, audio thread executes) ─────────
     std::atomic<bool> deleteRequest_ { false };
@@ -147,6 +156,7 @@ private:
     float  lastRecordedX_   = 0.0f;  // for sparse joystick recording threshold
     float  lastRecordedY_   = 0.0f;
     bool   prevDawPlaying_  = false; // tracks DAW play/stop transitions for auto-stop/start
+    double recordedBeats_   = 0.0;   // beats recorded in current pass (auto-stop)
 
     // ── UI read-out — float atomic (lock-free on all targets, incl. 32-bit) ───
     std::atomic<float> playbackBeat_ { 0.0f };

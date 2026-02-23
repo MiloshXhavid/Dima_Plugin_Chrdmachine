@@ -74,9 +74,25 @@ void LooperEngine::record()
         return;
     }
 
+    // Cancel wait-for-trigger arm if already waiting.
+    if (recWaitArmed_.load())
+    {
+        recWaitArmed_.store(false);
+        return;
+    }
+
     // Arm: start playing if not already (REC implies PLAY).
     if (!playing_.load())
         playing_.store(true);
+
+    // If wait-for-trigger mode is ON, arm the wait state instead of arming
+    // recordPending_. Recording will start when activateRecordingNow() is called
+    // from the audio thread on the first note-on.
+    if (recWaitForTrigger_.load())
+    {
+        recWaitArmed_.store(true);
+        return;
+    }
 
     // Defer the actual recording_.store(true) to process() so it begins on the
     // next valid clock: immediately in free-running mode, or when DAW starts
@@ -94,6 +110,19 @@ void LooperEngine::deleteLoop()
 {
     // Audio thread services this at the top of process().
     deleteRequest_.store(true, std::memory_order_release);
+}
+
+// ─── activateRecordingNow (audio-thread-only) ─────────────────────────────────
+
+void LooperEngine::activateRecordingNow()
+{
+    ASSERT_AUDIO_THREAD();
+    if (!recWaitArmed_.load(std::memory_order_relaxed)) return;
+    recWaitArmed_.store(false, std::memory_order_relaxed);
+    capReached_.store(false, std::memory_order_relaxed);
+    fifo_.reset();
+    recordedBeats_ = 0.0;
+    recording_.store(true, std::memory_order_relaxed);
 }
 
 // ─── DAW sync anchor ─────────────────────────────────────────────────────────
@@ -372,6 +401,7 @@ LooperEngine::BlockOutput LooperEngine::process(const ProcessParams& p)
         capReached_.store(false, std::memory_order_relaxed);
         fifo_.reset();   // clean FIFO before new recording pass begins
         recording_.store(true, std::memory_order_relaxed);
+        recordedBeats_ = 0.0;   // reset counter for fresh recording pass
     }
 
     const double blockBeats = static_cast<double>(p.blockSize) / samplesPerBeat;
@@ -387,6 +417,24 @@ LooperEngine::BlockOutput LooperEngine::process(const ProcessParams& p)
         internalBeat_ += blockBeats;
         if (internalBeat_ >= loopLen)
             internalBeat_ = std::fmod(internalBeat_, loopLen);
+    }
+
+    // Auto-stop recording when loop length reached.
+    // Called from the audio thread; recording_ is set false before finaliseRecording()
+    // so no concurrent FIFO access occurs (recordGate/recordJoystick both early-return
+    // when recording_=false, and we are the only process() invocation).
+    if (recording_.load(std::memory_order_relaxed))
+    {
+        recordedBeats_ += blockBeats;
+        if (recordedBeats_ >= loopLen)
+        {
+            recording_.store(false, std::memory_order_relaxed);
+            finaliseRecording();       // merge FIFO → playbackStore_
+            internalBeat_  = 0.0;     // restart at loop head (free-running mode)
+            loopStartPpq_  = -1.0;    // re-anchor on next DAW play (DAW sync mode)
+            recordedBeats_ = 0.0;
+            // playing_ stays true — fall through to scan playbackStore_ this block
+        }
     }
 
     // ── Scan playbackStore_ ───────────────────────────────────────────────────
