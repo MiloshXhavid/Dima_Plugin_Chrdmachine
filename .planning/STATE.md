@@ -8,9 +8,9 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 
 ## Current Position
 
-- **Phase:** 06 of 7 — SDL2 Gamepad Integration — **IN PROGRESS**
-- **Plan:** 06-04 IN PROGRESS — Task 1 complete (commit + build green), awaiting Task 2 human DAW verification
-- **Status:** Checkpoint:human-verify — 8-test DAW verification required
+- **Phase:** 07 of 7 — Distribution and Release — **PENDING**
+- **Plan:** Ready to plan Phase 07
+- **Status:** Phase 06 COMPLETE — ready to plan Phase 07 (Distribution)
 
 ## Progress
 
@@ -20,10 +20,10 @@ Phase 02 [██████████]   Engine Validation   (COMPLETE — Sc
 Phase 03 [██████████]   Core MIDI Output    (COMPLETE — 2/2 plans done, all 6 DAW tests passed in Reaper)
 Phase 04 [████████░░]   Trigger Sources     (IN PROGRESS — 04-01+04-02 COMPLETE, 04-03 pending if planned)
 Phase 05 [██████████]   Looper Hardening    (COMPLETE — 3/3 plans done, Reaper+Ableton verified)
-Phase 06 [█████████░]   SDL2 Gamepad        (IN PROGRESS — 06-01+02+03+04 Task1 done: commit e6dd2a6 clean, build green; awaiting 8-test DAW checkpoint)
+Phase 06 [██████████]   SDL2 Gamepad        (COMPLETE — 4/4 plans done, all 8 DAW tests approved)
 Phase 07 [░░░░░░░░░░]   Distribution
 
-Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 complete, Phase 03 complete, Phase 04 complete, Phase 05 complete)
+Overall: [███████░░░] ~80% (Phase 01 partial, Phases 02-06 complete, Phase 07 pending)
 ```
 
 ## What's Been Built
@@ -70,6 +70,10 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 - **[NEW] Looper auto-stop: recordedBeats_ accumulator fires finaliseRecording() when loop length reached; [REC TOUCH] button defers recording start until next note-on (recWaitForTrigger_/recWaitArmed_ atomics) (06-03 / c1a1f19)**
 - **[NEW] 06-03 DAW verification COMPLETE: all 7 gamepad tests passed (connection indicator, right stick, voice buttons, no CC flood, CC reset, toggle, hot-plug)**
 - **[NEW] 06-04 Task 1 COMPLETE (e6dd2a6): looper auto-stop (recordedBeats_ accumulator), REC TOUCH (recWaitForTrigger_/recWaitArmed_), always-editable scale keyboard, CMakeLists Ableton fix — build Release green, VST3 installed**
+- **[NEW] 06-04 fix (f6e80b1): globalTranspose 0..11 (key selector); JOY gate model changed to position-based close (stillnessCounter_ ≥ sampleRate ≈1s near center) — eliminates retrigger-on-hold bug**
+- **[NEW] 06-04 fix (33ad08a): L3 (left stick click) = ALL touchplate via setPadState() held model for PAD-mode voices; globalTranspose text box shows note names (C/C#·Db/D/.../B) via AudioParameterIntAttributes**
+- **[NEW] 06-04 DAW CHECKPOINT APPROVED: all 8 tests passed — UI layout, scale keyboard red, REC TOUCH, looper auto-stop, gamepad remap (L1=Root/L2=Third/R1=Fifth/R2=Tension), filter CC DAW visibility, JOY gate hold, JOY pitch CV (pitch bend ±24st)**
+- **[NEW] Phase 06 COMPLETE: SDL-01..SDL-05 all satisfied; process-level SDL singleton, CC gating, disconnect all-notes-off, GAMEPAD toggle, full gamepad DAW verification****
 
 ## Key Decisions
 
@@ -126,6 +130,12 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 | gamepadActive_ defaults to true | Existing instances behave as before (gamepad active) until PluginEditor toggle is added in 06-03 |
 | prevCcCut_/prevCcRes_ reset to -1 on disconnect | Forces fresh CC emission on next connect instead of suppressing a valid zero value |
 | setDeadZone called unconditionally each block | getRawParameterValue atomic load is cheap; avoids parameter listener complexity |
+| JOY gate: position-based close (stillnessCounter_) | Gate holds while abs(axis) > threshold; closes only after ≥1s near center — eliminates retrigger when holding joystick steady at a pitch |
+| globalTranspose 0..11 (key selector) | One-octave range is correct for key selection; per-voice octave offsets handle pitch range; narrowed from ±24 |
+| Note-name display on transpose via AudioParameterIntAttributes | valueToText lambda with kNoteNames[] — JUCE 8.0.4 compatible, no deprecation warnings |
+| L3 = setPadState() held model | Matches on-screen ALL touchplate; triggerAllNotes() momentary approach removed |
+| filterCutLive_/filterResLive_ APVTS params at 30 Hz | setValueNotifyingHost from timerCallback bridges CC values to DAW automation lane without audio-thread APVTS write |
+| RPN 0 on gate-open, bend = (pitch − gatePitch) × 2730 | JOY pitch CV via standard pitch bend; 0x2000 reset on gate-close; no retrigger |
 
 ## Known Issues (Must Fix Before Shipping)
 
@@ -149,5 +159,5 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: 06-04 Task 1 complete (commit e6dd2a6, build green). Awaiting Task 2 checkpoint:human-verify — 8-test DAW verification.
-Resume file: .planning/phases/06-sdl2-gamepad-integration/06-04-PLAN.md (Task 2 pending)
+Stopped at: Phase 06 fully closed out. Phase 07 (Distribution) is next.
+Resume file: none — ready to plan Phase 07
