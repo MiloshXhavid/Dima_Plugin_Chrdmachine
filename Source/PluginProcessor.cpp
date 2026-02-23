@@ -182,6 +182,21 @@ PluginProcessor::PluginProcessor()
     : AudioProcessor(BusesProperties()),
       apvts(*this, nullptr, "ChordJoystick", createParameterLayout())
 {
+    gamepad_.onConnectionChange = [this](bool connected)
+    {
+        if (!connected)
+        {
+            pendingAllNotesOff_.store(true, std::memory_order_release);
+            pendingCcReset_.store(true,     std::memory_order_release);
+        }
+        // CC dedup state reset so next connect gets a fresh emission.
+        // prevCcCut_/prevCcRes_ are atomic<int> — safe to write from message thread.
+        if (!connected)
+        {
+            prevCcCut_.store(-1, std::memory_order_relaxed);
+            prevCcRes_.store(-1, std::memory_order_relaxed);
+        }
+    };
 }
 
 PluginProcessor::~PluginProcessor() {}
@@ -278,20 +293,30 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     audio.clear();
     midi.clear();
 
+    // Feed current joystick threshold to GamepadInput dead zone each block.
+    // GamepadInput::setDeadZone is thread-safe (atomic store, relaxed).
+    {
+        const float dz = apvts.getRawParameterValue(ParamID::joystickThreshold)->load();
+        gamepad_.setDeadZone(dz);
+    }
+
     const int blockSize = audio.getNumSamples();
 
     // ── Poll gamepad triggers (consume edge-flags) ────────────────────────────
-    for (int v = 0; v < 4; ++v)
-        if (gamepad_.consumeVoiceTrigger(v))
-            trigger_.setPadState(v, true);    // instant press
+    if (gamepad_.isConnected() && gamepadActive_.load(std::memory_order_relaxed))
+    {
+        for (int v = 0; v < 4; ++v)
+            if (gamepad_.consumeVoiceTrigger(v))
+                trigger_.setPadState(v, true);    // instant press
 
-    if (gamepad_.consumeAllNotesTrigger())
-        trigger_.triggerAllNotes();
+        if (gamepad_.consumeAllNotesTrigger())
+            trigger_.triggerAllNotes();
 
-    if (gamepad_.consumeLooperStartStop()) looper_.startStop();
-    if (gamepad_.consumeLooperRecord())    looper_.record();
-    if (gamepad_.consumeLooperReset())     looper_.reset();
-    if (gamepad_.consumeLooperDelete())    looper_.deleteLoop();
+        if (gamepad_.consumeLooperStartStop()) looper_.startStop();
+        if (gamepad_.consumeLooperRecord())    looper_.record();
+        if (gamepad_.consumeLooperReset())     looper_.reset();
+        if (gamepad_.consumeLooperDelete())    looper_.deleteLoop();
+    }
 
     // ── Looper ────────────────────────────────────────────────────────────────
     // Extract DAW position using JUCE 8 API (Optional<PositionInfo>)
@@ -471,19 +496,53 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     }
 
     // ── Filter CC from gamepad left stick ─────────────────────────────────────
+    // Gated on isConnected() AND gamepadActive_.
+    // CC reset on disconnect via pendingCcReset_ atomic flag (set from message thread).
+    // All-notes-off on disconnect via pendingAllNotesOff_ (set from message thread).
     {
-        const float xAtten = apvts.getRawParameterValue(ParamID::filterXAtten)->load();
-        const float yAtten = apvts.getRawParameterValue(ParamID::filterYAtten)->load();
-        const int   fCh    = (int)apvts.getRawParameterValue(ParamID::filterMidiCh)->load();
+        const int fCh = (int)apvts.getRawParameterValue(ParamID::filterMidiCh)->load();
 
-        // Map (-1..+1) → (0..atten), clamp to 0..127
-        const float gfx = gamepad_.getFilterX();
-        const float gfy = gamepad_.getFilterY();
-        const int ccCut  = juce::jlimit(0, 127, (int)(((gfx + 1.0f) * 0.5f) * xAtten));
-        const int ccRes  = juce::jlimit(0, 127, (int)(((gfy + 1.0f) * 0.5f) * yAtten));
+        // Handle disconnect events — emit MIDI from audio thread via pending flags.
+        if (pendingAllNotesOff_.exchange(false, std::memory_order_acq_rel))
+        {
+            for (int v = 0; v < 4; ++v)
+                midi.addEvent(juce::MidiMessage::allNotesOff(voiceChs[v]), 0);
+        }
 
-        midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 74, ccCut), 0);
-        midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, ccRes), 0);
+        if (pendingCcReset_.exchange(false, std::memory_order_acq_rel))
+        {
+            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 74, 0), 0);
+            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, 0), 0);
+            prevCcCut_.store(0, std::memory_order_relaxed);
+            prevCcRes_.store(0, std::memory_order_relaxed);
+        }
+
+        // Normal CC emission — only when connected AND this instance is active.
+        if (gamepad_.isConnected() && gamepadActive_.load(std::memory_order_relaxed))
+        {
+            const float xAtten = apvts.getRawParameterValue(ParamID::filterXAtten)->load();
+            const float yAtten = apvts.getRawParameterValue(ParamID::filterYAtten)->load();
+
+            const float gfx = gamepad_.getFilterX();
+            const float gfy = gamepad_.getFilterY();
+
+            // Map (-1..+1) → (0..atten), clamp to 0..127
+            const int ccCut = juce::jlimit(0, 127, (int)(((gfx + 1.0f) * 0.5f) * xAtten));
+            const int ccRes = juce::jlimit(0, 127, (int)(((gfy + 1.0f) * 0.5f) * yAtten));
+
+            // Value-change dedup: only emit if integer value changed by >= 1.
+            // prevCcCut_/prevCcRes_ are atomic<int>; use load/store for thread safety.
+            if (ccCut != prevCcCut_.load(std::memory_order_relaxed))
+            {
+                midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 74, ccCut), 0);
+                prevCcCut_.store(ccCut, std::memory_order_relaxed);
+            }
+            if (ccRes != prevCcRes_.load(std::memory_order_relaxed))
+            {
+                midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, ccRes), 0);
+                prevCcRes_.store(ccRes, std::memory_order_relaxed);
+            }
+        }
     }
 
     // ── Looper config sync ────────────────────────────────────────────────────
