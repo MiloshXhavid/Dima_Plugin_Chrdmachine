@@ -10,7 +10,7 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 
 - **Phase:** 07 of 7 — Distribution and Release — **COMPLETE**
 - **Plan:** 07-02 COMPLETE (2/2 plans done) — Phase 07 fully done
-- **Status:** Installer EXE produced (3.5 MB), dev-machine smoke test PASSED, clean-machine test APPROVED — ready for Gumroad upload
+- **Status:** Milestone complete
 
 ## Progress
 
