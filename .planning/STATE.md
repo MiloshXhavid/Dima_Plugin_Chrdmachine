@@ -52,6 +52,13 @@ See .planning/PROJECT.md Key Decisions table — full log with outcomes.
 
 ## Session Continuity
 
-Last session: 2026-02-23
-Stopped at: v1.0 milestone archived — /gsd:new-milestone next
+Last session: 2026-02-23T14:18:23Z
+Stopped at: Post-v1.0 ad-hoc fixes (3 bugs patched, committed, VST3 installed)
 Resume file: none
+
+## Post-v1.0 Patches Applied This Session
+
+- **7693feb** fix(trigger): joystick mode movement-based gate — retriggers on pitch change, 200ms still close
+- **c9ed0f5** fix: chromatic transpose (globalTranspose now after quantization) + restore navy colour scheme
+
+Next: /gsd:new-milestone for v1.1
