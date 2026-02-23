@@ -75,6 +75,10 @@ public:
     // Gamepad
     GamepadInput& getGamepad() { return gamepad_; }
 
+    // Gamepad per-instance toggle (PluginEditor button)
+    void setGamepadActive(bool b) { gamepadActive_.store(b, std::memory_order_relaxed); }
+    bool isGamepadActive()  const { return gamepadActive_.load(std::memory_order_relaxed); }
+
     // ── APVTS ─────────────────────────────────────────────────────────────────
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -92,6 +96,25 @@ private:
     // Initialised to match joystickX/joystickY defaults so the first delta is 0.
     float prevJoyX_ = 0.0f;
     float prevJoyY_ = -1.0f;
+
+    // ── Gamepad per-instance active flag ─────────────────────────────────────
+    // Written by PluginEditor toggle button (message thread).
+    // Read in processBlock (audio thread). No mutex — atomic only.
+    std::atomic<bool> gamepadActive_ { true };
+
+    // ── CC dedup: last emitted integer values for CC74 and CC71 ──────────────
+    // -1 = never sent; forces emission on first connect.
+    // Declared atomic<int> to avoid data race: reset from message thread
+    // (onConnectionChange lambda), read/written on audio thread (processBlock).
+    std::atomic<int> prevCcCut_ { -1 };
+    std::atomic<int> prevCcRes_ { -1 };
+
+    // ── Disconnect pending flags ──────────────────────────────────────────────
+    // Set from message thread (onConnectionChange lambda).
+    // Consumed (exchange false) at top of processBlock filter CC section.
+    // Use atomic so audio thread and message thread share correctly without mutex.
+    std::atomic<bool> pendingAllNotesOff_ { false };
+    std::atomic<bool> pendingCcReset_     { false };
 
     // Held (sample-and-hold) pitches for each voice
     std::array<int, 4> heldPitch_ {60, 64, 67, 70};
