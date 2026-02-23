@@ -145,13 +145,13 @@ Plans:
 - `DimaChordJoystick-Setup.exe` tested on a clean Windows machine without dev tools
 - Code-signing placeholder in installer script (unsigned for v1 per decision)
 
-**Status:** pending — PLANNED
+**Status:** COMPLETE (2/2 plans done — pluginval level-5 PASSED + Inno Setup installer clean-machine approved)
 
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 07-01-PLAN.md — Release build + pluginval validation at strictness level 5 + code audit
-- [ ] 07-02-PLAN.md — Inno Setup installer script + EXE build + clean-machine test checkpoint
+- [x] 07-01-PLAN.md — Release build + pluginval validation at strictness level 5 + code audit — DONE: all 19 test suites green, exit code 0
+- [x] 07-02-PLAN.md — Inno Setup installer script + EXE build + clean-machine test checkpoint — DONE: DimaChordJoystick-Setup.exe (3.5 MB) clean-machine approved
 
 ---
 

@@ -8,9 +8,9 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 
 ## Current Position
 
-- **Phase:** 07 of 7 — Distribution and Release — **IN PROGRESS**
-- **Plan:** 07-01 COMPLETE (1/N plans done) — ready for 07-02 (installer packaging)
-- **Status:** pluginval level-5 PASSED — plugin is distribution-ready
+- **Phase:** 07 of 7 — Distribution and Release — **COMPLETE**
+- **Plan:** 07-02 COMPLETE (2/2 plans done) — Phase 07 fully done
+- **Status:** Installer EXE produced (3.5 MB), dev-machine smoke test PASSED, clean-machine test APPROVED — ready for Gumroad upload
 
 ## Progress
 
@@ -21,9 +21,9 @@ Phase 03 [██████████]   Core MIDI Output    (COMPLETE — 2/
 Phase 04 [████████░░]   Trigger Sources     (IN PROGRESS — 04-01+04-02 COMPLETE, 04-03 pending if planned)
 Phase 05 [██████████]   Looper Hardening    (COMPLETE — 3/3 plans done, Reaper+Ableton verified)
 Phase 06 [██████████]   SDL2 Gamepad        (COMPLETE — 4/4 plans done, all 8 DAW tests approved)
-Phase 07 [██░░░░░░░░]   Distribution   (IN PROGRESS — 07-01 COMPLETE: pluginval level-5 pass)
+Phase 07 [██████████]   Distribution   (COMPLETE — 07-01 pluginval + 07-02 Inno Setup installer, clean-machine approved)
 
-Overall: [████████░░] ~87% (Phases 01-06 complete, Phase 07 in progress)
+Overall: [██████████] 100% (All 7 phases complete — v1.0 release candidate ready)
 ```
 
 ## What's Been Built
@@ -75,6 +75,8 @@ Overall: [████████░░] ~87% (Phases 01-06 complete, Phase 07 
 - **[NEW] 06-04 DAW CHECKPOINT APPROVED: all 8 tests passed — UI layout, scale keyboard red, REC TOUCH, looper auto-stop, gamepad remap (L1=Root/L2=Third/R1=Fifth/R2=Tension), filter CC DAW visibility, JOY gate hold, JOY pitch CV (pitch bend ±24st)**
 - **[NEW] Phase 06 COMPLETE: SDL-01..SDL-05 all satisfied; process-level SDL singleton, CC gating, disconnect all-notes-off, GAMEPAD toggle, full gamepad DAW verification****
 - **[NEW] 07-01 COMPLETE (ae0becc, 889356e): pluginval strictness level 5 PASSED — all 19 test suites green; BusesProperties disabled stereo buses fix committed; pre-flight audit confirmed processBlock zero-sample safe, ScaleKeyboard listener balance 15/15**
+- **[NEW] 07-02 COMPLETE (257f1f8): Inno Setup 6.7.1 script authored; DimaChordJoystick-Setup.exe (3.5 MB) compiled; dev-machine smoke test PASSED (installs to C:\Program Files\Common Files\VST3\, Ableton MIDI Effects confirmed, uninstall/reinstall clean); clean-machine test APPROVED — artifact ready for Gumroad upload**
+- **[NEW] Phase 07 COMPLETE: DIST-01..DIST-04 all satisfied; pluginval level-5 pass + Inno Setup installer + clean-machine validation — v1.0 release candidate ready**
 
 ## Key Decisions
 
@@ -139,6 +141,10 @@ Overall: [████████░░] ~87% (Phases 01-06 complete, Phase 07 
 | RPN 0 on gate-open, bend = (pitch − gatePitch) × 2730 | JOY pitch CV via standard pitch bend; 0x2000 reset on gate-close; no retrigger |
 | pluginval against build artifact, not system VST3 | System VST3 requires admin elevation; build artifact at build/ChordJoystick_artefacts/Release/VST3/ is fully equivalent for validation |
 | BusesProperties with disabled stereo buses | withInput/withOutput(false) satisfies pluginval bus enumeration tests; isBusesLayoutSupported accepts (0,0) and (2,2); isMidiEffect()=true keeps Ableton MIDI-track placement |
+| Installer EXE not in git | Binary artifact at installer/Output/DimaChordJoystick-Setup.exe distributed via Gumroad; .iss script committed so EXE is reproducible from source |
+| Code signing deferred to v2 | SmartScreen "More info / Run anyway" acceptable for v1; unsigned EXE validated on clean machine; placeholder comment in .iss for future cert |
+| DisableDirPage=yes in installer | VST3 path standardised at {commoncf64}\VST3\; no user path browsing prevents incorrect placement |
+| Static CRT confirmed via clean-machine test | CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" validated — plugin installs and loads without Visual C++ Redistributable on clean Windows machine |
 
 ## Known Issues (Must Fix Before Shipping)
 
@@ -162,5 +168,5 @@ Overall: [████████░░] ~87% (Phases 01-06 complete, Phase 07 
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: 07-01-PLAN.md complete — pluginval level-5 passed. Ready for 07-02 (Inno Setup installer).
-Resume file: none — 07-01 COMPLETE, proceed to 07-02
+Stopped at: 07-02-PLAN.md complete — Phase 07 fully done. v1.0 release candidate ready for Gumroad upload.
+Resume file: none — all 7 phases complete
