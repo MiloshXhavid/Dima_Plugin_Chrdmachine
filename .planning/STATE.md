@@ -9,8 +9,8 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 ## Current Position
 
 - **Phase:** 06 of 7 — SDL2 Gamepad Integration — **IN PROGRESS**
-- **Plan:** 06-01 COMPLETE — 1/3 plans done
-- **Status:** Ready for Phase 06 Plan 02
+- **Plan:** 06-02 COMPLETE — 2/3 plans done
+- **Status:** Ready for Phase 06 Plan 03
 
 ## Progress
 
@@ -20,7 +20,7 @@ Phase 02 [██████████]   Engine Validation   (COMPLETE — Sc
 Phase 03 [██████████]   Core MIDI Output    (COMPLETE — 2/2 plans done, all 6 DAW tests passed in Reaper)
 Phase 04 [████████░░]   Trigger Sources     (IN PROGRESS — 04-01+04-02 COMPLETE, 04-03 pending if planned)
 Phase 05 [██████████]   Looper Hardening    (COMPLETE — 3/3 plans done, Reaper+Ableton verified)
-Phase 06 [███░░░░░░░]   SDL2 Gamepad        (IN PROGRESS — 06-01 done: SdlContext singleton, GamepadInput hardening)
+Phase 06 [██████░░░░]   SDL2 Gamepad        (IN PROGRESS — 06-01+06-02 done: SdlContext singleton, CC gating/dedup/disconnect)
 Phase 07 [░░░░░░░░░░]   Distribution
 
 Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 complete, Phase 03 complete, Phase 04 complete, Phase 05 complete)
@@ -62,6 +62,8 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 - **[NEW] 05-03 Reaper verification COMPLETE: all 4 tests passed (loads, 4-bar loop, DAW SYNC alignment, punch-in preservation); Ableton loads as MIDI effect**
 - **[NEW] SdlContext.h/cpp: process-level SDL2 singleton with atomic ref-count (SDL_Init once per process, SDL_Quit on last release) — eliminates multi-instance DAW crash (06-01 / 0779877)**
 - **[NEW] GamepadInput refactored: SdlContext::acquire/release, deadZone_ atomic + setDeadZone(), sample-and-hold on both sticks, ButtonState 20ms debounce on all 8 buttons, dual onConnectionChange/onConnectionChangeUI slots (06-01 / cb35c78)**
+- **[NEW] PluginProcessor.h: gamepadActive_ atomic bool (per-instance, default true), setGamepadActive/isGamepadActive API, prevCcCut_/prevCcRes_ atomic<int> CC dedup state, pendingAllNotesOff_/pendingCcReset_ atomic disconnect flags (06-02 / 9feb28b)**
+- **[NEW] PluginProcessor.cpp: CC74/CC71 flood eliminated — gated on isConnected() AND gamepadActive_; atomic dedup prevents redundant CC on slow drift; disconnect sends all-notes-off (4 voices) + CC74=0/CC71=0 via pending flags; setDeadZone forwarded from joystickThreshold APVTS each block (06-02 / 2973135)**
 
 ## Key Decisions
 
@@ -114,13 +116,17 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 | setDeadZone() uses memory_order_relaxed | Dead zone read once per 60Hz timer tick; full sequential consistency unnecessary overhead for this use case |
 | Dual onConnectionChange / onConnectionChangeUI | Two independent callback slots prevent PluginEditor assignment from silently stomping PluginProcessor disconnect handler |
 | DBG() not available in SdlContext.cpp | SdlContext.cpp is SDL-only (no JUCE headers); SDL_Init failure logged via (void)SDL_GetError() — readable in debugger without JUCE macro dependency |
+| pendingAllNotesOff_/pendingCcReset_ use release/acq_rel ordering | store() on message thread with memory_order_release; exchange() on audio thread with memory_order_acq_rel — establishes happens-before for MIDI data |
+| gamepadActive_ defaults to true | Existing instances behave as before (gamepad active) until PluginEditor toggle is added in 06-03 |
+| prevCcCut_/prevCcRes_ reset to -1 on disconnect | Forces fresh CC emission on next connect instead of suppressing a valid zero value |
+| setDeadZone called unconditionally each block | getRawParameterValue atomic load is cheap; avoids parameter listener complexity |
 
 ## Known Issues (Must Fix Before Shipping)
 
 1. ~~**JUCE pinned to `origin/master`**~~ — FIXED in 01-01 (now 8.0.4).
 2. ~~**[BLOCKER] Plugin crashes on load in Ableton Live 11**~~ — FIXED in 05-03 (isMidiEffect()=true, empty BusesProperties). Plugin loads as MIDI effect on MIDI tracks.
 3. ~~**std::mutex in LooperEngine processBlock**~~ — FIXED in 05-01 (now fully lock-free AbstractFifo design).
-4. **Filter CC (CC71/CC74) emitted unconditionally** — Floods synth at ~175 msgs/sec when no gamepad. Fix in Phase 06.
+4. ~~**Filter CC (CC71/CC74) emitted unconditionally**~~ — FIXED in 06-02 (gated on isConnected() && gamepadActive_, atomic dedup, disconnect reset).
 5. ~~**releaseResources() is empty**~~ — FIXED in 03-01 (now calls resetAllGates()).
 6. ~~**SDL_Init/SDL_Quit per instance**~~ — FIXED in 06-01 (SdlContext singleton, atomic ref-count, SDL_Init once per process).
 7. **COPY_PLUGIN_AFTER_BUILD requires elevated process** — manual copy needed each rebuild.
@@ -132,10 +138,9 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 ## Blockers / Concerns
 
 - Ableton placement: must go on MIDI track *before* an instrument (not as instrument itself) — MIDI effect category
-- CC71/CC74 flood when no gamepad connected — fix in Phase 06
 
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: Completed 06-01-PLAN.md — SdlContext singleton and GamepadInput hardening complete. Ready for 06-02.
-Resume file: .planning/phases/06-sdl2-gamepad-integration/06-02-PLAN.md
+Stopped at: Completed 06-02-PLAN.md — CC gating, dedup, disconnect handling complete. Ready for 06-03.
+Resume file: .planning/phases/06-sdl2-gamepad-integration/06-03-PLAN.md
