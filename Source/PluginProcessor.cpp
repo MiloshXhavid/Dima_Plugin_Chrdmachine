@@ -436,11 +436,17 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         (int)apvts.getRawParameterValue(ParamID::voiceCh3)->load(),
     };
 
-    // If DAW stopped while SYNC was on, send all-notes-off to prevent hanging notes.
-    if (loopOut.dawStopped)
+    // Detect DAW stop — covers both SYNC-on (loopOut.dawStopped) and SYNC-off cases.
+    // Sends all-notes-off and resets TriggerSystem gate state so notes don't hang.
     {
-        for (int v = 0; v < 4; ++v)
-            midi.addEvent(juce::MidiMessage::allNotesOff(voiceChs[v]), 0);
+        const bool justStopped = (prevIsDawPlaying_ && !isDawPlaying) || loopOut.dawStopped;
+        prevIsDawPlaying_ = isDawPlaying;
+        if (justStopped)
+        {
+            for (int v = 0; v < 4; ++v)
+                midi.addEvent(juce::MidiMessage::allNotesOff(voiceChs[v]), 0);
+            trigger_.resetAllGates();
+        }
     }
 
     // Looper gate playback: emit MIDI directly, bypassing TriggerSystem.

@@ -116,6 +116,7 @@ private:
 
     bool gamepadVoiceWasHeld_[4] = {};  // audio thread only — tracks previous gamepad held state
     bool allNotesWasHeld_ = false;       // audio thread only — tracks previous L3 held state
+    bool prevIsDawPlaying_ = false;      // audio thread only — for DAW stop detection
 
     // ── CC dedup: last emitted integer values for CC74 and CC71 ──────────────
     // -1 = never sent; forces emission on first connect.
