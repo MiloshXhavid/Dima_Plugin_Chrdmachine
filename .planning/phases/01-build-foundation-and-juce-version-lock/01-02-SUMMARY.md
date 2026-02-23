@@ -77,3 +77,22 @@ Not observed — plugin did not load.
 - FOUND: Plugin visible in Ableton VST3 browser
 - BLOCKED: Plugin instantiation crash — root cause unresolved
 - PROCEEDING: User decision to advance to Phase 03
+
+---
+
+## Retroactive Resolution (2026-02-23)
+
+The Ableton instantiation crash was diagnosed and fixed in **Phase 05-03** (`isMidiEffect()=true`, empty `BusesProperties()`, `isBusesLayoutSupported` accepting 0-channel only). Root cause: plugin was presenting as an instrument rather than a MIDI effect — Ableton refused to load it on a MIDI track.
+
+All original 01-02 smoke test criteria are now satisfied:
+
+| Step | Original result | Final result |
+|------|----------------|--------------|
+| 1 — Plugin in Ableton VST3 browser | ✓ PASS | ✓ PASS (appears in MIDI Effects browser as Fx/MIDI) |
+| 2 — Loads on MIDI track without crash | ✗ FAIL | ✓ PASS (fixed in 05-03, verified in 06-03) |
+| 3 — Touch-plate triggers audible note | NOT REACHED | ✓ PASS (verified in 06-03 gamepad test #3) |
+| 4 — APVTS parameters survive save/reopen | NOT REACHED | ✓ PASS (verified across multiple phases) |
+
+IS_SYNTH finding (Open Question 1): `IS_SYNTH FALSE` + `isMidiEffect()=true` + empty `BusesProperties()` is the correct combination. Ableton requires the MIDI effect category — not `IS_SYNTH TRUE`.
+
+Phase 01 goal fully achieved. Marking complete retroactively.

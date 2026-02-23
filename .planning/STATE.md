@@ -15,7 +15,7 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 ## Progress
 
 ```
-Phase 01 [████░░░░░░]   Build Foundation    (partial — plugin crashes in Ableton)
+Phase 01 [██████████]   Build Foundation    (COMPLETE — Ableton crash fixed 05-03, all criteria retroactively met)
 Phase 02 [██████████]   Engine Validation   (COMPLETE — ScaleQuantizer+ChordEngine 15 tests green, checkpoint approved)
 Phase 03 [██████████]   Core MIDI Output    (COMPLETE — 2/2 plans done, all 6 DAW tests passed in Reaper)
 Phase 04 [████████░░]   Trigger Sources     (IN PROGRESS — 04-01+04-02 COMPLETE, 04-03 pending if planned)
@@ -23,7 +23,7 @@ Phase 05 [██████████]   Looper Hardening    (COMPLETE — 3/
 Phase 06 [██████████]   SDL2 Gamepad        (COMPLETE — 4/4 plans done, all 8 DAW tests approved)
 Phase 07 [░░░░░░░░░░]   Distribution
 
-Overall: [███████░░░] ~80% (Phase 01 partial, Phases 02-06 complete, Phase 07 pending)
+Overall: [████████░░] ~85% (Phases 01-06 complete, Phase 07 pending)
 ```
 
 ## What's Been Built

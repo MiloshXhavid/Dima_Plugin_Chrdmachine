@@ -15,11 +15,11 @@
 - Static CRT configured for distribution (no MSVC runtime dependency)
 - `COPY_PLUGIN_AFTER_BUILD` set for dev builds
 
-**Status:** in-progress (1/2 plans complete)
+**Status:** COMPLETE (2/2 plans done — Ableton crash fixed in 05-03, all criteria met)
 
 Plans:
 - [x] 01-01: Fix CMakeLists.txt (pin JUCE tag, static CRT, validate plugin target) — DONE: build verified, VST3 installed
-- [ ] 01-02: Smoke test — plugin loads in Reaper, APVTS round-trip verified
+- [x] 01-02: Smoke test — plugin loads in Ableton, APVTS round-trip verified — DONE: retroactively resolved (Ableton crash fixed 05-03, verified 06-03)
 
 ---
 
