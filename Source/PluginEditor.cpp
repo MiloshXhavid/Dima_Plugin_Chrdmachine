@@ -675,19 +675,50 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     loopLengthAtt_ = std::make_unique<SliderAtt>(p.apvts, "looperLength", loopLengthKnob_);
 
     // Gamepad status
-    gamepadStatusLabel_.setText("Gamepad: --", juce::dontSendNotification);
+    gamepadStatusLabel_.setText("GAMEPAD: none", juce::dontSendNotification);
     gamepadStatusLabel_.setFont(juce::Font(10.0f));
     gamepadStatusLabel_.setColour(juce::Label::textColourId, Clr::textDim);
     addAndMakeVisible(gamepadStatusLabel_);
 
-    p.getGamepad().onConnectionChange = [this](bool connected)
+    // Update label text on hot-plug events (fires on message thread via callAsync).
+    // Exact strings are locked decisions: "GAMEPAD: connected" / "GAMEPAD: none".
+    // Uses onConnectionChangeUI — the slot reserved for the editor.
+    // Do NOT assign to onConnectionChange here — that slot is owned by PluginProcessor
+    // (set in PluginProcessor ctor) and fires pendingAllNotesOff_ / pendingCcReset_.
+    // Overwriting it would silently break stuck-note protection on controller unplug.
+    p.getGamepad().onConnectionChangeUI = [this](bool connected)
     {
         juce::MessageManager::callAsync([this, connected]
         {
-            gamepadStatusLabel_.setText(connected ? "Gamepad: Connected" : "Gamepad: --",
-                                        juce::dontSendNotification);
+            gamepadStatusLabel_.setText(
+                connected ? "GAMEPAD: connected" : "GAMEPAD: none",
+                juce::dontSendNotification);
+            // Sync toggle button visual state on disconnect (gamepadActive_ stays true,
+            // but the button should reflect that there's no controller).
+            // No state change needed — button stays as-is; label communicates status.
         });
     };
+
+    // Per-instance GAMEPAD ACTIVE toggle button.
+    // Default ON — this instance responds to the controller.
+    // Toggle OFF to silence this instance while another ChordJoystick instance
+    // in the same DAW session takes over the controller.
+    gamepadActiveBtn_.setButtonText("GAMEPAD ON");
+    gamepadActiveBtn_.setClickingTogglesState(true);
+    gamepadActiveBtn_.setToggleState(true, juce::dontSendNotification);
+    gamepadActiveBtn_.setColour(juce::TextButton::buttonOnColourId,  Clr::gateOn);
+    gamepadActiveBtn_.setColour(juce::TextButton::buttonColourId,    Clr::gateOff);
+    gamepadActiveBtn_.onClick = [this]
+    {
+        const bool active = gamepadActiveBtn_.getToggleState();
+        proc_.setGamepadActive(active);
+        gamepadActiveBtn_.setButtonText(active ? "GAMEPAD ON" : "GAMEPAD OFF");
+    };
+    addAndMakeVisible(gamepadActiveBtn_);
+
+    // Sync label to current connection state on editor open.
+    if (p.getGamepad().isConnected())
+        gamepadStatusLabel_.setText("GAMEPAD: connected", juce::dontSendNotification);
 
     // ── Slew knobs ────────────────────────────────────────────────────────────
     {
@@ -795,8 +826,13 @@ void PluginEditor::resized()
 
     right.removeFromTop(4);
 
-    // Gamepad status
-    gamepadStatusLabel_.setBounds(right.removeFromTop(16));
+    // Gamepad status row: [GAMEPAD ON/OFF] button + status label side by side
+    {
+        auto row = right.removeFromTop(20);
+        gamepadActiveBtn_.setBounds(row.removeFromLeft(90));
+        row.removeFromLeft(4);  // gap
+        gamepadStatusLabel_.setBounds(row);
+    }
 
     // Channel conflict warning
     channelConflictLabel_.setBounds(right.removeFromTop(16));

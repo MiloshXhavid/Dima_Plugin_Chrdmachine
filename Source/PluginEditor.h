@@ -159,6 +159,7 @@ private:
     juce::Slider      loopLengthKnob_;
     juce::Label       loopLengthLabel_;
     juce::Label       gamepadStatusLabel_;
+    juce::TextButton  gamepadActiveBtn_;  // [GAMEPAD ON] / [GAMEPAD OFF] per-instance toggle
 
     // ── MIDI channel conflict warning ─────────────────────────────────────────
     juce::Label channelConflictLabel_;
