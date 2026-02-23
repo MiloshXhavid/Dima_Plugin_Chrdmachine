@@ -9,8 +9,8 @@ Core value: Continuous harmonic navigation via joystick with per-voice sample-an
 ## Current Position
 
 - **Phase:** 06 of 7 — SDL2 Gamepad Integration — **IN PROGRESS**
-- **Plan:** 06-02 COMPLETE — 2/3 plans done
-- **Status:** Ready for Phase 06 Plan 03
+- **Plan:** 06-03 COMPLETE — 3/3 plans done (06-04 WIP exists)
+- **Status:** Ready for Phase 06 Plan 04 (or close out Phase 06)
 
 ## Progress
 
@@ -20,7 +20,7 @@ Phase 02 [██████████]   Engine Validation   (COMPLETE — Sc
 Phase 03 [██████████]   Core MIDI Output    (COMPLETE — 2/2 plans done, all 6 DAW tests passed in Reaper)
 Phase 04 [████████░░]   Trigger Sources     (IN PROGRESS — 04-01+04-02 COMPLETE, 04-03 pending if planned)
 Phase 05 [██████████]   Looper Hardening    (COMPLETE — 3/3 plans done, Reaper+Ableton verified)
-Phase 06 [██████░░░░]   SDL2 Gamepad        (IN PROGRESS — 06-01+06-02 done: SdlContext singleton, CC gating/dedup/disconnect)
+Phase 06 [█████████░]   SDL2 Gamepad        (IN PROGRESS — 06-01+02+03 done: SdlContext, CC gating, toggle UI, verified; 06-04 WIP)
 Phase 07 [░░░░░░░░░░]   Distribution
 
 Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 complete, Phase 03 complete, Phase 04 complete, Phase 05 complete)
@@ -64,6 +64,11 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 - **[NEW] GamepadInput refactored: SdlContext::acquire/release, deadZone_ atomic + setDeadZone(), sample-and-hold on both sticks, ButtonState 20ms debounce on all 8 buttons, dual onConnectionChange/onConnectionChangeUI slots (06-01 / cb35c78)**
 - **[NEW] PluginProcessor.h: gamepadActive_ atomic bool (per-instance, default true), setGamepadActive/isGamepadActive API, prevCcCut_/prevCcRes_ atomic<int> CC dedup state, pendingAllNotesOff_/pendingCcReset_ atomic disconnect flags (06-02 / 9feb28b)**
 - **[NEW] PluginProcessor.cpp: CC74/CC71 flood eliminated — gated on isConnected() AND gamepadActive_; atomic dedup prevents redundant CC on slow drift; disconnect sends all-notes-off (4 voices) + CC74=0/CC71=0 via pending flags; setDeadZone forwarded from joystickThreshold APVTS each block (06-02 / 2973135)**
+- **[NEW] PluginEditor: [GAMEPAD ON/OFF] TextButton toggle; onConnectionChangeUI lambda; status label corrected to "GAMEPAD: connected"/"GAMEPAD: none"; initial isConnected() check on editor open (06-03 / beefa49)**
+- **[NEW] CMakeLists.txt: VST3_CATEGORIES "Fx|MIDI", IS_MIDI_EFFECT=TRUE, NEEDS_MIDI_INPUT=TRUE — plugin loads as MIDI effect in Ableton 11 browser; moduleinfo.json confirms Sub Categories ["Fx","Fx","MIDI"] (06-03 / c1a1f19)**
+- **[NEW] Always-editable scale keyboard: auto-copies preset into scaleNote0..11 + flips useCustomScale=true on first click; customScaleToggle_ kept invisible so APVTS param persists (06-03 / c1a1f19)**
+- **[NEW] Looper auto-stop: recordedBeats_ accumulator fires finaliseRecording() when loop length reached; [REC TOUCH] button defers recording start until next note-on (recWaitForTrigger_/recWaitArmed_ atomics) (06-03 / c1a1f19)**
+- **[NEW] 06-03 DAW verification COMPLETE: all 7 gamepad tests passed (connection indicator, right stick, voice buttons, no CC flood, CC reset, toggle, hot-plug)**
 
 ## Key Decisions
 
@@ -129,7 +134,8 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 4. ~~**Filter CC (CC71/CC74) emitted unconditionally**~~ — FIXED in 06-02 (gated on isConnected() && gamepadActive_, atomic dedup, disconnect reset).
 5. ~~**releaseResources() is empty**~~ — FIXED in 03-01 (now calls resetAllGates()).
 6. ~~**SDL_Init/SDL_Quit per instance**~~ — FIXED in 06-01 (SdlContext singleton, atomic ref-count, SDL_Init once per process).
-7. **COPY_PLUGIN_AFTER_BUILD requires elevated process** — manual copy needed each rebuild.
+7. ~~**Ableton MIDI effect category wrong**~~ — FIXED in 06-03 (VST3_CATEGORIES "Fx|MIDI", IS_MIDI_EFFECT=TRUE; loads correctly in MIDI Effects browser).
+8. **COPY_PLUGIN_AFTER_BUILD requires elevated process** — manual copy needed each rebuild.
 
 ## Pending Todos
 
@@ -142,5 +148,5 @@ Overall: [█████░░░░░] ~62% (Phase 01 partial, Phase 02 compl
 ## Session Continuity
 
 Last session: 2026-02-23
-Stopped at: Completed 06-02-PLAN.md — CC gating, dedup, disconnect handling complete. Ready for 06-03.
-Resume file: .planning/phases/06-sdl2-gamepad-integration/06-03-PLAN.md
+Stopped at: 06-03 human checkpoint approved (7/7 gamepad tests passed). 06-03-SUMMARY.md written. WIP commits exist for 06-04 (UI polish, gamepad remap, JOY pitch CV, filter CC DAW display).
+Resume file: .planning/phases/06-sdl2-gamepad-integration/06-03-PLAN.md (COMPLETE)
