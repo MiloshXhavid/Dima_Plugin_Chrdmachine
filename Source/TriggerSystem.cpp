@@ -155,20 +155,28 @@ void TriggerSystem::processBlock(const ProcessParams& p)
         }
         else if (src == TriggerSource::Joystick)
         {
-            const float axisMag           = axisForVoice(v);
-            const bool  joyAboveThreshold = axisMag > p.joystickThreshold;
-
             // Pitch bend range for JOY mode: ±kBendSemitones semitones maps to full 14-bit range.
             static constexpr int kBendSemitones = 24;
+            const int closeAfter = static_cast<int>(1.0f * static_cast<float>(p.sampleRate));
 
-            if (joyAboveThreshold)
+            // Position-based gate model:
+            //   Open  — stick moves away from center (abs position > threshold AND delta detected).
+            //   Hold  — gate stays open as long as abs position > threshold; pitch bend tracks
+            //            current quantized pitch continuously (no retrigger on pitch change).
+            //   Close — only when abs position < threshold for 1 second (stick returned to center).
+            const float absAxis       = (v < 2) ? std::abs(p.joystickY) : std::abs(p.joystickX);
+            const bool  awayFromCenter = absAxis > p.joystickThreshold;
+            const float axisDelta     = axisForVoice(v);
+            const bool  moving        = axisDelta > p.joystickThreshold;
+
+            if (awayFromCenter)
             {
-                // Axis is moving — reset gate-close stillness counter.
+                // Away from center — reset gate-close timer.
                 joystickStillSamples_[v] = 0;
 
-                if (!gateOpen_[v].load())
+                if (!gateOpen_[v].load() && moving)
                 {
-                    // ── Gate OPENS ────────────────────────────────────────────
+                    // ── Gate OPENS: first movement away from center ───────────
                     const int pitch = p.heldPitches[v];
                     // Reset pitch bend to centre before note-on so the synth starts clean.
                     if (p.onPitchBend) p.onPitchBend(v, 0, ch - 1, 0);
@@ -177,51 +185,35 @@ void TriggerSystem::processBlock(const ProcessParams& p)
                     joyActivePitch_[v] = pitch;
                     joyOpenPitch_[v]   = pitch;
                 }
-                else
+                else if (gateOpen_[v].load() && joyOpenPitch_[v] >= 0)
                 {
-                    // ── Gate OPEN + moving: pitch CV via pitch bend ───────────
-                    // No retrigger — shift pitch by bending from the open-pitch reference.
-                    if (p.onPitchBend && joyOpenPitch_[v] >= 0)
+                    // ── Gate open: continuously track pitch via bend (no retrigger) ──
+                    const int semiOffset = p.heldPitches[v] - joyOpenPitch_[v];
+                    const int bendVal    = juce::jlimit(-8192, 8191,
+                        static_cast<int>(semiOffset * (8191.0f / (float)kBendSemitones)));
+                    if (bendVal != joyLastBend_[v])
                     {
-                        const int semiOffset = p.heldPitches[v] - joyOpenPitch_[v];
-                        const int bendVal    = juce::jlimit(-8192, 8191,
-                            static_cast<int>(semiOffset * (8191.0f / (float)kBendSemitones)));
-                        if (bendVal != joyLastBend_[v])
-                        {
-                            p.onPitchBend(v, bendVal, ch - 1, 0);
-                            joyLastBend_[v] = bendVal;
-                        }
+                        p.onPitchBend(v, bendVal, ch - 1, 0);
+                        joyLastBend_[v] = bendVal;
                     }
                 }
             }
             else
             {
-                // Below open threshold — hysteresis: only count toward gate-close
-                // when axis is very near rest (< 15% of threshold).
-                const float closeThreshold = p.joystickThreshold * 0.15f;
-                const int   closeAfter     = static_cast<int>(1.0f * static_cast<float>(p.sampleRate)); // 1 second
+                // Near center — run gate-close timer (1 second near center).
+                joystickStillSamples_[v] += p.blockSize;
 
-                if (axisMag < closeThreshold)
+                if (gateOpen_[v].load() && joystickStillSamples_[v] >= closeAfter)
                 {
-                    joystickStillSamples_[v] += p.blockSize;
-
-                    if (gateOpen_[v].load() && joystickStillSamples_[v] >= closeAfter)
+                    // 1 second near center — reset bend then close gate.
+                    if (p.onPitchBend && joyLastBend_[v] != 0)
                     {
-                        // 1 second of stillness — reset bend then close gate.
-                        if (p.onPitchBend && joyLastBend_[v] != 0)
-                        {
-                            p.onPitchBend(v, 0, ch - 1, 0);
-                            joyLastBend_[v] = 0;
-                        }
-                        fireNoteOff(v, ch - 1, 0, p);
-                        joyActivePitch_[v]       = -1;
-                        joyOpenPitch_[v]         = -1;
-                        joystickStillSamples_[v] = 0;
+                        p.onPitchBend(v, 0, ch - 1, 0);
+                        joyLastBend_[v] = 0;
                     }
-                }
-                else
-                {
-                    // Hovering near threshold — reset counter to prevent premature close.
+                    fireNoteOff(v, ch - 1, 0, p);
+                    joyActivePitch_[v]       = -1;
+                    joyOpenPitch_[v]         = -1;
                     joystickStillSamples_[v] = 0;
                 }
             }

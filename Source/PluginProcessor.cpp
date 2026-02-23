@@ -88,7 +88,7 @@ PluginProcessor::createParameterLayout()
     };
 
     // ── Chord ─────────────────────────────────────────────────────────────────
-    addInt  (ParamID::globalTranspose, "Global Transpose", -24, 24,  0);
+    addInt  (ParamID::globalTranspose, "Global Transpose",   0, 11,  0);
     addInt  (ParamID::thirdInterval,   "Third Interval",    0, 12,  4);
     addInt  (ParamID::fifthInterval,   "Fifth Interval",    0, 12,  7);
     addInt  (ParamID::tensionInterval, "Tension Interval",  0, 12, 10);
