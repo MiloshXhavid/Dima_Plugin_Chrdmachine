@@ -52,11 +52,6 @@ namespace ParamID
     static const juce::String looperSubdiv     = "looperSubdiv";
     static const juce::String looperLength     = "looperLength";
 
-    // Slew (portamento per voice)
-    static const juce::String slewVoice0       = "slewVoice0";
-    static const juce::String slewVoice1       = "slewVoice1";
-    static const juce::String slewVoice2       = "slewVoice2";
-    static const juce::String slewVoice3       = "slewVoice3";
 }
 
 // ─── Parameter layout ─────────────────────────────────────────────────────────
@@ -110,7 +105,7 @@ PluginProcessor::createParameterLayout()
     addInt  (ParamID::thirdInterval,   "Third Interval",    0, 12,  4);
     addInt  (ParamID::fifthInterval,   "Fifth Interval",    0, 12,  7);
     addInt  (ParamID::tensionInterval, "Tension Interval",  0, 12, 10);
-    addInt  (ParamID::rootOctave,      "Root Octave",       0, 12,  3);
+    addInt  (ParamID::rootOctave,      "Root Octave",       0, 12,  2);
     addInt  (ParamID::thirdOctave,     "Third Octave",      0, 12,  4);
     addInt  (ParamID::fifthOctave,     "Fifth Octave",      0, 12,  3);
     addInt  (ParamID::tensionOctave,   "Tension Octave",    0, 12,  3);
@@ -119,7 +114,7 @@ PluginProcessor::createParameterLayout()
         juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 24.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParamID::joystickYAtten, "Joy Y Attenuator",
-        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 12.0f));
+        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 24.0f));
     addFloat(ParamID::joystickThreshold,  "Joystick Threshold", 0.001f, 0.1f, 0.015f);
 
     // ── Scale ─────────────────────────────────────────────────────────────────
@@ -170,9 +165,15 @@ PluginProcessor::createParameterLayout()
         juce::NormalisableRange<float>(30.0f, 240.0f, 0.1f), 120.0f));
 
     // ── Filter ────────────────────────────────────────────────────────────────
-    addFloat(ParamID::filterXAtten, "Filter Cutoff Attenuator",    0.0f, 127.0f, 64.0f);
-    addFloat(ParamID::filterYAtten, "Filter Resonance Attenuator", 0.0f, 127.0f, 64.0f);
+    addFloat(ParamID::filterXAtten, "Filter Cutoff Attenuator",    0.0f, 127.0f, 127.0f);
+    addFloat(ParamID::filterYAtten, "Filter Resonance Attenuator", 0.0f, 127.0f, 127.0f);
     addInt  (ParamID::filterMidiCh, "Filter MIDI Channel",  1, 16, 1);
+    {
+        juce::StringArray yModes { "Resonance", "LFO Rate", "Sustain" };
+        juce::StringArray xModes { "Cutoff",    "VCF LFO",  "Mod Wheel" };
+        addChoice("filterYMode", "Left Stick Y Mode", yModes, 0);  // 0=CC71 Res, 1=CC76 LFO Rate, 2=CC64 Sustain
+        addChoice("filterXMode", "Left Stick X Mode", xModes, 0);  // 0=CC74 Cut, 1=CC12 VCF LFO, 2=CC1 Mod
+    }
 
     // ── MIDI routing ──────────────────────────────────────────────────────────
     addInt(ParamID::voiceCh0, "Root MIDI Channel",    1, 16, 1);
@@ -189,12 +190,6 @@ PluginProcessor::createParameterLayout()
     // Updated every timer tick from audio-thread atomics so DAW can see stick movement.
     addFloat("filterCutLive", "Filter Cut CC", 0.0f, 127.0f, 0.0f);
     addFloat("filterResLive", "Filter Res CC", 0.0f, 127.0f, 0.0f);
-
-    // ── Slew (portamento per voice) ───────────────────────────────────────────
-    addInt(ParamID::slewVoice0, "Root Slew",    0, 127, 0);
-    addInt(ParamID::slewVoice1, "Third Slew",   0, 127, 0);
-    addInt(ParamID::slewVoice2, "Fifth Slew",   0, 127, 0);
-    addInt(ParamID::slewVoice3, "Tension Slew", 0, 127, 0);
 
     return layout;
 }
@@ -488,19 +483,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const int ch0 = voiceChs[voice] - 1;  // 0-based
         if (isOn)
         {
-            // Slew (portamento): CC65 (on/off) + CC5 (time) before note-on
-            const int slewVal = (int)apvts.getRawParameterValue(
-                "slewVoice" + juce::String(voice))->load();
-            if (slewVal > 0)
-            {
-                midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 65, 127), sampleOff);  // portamento on
-                midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1,  5, slewVal), sampleOff);  // portamento time
-            }
-            else
-            {
-                midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 65, 0), sampleOff);  // portamento off
-            }
-
             // Record gate event in looper (using JUCE 8 ppqPos variable)
             const double beatPos = (hasDaw && ppqPos >= 0.0)
                 ? ppqPos
@@ -607,8 +589,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
         if (pendingCcReset_.exchange(false, std::memory_order_acq_rel))
         {
-            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 74, 0), 0);
-            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, 0), 0);
+            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 74, 0), 0);  // cutoff
+            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, 0), 0);  // resonance
+            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 64, 0), 0);  // sustain off
+            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 12, 0), 0);  // VCF LFO amount
+            midi.addEvent(juce::MidiMessage::controllerEvent(fCh,  1, 0), 0);  // mod wheel
+            midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 76, 0), 0);  // LFO rate
             prevCcCut_.store(0, std::memory_order_relaxed);
             prevCcRes_.store(0, std::memory_order_relaxed);
         }
@@ -618,6 +604,13 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         {
             const float xAtten = apvts.getRawParameterValue(ParamID::filterXAtten)->load();
             const float yAtten = apvts.getRawParameterValue(ParamID::filterYAtten)->load();
+
+            // X axis: 0=CC74 Cutoff, 1=CC12 VCF LFO amount, 2=CC1 Mod Wheel
+            // Y axis: 0=CC71 Resonance, 1=CC76 LFO Rate, 2=CC1 Mod Wheel
+            const int xMode  = (int)apvts.getRawParameterValue("filterXMode")->load();
+            const int yMode  = (int)apvts.getRawParameterValue("filterYMode")->load();
+            const int ccXnum = (xMode == 1) ? 12 : (xMode == 2) ? 1 : 74;
+            const int ccYnum = (yMode == 1) ? 76 : (yMode == 2) ? 64 : 71;  // 2=Sustain CC64
 
             const float gfx = gamepad_.getFilterX();
             const float gfy = gamepad_.getFilterY();
@@ -630,12 +623,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             // prevCcCut_/prevCcRes_ are atomic<int>; use load/store for thread safety.
             if (ccCut != prevCcCut_.load(std::memory_order_relaxed))
             {
-                midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 74, ccCut), 0);
+                midi.addEvent(juce::MidiMessage::controllerEvent(fCh, ccXnum, ccCut), 0);
                 prevCcCut_.store(ccCut, std::memory_order_relaxed);
             }
             if (ccRes != prevCcRes_.load(std::memory_order_relaxed))
             {
-                midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, ccRes), 0);
+                midi.addEvent(juce::MidiMessage::controllerEvent(fCh, ccYnum, ccRes), 0);
                 prevCcRes_.store(ccRes, std::memory_order_relaxed);
             }
             // Expose live CC values to DAW parameter display (consumed on message thread).

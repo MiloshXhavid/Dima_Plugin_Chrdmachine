@@ -70,14 +70,6 @@ void TriggerSystem::processBlock(const ProcessParams& p)
     prevJoystickX_ = p.joystickX;
     prevJoystickY_ = p.joystickY;
 
-    const float absDeltaX = std::abs(p.deltaX);
-    const float absDeltaY = std::abs(p.deltaY);
-
-    // Returns the relevant axis delta magnitude for a given voice
-    auto axisForVoice = [&](int v) -> float {
-        return (v < 2) ? absDeltaY : absDeltaX;
-    };
-
     // ── Transport restart detection ───────────────────────────────────────────
     // Reset subdivision indices on transport restart to avoid stale index
     if (p.isDawPlaying && !wasPlaying_)
@@ -156,41 +148,63 @@ void TriggerSystem::processBlock(const ProcessParams& p)
         else if (src == TriggerSource::Joystick)
         {
             // Movement-based gate model:
-            //   Open      — stick moves (delta > threshold): note-on fires.
-            //   Retrigger — gate open + quantized pitch changes: note-off old, note-on new.
-            //   Close     — 200 ms of no movement below threshold: note-off fires.
-            const int   closeAfter = static_cast<int>(0.2f * static_cast<float>(p.sampleRate));
-            const float axisDelta  = axisForVoice(v);
-            const bool  moving     = axisDelta > p.joystickThreshold;
-            const int   newPitch   = p.heldPitches[v];
+            //   Movement (|delta| > threshold) → start/reset 50ms settle timer.
+            //   Settle timer expires → note fires at the pitch that has been
+            //     stable for 50ms (fast sweeps only sound the landing pitch).
+            //   Stillness (no movement for 60ms) → gate closes.
+            //   Jitter below threshold is ignored; joystickThreshold controls
+            //     both the movement sensitivity and the settle dead band.
+            //
+            // Voices 0/1 (Root/Third) use Y delta; voices 2/3 (Fifth/Tension) use X delta.
+            const float axisDelta = (v < 2) ? std::abs(p.deltaY) : std::abs(p.deltaX);
+            const bool  isMoving  = axisDelta > p.joystickThreshold;
+            const int   newPitch  = p.heldPitches[v];
 
-            if (moving)
+            if (isMoving)
             {
+                // Movement detected — reset stillness counter.
                 joystickStillSamples_[v] = 0;
 
-                if (!gateOpen_[v].load())
+                // If pitch changed, reset the settle timer so fast sweeps don't
+                // produce notes at every intermediate pitch step.
+                if (newPitch != joyOpenPitch_[v])
                 {
-                    // ── Gate OPENS on movement ────────────────────────────────
-                    fireNoteOn(v, newPitch, ch - 1, 0, p);
-                    joyActivePitch_[v] = newPitch;
-                }
-                else if (newPitch != joyActivePitch_[v] && newPitch >= 0)
-                {
-                    // ── New pitch position detected: retrigger ────────────────
-                    fireNoteOff(v, ch - 1, 0, p);
-                    fireNoteOn(v, newPitch, ch - 1, 0, p);
-                    joyActivePitch_[v] = newPitch;
+                    joyOpenPitch_[v]     = newPitch;
+                    joySettleSamples_[v] = static_cast<int>(0.050 * p.sampleRate);
                 }
             }
             else
             {
-                // Not moving — countdown to gate close.
+                // No movement — accumulate stillness; close gate after 60 ms.
                 joystickStillSamples_[v] += p.blockSize;
-
-                if (gateOpen_[v].load() && joystickStillSamples_[v] >= closeAfter)
+                const int kClose = static_cast<int>(0.060 * p.sampleRate);
+                if (joystickStillSamples_[v] >= kClose
+                    && joySettleSamples_[v] <= 0   // don't interrupt a pending settle
+                    && gateOpen_[v].load())
                 {
                     fireNoteOff(v, ch - 1, 0, p);
-                    joyActivePitch_[v]       = -1;
+                    joyActivePitch_[v] = -1;
+                    joyOpenPitch_[v]   = -1;
+                }
+            }
+
+            // Settle countdown: fire the pending pitch once it has been stable.
+            if (joySettleSamples_[v] > 0)
+            {
+                joySettleSamples_[v] -= p.blockSize;
+                if (joySettleSamples_[v] <= 0)
+                {
+                    joySettleSamples_[v] = 0;
+                    const int pitch = joyOpenPitch_[v];
+                    if (pitch >= 0 && pitch != joyActivePitch_[v])
+                    {
+                        if (gateOpen_[v].load())
+                            fireNoteOff(v, ch - 1, 0, p);
+                        fireNoteOn(v, pitch, ch - 1, 0, p);
+                        joyActivePitch_[v] = pitch;
+                    }
+                    // Reset stillness so the freshly-fired note has time to play
+                    // before the 60 ms gate-close window starts.
                     joystickStillSamples_[v] = 0;
                 }
             }
@@ -263,6 +277,7 @@ void TriggerSystem::resetAllGates()
         activePitch_[v]          = -1;
         joyActivePitch_[v]       = -1;
         joyOpenPitch_[v]         = -1;
+        joySettleSamples_[v]     = 0;
         joyLastBend_[v]          = 0;
         joystickStillSamples_[v] = 0;
         padPressed_[v].store(false);

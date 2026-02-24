@@ -104,8 +104,9 @@ private:
 
     // Joystick continuous gate state
     std::array<int, 4>           joyActivePitch_       {-1,-1,-1,-1}; // pitch currently sounding per voice, -1 = none
-    std::array<int, 4>           joystickStillSamples_ {0, 0, 0, 0};  // counts samples below threshold for 1s gate-close
-    std::array<int, 4>           joyOpenPitch_         {-1,-1,-1,-1}; // pitch at gate-open (pitch bend reference)
+    std::array<int, 4>           joystickStillSamples_ {0, 0, 0, 0};  // samples accumulated without movement (gate-close countdown)
+    std::array<int, 4>           joyOpenPitch_         {-1,-1,-1,-1}; // pending pitch (reset on each pitch change, fires on settle)
+    std::array<int, 4>           joySettleSamples_     {0, 0, 0, 0};  // samples remaining in settle debounce (note fires at 0)
     std::array<int, 4>           joyLastBend_          {0, 0, 0, 0};  // last sent pitch bend value (dedup)
 
     // Random trigger clock (per-voice)

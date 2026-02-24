@@ -28,42 +28,68 @@ void PixelLookAndFeel::drawRotarySlider(juce::Graphics& g,
     const float cy = y + height * 0.5f;
     const float r  = juce::jmin(width, height) * 0.5f - 4.0f;
 
-    // Filled circle background
-    g.setColour(Clr::panel.brighter(0.18f));
-    g.fillEllipse(cx - r, cy - r, r * 2.0f, r * 2.0f);
+    // ── Thin track ring outside the knob body ────────────────────────────────
+    const float trackR = r + 3.0f;
+    const juce::PathStrokeType thinStroke(1.5f, juce::PathStrokeType::curved,
+                                          juce::PathStrokeType::rounded);
+    {
+        juce::Path trackArc;
+        trackArc.addArc(cx - trackR, cy - trackR, trackR * 2.0f, trackR * 2.0f,
+                        rotaryStartAngle, rotaryEndAngle, true);
+        g.setColour(juce::Colour(0xFF2A3050));
+        g.strokePath(trackArc, thinStroke);
+    }
+    const float endAngle = rotaryStartAngle
+        + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+    {
+        juce::Path fillArc;
+        fillArc.addArc(cx - trackR, cy - trackR, trackR * 2.0f, trackR * 2.0f,
+                       rotaryStartAngle, endAngle, true);
+        g.setColour(Clr::highlight.withAlpha(0.85f));
+        g.strokePath(fillArc, thinStroke);
+    }
 
-    // Subtle rim
-    g.setColour(Clr::accent.brighter(0.4f));
-    g.drawEllipse(cx - r, cy - r, r * 2.0f, r * 2.0f, 1.0f);
+    // ── Drop shadow ──────────────────────────────────────────────────────────
+    g.setColour(juce::Colours::black.withAlpha(0.55f));
+    g.fillEllipse(cx - r + 1.5f, cy - r + 1.5f, r * 2.0f, r * 2.0f);
 
-    const juce::PathStrokeType arcStroke (3.0f,
-        juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    // ── Knob body — radial gradient for 3D depth (Roland-style dark cap) ─────
+    {
+        juce::ColourGradient grad(
+            juce::Colour(0xFF424550), cx - r * 0.35f, cy - r * 0.35f,
+            juce::Colour(0xFF181A22), cx + r * 0.4f,  cy + r * 0.5f,
+            false);
+        grad.addColour(0.55, juce::Colour(0xFF252830));
+        g.setGradientFill(grad);
+        g.fillEllipse(cx - r, cy - r, r * 2.0f, r * 2.0f);
+    }
 
-    // Track arc (dim)
-    juce::Path trackArc;
-    trackArc.addArc(cx - r, cy - r, r * 2.0f, r * 2.0f,
-                    rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour(Clr::accent.withAlpha(0.6f));
-    g.strokePath(trackArc, arcStroke);
+    // ── Rim highlight (top-left bright edge) ─────────────────────────────────
+    g.setColour(juce::Colour(0xFF606878));
+    g.drawEllipse(cx - r + 0.5f, cy - r + 0.5f, (r - 0.5f) * 2.0f, (r - 0.5f) * 2.0f, 1.0f);
+    // Bottom-right shadow rim
+    g.setColour(juce::Colours::black.withAlpha(0.6f));
+    g.drawEllipse(cx - r + 1.2f, cy - r + 1.2f, (r - 1.2f) * 2.0f, (r - 1.2f) * 2.0f, 0.5f);
 
-    // Filled arc (highlight — visible against dark background)
-    const float endAngle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
-    juce::Path fillArc;
-    fillArc.addArc(cx - r, cy - r, r * 2.0f, r * 2.0f,
-                   rotaryStartAngle, endAngle, true);
-    g.setColour(Clr::highlight);
-    g.strokePath(fillArc, arcStroke);
+    // ── Indicator line — bold white tick (Roland-style) ──────────────────────
+    const float innerR = r * 0.28f;   // starts near centre
+    const float outerR = r - 4.0f;    // ends near rim
+    const float px1 = cx + innerR * std::sin(endAngle);
+    const float py1 = cy - innerR * std::cos(endAngle);
+    const float px2 = cx + outerR * std::sin(endAngle);
+    const float py2 = cy - outerR * std::cos(endAngle);
+    // Shadow pass
+    g.setColour(juce::Colours::black.withAlpha(0.5f));
+    g.drawLine(px1 + 0.8f, py1 + 0.8f, px2 + 0.8f, py2 + 0.8f, 2.5f);
+    // White indicator
+    g.setColour(juce::Colours::white);
+    g.drawLine(px1, py1, px2, py2, 2.5f);
 
-    // Pointer line (white, crisp)
-    const float pr = r - 6.0f;
-    const float px = cx + pr * std::sin(endAngle);
-    const float py = cy - pr * std::cos(endAngle);
-    g.setColour(Clr::text);
-    g.drawLine(cx, cy, px, py, 2.0f);
-
-    // Centre dot
-    g.setColour(Clr::accent.brighter(0.6f));
-    g.fillEllipse(cx - 3.0f, cy - 3.0f, 6.0f, 6.0f);
+    // ── Centre cap (small recessed dot) ──────────────────────────────────────
+    g.setColour(juce::Colour(0xFF141620));
+    g.fillEllipse(cx - 3.5f, cy - 3.5f, 7.0f, 7.0f);
+    g.setColour(juce::Colour(0xFF484C5C));
+    g.drawEllipse(cx - 3.5f, cy - 3.5f, 7.0f, 7.0f, 1.0f);
 }
 
 void PixelLookAndFeel::drawButtonBackground(juce::Graphics& g,
@@ -999,7 +1025,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     // Gamepad left-stick axis mode toggles — pill style: left=default, right=alt
     filterYModeBox_.addItem("Resonance (CC71)", 1);
     filterYModeBox_.addItem("LFO Rate  (CC76)", 2);
-    filterYModeBox_.addItem("Mod Wheel (CC1)",  3);
+    filterYModeBox_.addItem("Sustain   (CC64)", 3);
     filterYModeBox_.setTooltip("Left stick Y axis: what CC the Y axis controls");
     styleCombo(filterYModeBox_);
     addAndMakeVisible(filterYModeBox_);
@@ -1012,19 +1038,6 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     styleCombo(filterXModeBox_);
     addAndMakeVisible(filterXModeBox_);
     filterXModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterXMode", filterXModeBox_);
-
-    // ── Slew knobs ────────────────────────────────────────────────────────────
-    {
-        static const juce::String slewLabels[4] = { "Root Slew", "3rd Slew", "5th Slew", "Ten Slew" };
-        for (int v = 0; v < 4; ++v)
-        {
-            styleKnob(slewKnob_[v]);
-            styleLabel(slewLabel_[v], slewLabels[v]);
-            addAndMakeVisible(slewKnob_[v]);
-            addAndMakeVisible(slewLabel_[v]);
-            slewAtt_[v] = std::make_unique<SliderAtt>(p.apvts, "slewVoice" + juce::String(v), slewKnob_[v]);
-        }
-    }
 
     startTimerHz(30);
 }
@@ -1159,20 +1172,6 @@ void PluginEditor::resized()
         placeKnob(thirdOctKnob_,   thirdOctLabel_);
         placeKnob(fifthOctKnob_,   fifthOctLabel_);
         placeKnob(tensionOctKnob_, tensionOctLabel_);
-    }
-
-    left.removeFromTop(6);
-
-    // Slew knobs (per voice, aligned with chord/octave columns)
-    {
-        auto section = left.removeFromTop(66);
-        const int kw = section.getWidth() / 4;
-        for (int v = 0; v < 4; ++v)
-        {
-            auto col = section.removeFromLeft(kw);
-            slewLabel_[v].setBounds(col.removeFromTop(14));
-            slewKnob_[v] .setBounds(col);
-        }
     }
 
     left.removeFromTop(6);

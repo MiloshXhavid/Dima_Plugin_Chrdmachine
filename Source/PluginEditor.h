@@ -18,6 +18,10 @@ public:
                                bool shouldDrawButtonAsHighlighted,
                                bool shouldDrawButtonAsDown) override;
 
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button,
+                        bool shouldDrawButtonAsHighlighted,
+                        bool shouldDrawButtonAsDown) override;
+
     void drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown,
                       int buttonX, int buttonY, int buttonW, int buttonH,
                       juce::ComboBox& box) override;
@@ -197,10 +201,8 @@ private:
     juce::Label       loopLengthLabel_;
     juce::Label       gamepadStatusLabel_;
     juce::TextButton  gamepadActiveBtn_;  // [GAMEPAD ON] / [GAMEPAD OFF] per-instance toggle
-
-    // ── MIDI channel conflict warning ─────────────────────────────────────────
-    juce::Label channelConflictLabel_;
-    bool        channelConflictShown_ = false;
+    juce::ComboBox    filterYModeBox_;    // Y axis: Resonance / LFO Rate / Mod Wheel
+    juce::ComboBox    filterXModeBox_;    // X axis: Cutoff / VCF LFO / Mod Wheel
 
     // ── APVTS attachments ─────────────────────────────────────────────────────
     using SliderAtt  = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -214,13 +216,10 @@ private:
     std::unique_ptr<SliderAtt> filterXAttenAtt_, filterYAttenAtt_;
     std::unique_ptr<ComboAtt>  scalePresetAtt_;
     std::unique_ptr<ButtonAtt> customScaleAtt_;
+    std::unique_ptr<ComboAtt>  filterYModeAtt_, filterXModeAtt_;
     std::unique_ptr<ComboAtt>  trigSrcAtt_[4];
     std::unique_ptr<ComboAtt>  loopSubdivAtt_;
 
-    // ── Slew (portamento per voice) ───────────────────────────────────────────
-    std::array<juce::Slider, 4>               slewKnob_;
-    std::array<juce::Label,  4>               slewLabel_;
-    std::array<std::unique_ptr<SliderAtt>, 4> slewAtt_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };
