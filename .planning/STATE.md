@@ -2,65 +2,65 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-23)
+See: .planning/PROJECT.md (updated 2026-02-24)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.0 shipped — planning next milestone
+**Current focus:** v1.1 — Phase 08: Post-v1.0 Patch Verification
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-24 — Milestone v1.1 started
-
-## Progress
+Phase: 08 of 11 (Post-v1.0 Patch Verification)
+Plan: — of TBD
+Status: Ready to plan
+Last activity: 2026-02-24 — v1.1 roadmap created (4 phases, 16 requirements)
 
 ```
-v1.0 MVP [██████████] SHIPPED 2026-02-23
-  Phase 01 [██████████]   Build Foundation    COMPLETE
-  Phase 02 [██████████]   Engine Validation   COMPLETE
-  Phase 03 [██████████]   Core MIDI Output    COMPLETE
-  Phase 04 [██████████]   Trigger Sources     COMPLETE
-  Phase 05 [██████████]   Looper Hardening    COMPLETE
-  Phase 06 [██████████]   SDL2 Gamepad        COMPLETE
-  Phase 07 [██████████]   Distribution        COMPLETE
+v1.0 MVP    [██████████] SHIPPED 2026-02-23
+v1.1 Polish [░░░░░░░░░░] 0% (0/TBD plans)
+  Phase 08  [░░░░░░░░░░]   Patch Verification    Not started
+  Phase 09  [░░░░░░░░░░]   MIDI Panic + Mute     Not started
+  Phase 10  [░░░░░░░░░░]   Quantize Infra        Not started
+  Phase 11  [░░░░░░░░░░]   UI Polish + Installer Not started
 ```
 
-## What Was Shipped (v1.0)
+## Performance Metrics
 
-- 7 phases, 17 plans, ~3,966 C++ LOC
-- 26 Catch2 tests passing
-- pluginval strictness 5: 19/19 suites passed
-- `installer/Output/DimaChordJoystick-Setup.exe` (3.5 MB)
-- Gumroad upload: pending user action
+**v1.0 Velocity:**
+- Total plans completed: 17
+- Total phases: 7
+- Avg plans/phase: 2.4
 
-## Key Decisions
+**v1.1 Velocity:**
+- Plans completed: 0
+- Phases started: 0
+
+*Updated after each plan completion*
+
+## Accumulated Context
+
+### Decisions
 
 See .planning/PROJECT.md Key Decisions table — full log with outcomes.
 
-## Known Issues (Carried Forward)
+Recent decisions affecting v1.1:
+- **NEVER send CC121 in panic sweep** — downstream VST3 instruments (Kontakt, Waves CLA-76) map CC121 to plugin parameters via JUCE VST3 wrapper; use CC64=0 + CC120 + CC123 only
+- **Panic is one-shot, not a mute toggle** — press sends 48 CC events (16ch × CC64=0+CC120+CC123), button immediately returns to pressable; no persistent output-blocking state
+- **Post-record quantize uses pendingQuantize_ flag** — playbackStore_[] has no mutex; audio thread reads it every block; flag set on message thread, serviced in LooperEngine::process() on audio thread
+- **std::fmod(quantized, loopLen) required** — rounding near loop end produces beatPosition == loopLen; fmod prevents silent miss or double-trigger at wrap
+- **Single 30 Hz timer only** — no second timer for animations; panic flash and progress bar driven from existing startTimerHz(30) in PluginEditor via phase counters
 
-- COPY_PLUGIN_AFTER_BUILD requires elevated process — use fix-install.ps1 manually after rebuild
-- Code signing deferred — SmartScreen "More info / Run anyway" for v1; unsigned EXE acceptable
+### Pending Todos
 
-## Pending Todos
+None.
 
-(none)
+### Blockers/Concerns
 
-## Blockers / Concerns
-
-(none — v1.0 is clean)
+- Phase 10 quantize implementation requires Catch2 tests for snapToGrid wrap edge case BEFORE integrating into LooperEngine — do not skip
+- Phase 10 QUANTIZE button must be disabled while looper is playing or recording (pendingQuantize_ invariant)
+- Phase 11 progress bar must NOT use juce::ProgressBar — runs its own internal timer; use custom component repainted from editor timerCallback
 
 ## Session Continuity
 
 Last session: 2026-02-24
-Stopped at: Post-v1.0 patch session — 6 changes committed (cca86c6): joystick movement gate, Roland knobs, sustain CC64, defaults, slew removed
-Resume file: none
-
-## Post-v1.0 Patches Applied This Session
-
-- **7693feb** fix(trigger): joystick mode movement-based gate — retriggers on pitch change, 200ms still close
-- **c9ed0f5** fix: chromatic transpose (globalTranspose now after quantization) + restore navy colour scheme
-
-Next: /gsd:new-milestone for v1.1
+Stopped at: Roadmap created for v1.1 — ready to plan Phase 08
+Resume file: None

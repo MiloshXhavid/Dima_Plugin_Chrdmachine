@@ -10,15 +10,15 @@
 - [ ] **PATCH-01**: Plugin sends CC64=127 (sustain on) before each note-on so sustain-pedal-aware synths don't cut notes
 - [ ] **PATCH-02**: Per-voice hold mode — pad press sends note-off (mute), pad release sends note-on with current pitch (inverse gate)
 - [ ] **PATCH-03**: Filter Mod button gates all left-stick CC output; Left X/Y mode dropdowns and atten knobs visually disabled when Filter Mod is off
-- [ ] **PATCH-04**: MIDI Mute toggle — on activation sends allNotesOff then blocks all further MIDI output until toggled off
+- [ ] **PATCH-04**: MIDI Panic button is a one-shot action — press sends allNotesOff and button immediately returns to pressable state (no persistent mute or output-blocking toggle)
 - [ ] **PATCH-05**: Filter looper recording always active (recFilter_=true) — left-stick gestures are recorded to loop when looper is in record mode
 - [ ] **PATCH-06**: Joystick threshold applied to filter CC dedup — changing atten knobs does not retrigger filter CC when gamepad axis has natural noise
 
 ### PANIC — Improved MIDI Panic
 
-- [ ] **PANIC-01**: Panic sends full MIDI reset sequence on all voice channels: CC123 (All Notes Off), CC120 (All Sound Off), CC64=0 (release sustain), CC121 (Reset All Controllers)
+- [ ] **PANIC-01**: Panic sends full MIDI reset sequence: CC64=0, CC120 (All Sound Off), CC123 (All Notes Off) — no CC121 (corrupts downstream VST3 instrument parameters)
 - [ ] **PANIC-02**: Panic sweeps all 16 MIDI channels (not just the 4 configured voice channels) to clear stuck notes regardless of routing
-- [ ] **PANIC-03**: MUTED state shows animated visual feedback — button pulses or flashes while plugin MIDI output is blocked
+- [ ] **PANIC-03**: Panic button shows brief flash feedback on press (using existing flashPanic_ counter pattern) — no persistent mute state
 
 ### QUANT — Trigger Quantization
 
@@ -52,32 +52,30 @@
 
 ## Traceability
 
-*(Populated by roadmapper)*
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PATCH-01 | — | Pending |
-| PATCH-02 | — | Pending |
-| PATCH-03 | — | Pending |
-| PATCH-04 | — | Pending |
-| PATCH-05 | — | Pending |
-| PATCH-06 | — | Pending |
-| PANIC-01 | — | Pending |
-| PANIC-02 | — | Pending |
-| PANIC-03 | — | Pending |
-| QUANT-01 | — | Pending |
-| QUANT-02 | — | Pending |
-| QUANT-03 | — | Pending |
-| UI-01 | — | Pending |
-| UI-02 | — | Pending |
-| UI-03 | — | Pending |
-| UI-04 | — | Pending |
+| PATCH-01 | Phase 08 | Pending |
+| PATCH-02 | Phase 08 | Pending |
+| PATCH-03 | Phase 08 | Pending |
+| PATCH-04 | Phase 08 | Pending |
+| PATCH-05 | Phase 08 | Pending |
+| PATCH-06 | Phase 08 | Pending |
+| PANIC-01 | Phase 09 | Pending |
+| PANIC-02 | Phase 09 | Pending |
+| PANIC-03 | Phase 09 | Pending |
+| QUANT-01 | Phase 10 | Pending |
+| QUANT-02 | Phase 10 | Pending |
+| QUANT-03 | Phase 10 | Pending |
+| UI-01 | Phase 11 | Pending |
+| UI-02 | Phase 11 | Pending |
+| UI-03 | Phase 11 | Pending |
+| UI-04 | Phase 11 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 16 total
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 16 ⚠️
+- Mapped to phases: 16
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-24*
-*Last updated: 2026-02-24 — initial v1.1 definition*
+*Last updated: 2026-02-24 — traceability populated by roadmapper*
