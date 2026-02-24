@@ -44,7 +44,11 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
   4. MIDI Panic is a one-shot action — press sends allNotesOff and button immediately returns to pressable state with no persistent blocking — verifiable with a MIDI monitor
   5. Left-stick gestures are recorded to the loop when the looper is in record mode (filter looper always active) — verifiable by replaying a recorded loop that includes filter CC movement
   6. Changing attenuator knobs while the gamepad axis has natural noise does not retrigger filter CCs — verifiable with a MIDI monitor while wiggling an attenuator knob
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Fix PATCH-01 (CC64=127 before note-on) and PATCH-04 (one-shot panic button)
+- [ ] 08-02-PLAN.md — Build verification, manual 6-patch test protocol, produce VALIDATION.md sign-off
 
 ### Phase 09: MIDI Panic and Mute Feedback
 **Goal**: Pressing Panic silences all 16 MIDI channels completely as a one-shot action (no persistent mute), with brief button flash feedback confirming the action fired
@@ -91,7 +95,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 | 05. LooperEngine Hardening | v1.0 | 3/3 | Complete | 2026-02-23 |
 | 06. SDL2 Gamepad Integration | v1.0 | 4/4 | Complete | 2026-02-23 |
 | 07. Distribution & Release | v1.0 | 2/2 | Complete | 2026-02-23 |
-| 08. Post-v1.0 Patch Verification | v1.1 | 0/TBD | Not started | - |
+| 08. Post-v1.0 Patch Verification | v1.1 | 0/2 | Not started | - |
 | 09. MIDI Panic and Mute Feedback | v1.1 | 0/TBD | Not started | - |
 | 10. Trigger Quantization Infrastructure | v1.1 | 0/TBD | Not started | - |
 | 11. UI Polish and Installer | v1.1 | 0/TBD | Not started | - |
