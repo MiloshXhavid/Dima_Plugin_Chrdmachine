@@ -1,356 +1,267 @@
 # Pitfalls Research
 
-**Domain:** JUCE VST3 MIDI-only plugin with SDL2 gamepad integration (Windows)
-**Researched:** 2026-02-22
-**Confidence:** MEDIUM (all external research tools unavailable; findings derived from direct source code analysis + training knowledge of JUCE/SDL2/VST3 ecosystem; critical claims marked with confidence level)
+**Domain:** ChordJoystick v1.1 — adding MIDI panic sweep, trigger quantization, and UI polish to a shipping JUCE 8 lock-free plugin
+**Researched:** 2026-02-24
+**Confidence:** HIGH (pitfalls derived from direct source code review of the actual v1.0 implementation + verified JUCE forum sources; no hypothetical scenarios)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: std::mutex on the Audio Thread Inside LooperEngine
+### Pitfall 1: CC Panic Sweep Floods MidiBuffer and Triggers Heap Allocation on the Audio Thread
 
 **What goes wrong:**
-`LooperEngine::process()` acquires `std::lock_guard<std::mutex> lk(eventsMutex_)` on every audio callback (line 143 of LooperEngine.cpp). The recording helpers `recordJoystick()` and `recordGate()` also acquire the same mutex. `processBlock()` in PluginProcessor.cpp calls all three of these from the audio thread. The mutex can block the audio thread if the UI or gamepad thread happens to call `reset()` or `deleteLoop()` simultaneously — both of which also acquire `eventsMutex_`. A blocked audio thread causes glitches (xruns) and, in some DAWs that hold their own locks during the plugin's processBlock, risks priority inversion or deadlock.
+A "full CC reset sweep on all 16 channels" means sending at minimum CC120 + CC123 across 16 channels = 32 events. A naive CC0–127 sweep across 16 channels = 2,048 events in a single `processBlock` call. JUCE's `MidiBuffer` grows dynamically — adding events beyond its pre-allocated capacity calls `ensureSize()` internally, which triggers a heap allocation. Heap allocation on the audio thread causes priority inversion and real-time deadline misses (xruns). In VST3, the `MidiBuffer` passed to `processBlock` may not be pre-allocated by the host at all (unlike VST2/AU).
+
+JUCE forum confirmed: the default pre-allocation was raised to 2,048 events only after a developer reported that 16 channels × 8 CCs per block was already insufficient at 128. A CC0–127 sweep is 128 × 16 = 2,048 events — exactly the new limit, no headroom.
 
 **Why it happens:**
-Using `std::mutex` is the natural first approach when protecting a `std::vector`. The audio thread accesses it in `process()`, and recording writes happen from the same audio thread, so the lock is usually uncontested. But the destructive ops (`reset`, `deleteLoop`) are called from the UI/gamepad timer thread, which creates a cross-thread contention point.
+"Full CC reset" is interpreted as "send all 128 CCs" without considering that the audio buffer has a finite pre-allocated capacity. The developer writes a nested loop and does not notice the allocation risk until profiling.
 
 **How to avoid:**
-Replace the `eventsMutex_` / `std::vector` design with a lock-free ring buffer or a JUCE `AbstractFifo` + fixed-size array. Events are recorded to the ring buffer on the audio thread; playback reads from it on the audio thread. UI-side destructive operations post a command via an atomic flag (e.g., `pendingClear_`) and the audio thread drains it at the top of `process()`. Alternatively, use a JUCE `SpinLock` — it will not sleep the audio thread, though it still busy-waits under contention.
+1. Keep the panic sweep to the minimum effective set: CC120 (All Sound Off) + CC123 (All Notes Off) + explicit `noteOff` for each of the 4 known-open pitches. That is at most 4 × (noteOff + CC120 + CC123) = 12 events — well within any buffer.
+2. Call `midi.ensureSize(256)` in `prepareToPlay()` so the buffer is pre-grown before any audio block. This is a one-time allocation at init, not at runtime.
+3. Do NOT iterate CC0–127 on all 16 channels. That is guaranteed allocation and probable buffer stall.
+4. If a wider sweep is ever needed (e.g., for a "deep reset" option), use a state machine: `panicChannelIndex_` atomic, incrementing through 1–16 across 16 consecutive blocks (2 channels per block = 6 events per block, no allocation risk).
 
 **Warning signs:**
-- Occasional audio dropout / xrun reported in DAW when pressing looper Reset/Delete during playback
-- JUCE assertion fired: "This method should not be called from the audio thread" (if JUCE detects you're doing allocations — `events_.push_back` can reallocate, triggering an assert in debug builds)
-- Ableton Live's audio thread watchdog killing the plugin
+- Audio thread CPU spikes at the exact moment panic fires (profiler shows `malloc`/`realloc` in the audio call stack)
+- DAW reports xruns immediately after panic button press
+- `midi.addEvent()` silently returns false (events dropped, some notes never get note-off)
 
-**Phase to address:** Looper implementation phase — before any DAW testing. The `.reserve(4096)` in the constructor reduces reallocation risk but does not prevent it if events exceed 4096.
-
-**Severity: CRITICAL**
+**Phase to address:** MIDI Panic improvement phase.
+**Success criterion:** Panic fires at most 12 MIDI events per block on the 4 voice channels. `ensureSize(256)` called in `prepareToPlay`. Verified with a MIDI monitor that shows ≤ 12 events per panic invocation.
 
 ---
 
-### Pitfall 2: SDL_Init / SDL_Quit Inside a Shared-Library (VST3 DLL) Lifetime
+### Pitfall 2: CC121 (Reset All Controllers) Corrupts Parameters on Downstream VST3 Instruments
 
 **What goes wrong:**
-`SDL_Init(SDL_INIT_GAMECONTROLLER)` is called in `GamepadInput::GamepadInput()` and `SDL_Quit()` is called in `~GamepadInput()`. The VST3 is a DLL. In DAWs that create and destroy plugin instances during scanning, project loading, or when the user removes/re-adds the plugin, this means `SDL_Init` and `SDL_Quit` can be called multiple times within the same process. SDL2 uses a global internal subsystem reference count, so this is nominally safe for single-threaded use. However, some DAWs (Ableton Live 11+, some hosts using Plugin Alliance's scanning infrastructure) instantiate plugins from background threads during scanning. If two plugin instances are created concurrently, two `SDL_Init` calls race on SDL's global state, which is not thread-safe during initialization. Additionally, `SDL_Quit()` tears down all of SDL including subsystems initialized by other instances, which means a second live instance loses its gamepad connection silently.
+CC121 value 0 is the MIDI "Reset All Controllers" command. Some VST3 instruments (documented in JUCE bug tracker: Waves CLA-76; also affects Kontakt and others) have MIDI CC assignments mapped to CC121, or their VST3 host wrapper calls `getMidiControllerAssignment()` when CC121 arrives and maps it to a plugin parameter — causing knobs to jump to unexpected positions. The JUCE VST3 wrapper had a confirmed bug where routing CC121 through `toEventList()` incorrectly triggered parameter automation on downstream instruments.
 
 **Why it happens:**
-SDL2's global state model was designed for applications with single-point entry/exit. Embedding it in a DLL that can have multiple instances in the same process breaks this assumption. The code correctly uses `SDL_INIT_GAMECONTROLLER` only (no video subsystem), which avoids the worst issues (no window handle conflicts), but SDL's event pump and joystick driver are still global.
+Developers look up "MIDI panic" references and find "send CC121 = 0 (Reset All Controllers)" as a standard recommendation. It IS standard MIDI 1.0 — but VST3's MIDI controller assignment mechanism gives hosts and instruments the ability to bind any CC, including CC121, to any parameter. A "reset" message becomes a "set to 0" automation event for any parameter bound to CC121.
 
 **How to avoid:**
-- Implement a process-level SDL lifecycle singleton using a reference-counted static: first `GamepadInput` constructor calls `SDL_Init`, last destructor calls `SDL_Quit`. Protect the reference count with an `std::atomic<int>` or a `std::call_once` init guard.
-- Alternatively, use `SDL_WasInit()` to check before calling `SDL_Init`, and only call `SDL_Quit()` when the ref count reaches zero.
-- For scanning safety, wrap the init in a try-catch with a known-safe fallback (disable gamepad silently if SDL fails).
+1. Do NOT send CC121 in the panic sweep. The existing `PluginProcessor::processBlock` panic path (lines 473–477) uses `juce::MidiMessage::allNotesOff(ch)` which sends CC123, NOT CC121. This is correct — do not change it.
+2. If pitch wheel or modulation wheel reset is desired, send them explicitly: `juce::MidiMessage::pitchWheel(ch, 8192)` (8192 = center in JUCE's 0–16383 mapping) and `controllerEvent(ch, 1, 0)` for mod wheel.
+3. If sustain pedal reset is desired: `controllerEvent(ch, 64, 0)` explicitly.
+4. The v1.1 improvement to panic should add only CC120 (All Sound Off) before the existing CC123 (All Notes Off) — not replace or augment with CC121.
+
+**Warning signs:**
+- Downstream synth knobs jump to unexpected positions when panic fires
+- Kontakt or Serum reports parameter automation jumps in the DAW timeline
+- Pitch wheel or mod wheel snaps to non-center position despite not touching those controls
+
+**Phase to address:** MIDI Panic improvement phase.
+**Success criterion:** Panic output buffer contains no CC121. Verify with MIDI monitor or debug log of `midi` buffer contents after panic fires.
+
+---
+
+### Pitfall 3: Note-On / Note-Off Ordering in Panic Leaves Ghost Notes if Gate Reset Happens After MIDI Output
+
+**What goes wrong:**
+If the panic block sends `allNotesOff(ch)` but `trigger_.resetAllGates()` is not called until AFTER the MIDI output section, the next `processBlock` iteration can re-trigger notes. Specifically: the mute guard at line 481 (`if (midiMuted_) return;`) currently sits AFTER the panic block. If panic fires but does NOT mute (i.e., the panic button sends note-offs without entering mute state), TriggerSystem's `gateOpen_[v]` is still true, and the next block's `trigger_.processBlock(tp)` fires a new note-on at the same pitch.
+
+The current v1.0 implementation handles this correctly: panic calls `trigger_.resetAllGates()` before the mute return. The risk is in v1.1 if the panic logic is restructured or a "CC sweep loop" is inserted between the `allNotesOff` calls and the `resetAllGates()` call.
+
+**Why it happens:**
+Refactoring the panic section to add a CC sweep loop creates a natural insertion point between the allNotesOff and the resetAllGates. A developer inserts the sweep there without recognising the ordering constraint.
+
+**How to avoid:**
+1. Keep the invariant: `allNotesOff()` → `trigger_.resetAllGates()` → (CC sweep) → `flashPanic_`. The CC sweep must come LAST.
+2. The MIDI buffer ordering does not matter (allNotesOff and any subsequent CCs are all at `sampleOff=0`), but `resetAllGates()` must happen before any path that reads `gateOpen_[v]`.
+3. After `resetAllGates()`, also reset `heldPitch_[v]` to -1 or a sentinel value so the looper gate playback path cannot re-trigger with stale pitches in the same block.
+4. If the v1.1 panic path adds CC120 (All Sound Off) before the existing allNotesOff, the order becomes: CC120 → allNotesOff → `resetAllGates()` → CC sweep → `flashPanic_`.
+
+**Warning signs:**
+- Single note continues sounding after panic fires
+- MIDI monitor shows note-off at sample 0 immediately followed by note-on at sample 0 in the same block
+- Stuck notes when using the looper with gates armed at high density
+
+**Phase to address:** MIDI Panic improvement phase.
+**Success criterion:** After panic fires with all pads released, the next 2 consecutive `processBlock` calls produce zero note-on events. Verify with a debug counter.
+
+---
+
+### Pitfall 4: Live Trigger Quantization Causes Double-Trigger at the Loop Wrap Boundary
+
+**What goes wrong:**
+When live quantization snaps a gate event's beat position to the nearest grid point, that position may land exactly at the loop end (`loopLen`) or just before it. The wrap detection in `LooperEngine::process()` is:
 
 ```cpp
-// Example: process-level SDL singleton
-namespace SdlLifetime {
-    static std::atomic<int> refCount {0};
-    static std::mutex        initMutex;
-
-    void acquire() {
-        std::lock_guard<std::mutex> lk(initMutex);
-        if (refCount.fetch_add(1) == 0)
-            SDL_Init(SDL_INIT_GAMECONTROLLER);
-    }
-    void release() {
-        std::lock_guard<std::mutex> lk(initMutex);
-        if (refCount.fetch_sub(1) == 1)
-            SDL_Quit();
-    }
-}
+bool inWindow = wraps
+    ? (ev.beatPosition >= beatAtBlockStart || ev.beatPosition < beatAtEnd)
+    : (ev.beatPosition >= beatAtBlockStart && ev.beatPosition < beatAtEnd);
 ```
 
-Note: this init-guard mutex only runs at plugin instantiation/destruction, never on the audio thread — safe.
+An event stored at `beatPosition = loopLen - epsilon` (just before the end) fires correctly on the pre-wrap scan of the block that straddles the loop end. But if quantization snaps it to `loopLen`, `std::fmod(loopLen, loopLen) == 0.0`, and the event is now stored at 0.0. The wrap-window condition `ev.beatPosition < beatAtEnd` (where `beatAtEnd` is just past 0.0) fires it again at loop start — double trigger.
+
+Separately: if quantization snaps to exactly `loopLen` without applying `fmod`, the event is stored with `beatPosition >= loopLen`. The linear scan never finds it (all windows are `[0, loopLen)`), so the gate fires silently never — stuck-open note.
+
+**Why it happens:**
+The "next grid point" calculation in beat space naturally produces values like `ceil(pos / gridSize) * gridSize`. For a position close to the loop end, this gives `loopLen` exactly. The developer forgets to wrap the result.
+
+**How to avoid:**
+1. After computing the quantized position, always apply: `quantized = std::fmod(quantized, loopLen)`. This is the single guard that prevents both double-trigger AND missing-event.
+2. When snapping to "next grid point", explicitly check: `if (quantized >= loopLen) quantized -= loopLen;`
+3. Add a `jassert(ev.beatPosition >= 0.0 && ev.beatPosition < loopLen)` in debug builds at the top of the `process()` scan loop. Any out-of-range position is a bug caught immediately.
+4. Post-record quantize: after modifying all beat positions, sort `playbackStore_[0..playbackCount_]` by `beatPosition` ascending. This also improves playback correctness when multiple events snap to the same position.
 
 **Warning signs:**
-- Second plugin instance has no gamepad connection even with controller plugged in
-- DAW crashes during plugin scanning (especially Ableton Live's plugin scan subprocess)
-- SDL error "already initialized" or silent failure reported via `DBG("SDL_Init failed")`
-- In debug builds, SDL_assert fires during concurrent init
+- At loop wrap point, a single note sounds twice in quick succession
+- Gate events at the first beat of the next loop cycle are doubled
+- After post-record quantize, some notes go silent (stored at `beatPosition >= loopLen`)
 
-**Phase to address:** SDL2 integration / initial build phase.
-
-**Severity: CRITICAL**
+**Phase to address:** Trigger quantization phase.
+**Success criterion:** Catch2 test — record a gate event at `beatPos = loopLen - 0.001`. Apply quantize with grid 1.0 beat. Verify the stored event has `beatPosition == 0.0` (wrapped) and fires exactly once per loop cycle.
 
 ---
 
-### Pitfall 3: Continuous Filter CC Output When No Gamepad Is Connected
+### Pitfall 5: Post-Record Quantization Mutates playbackStore_ from the Message Thread While the Audio Thread Reads It
 
 **What goes wrong:**
-In `processBlock()`, the filter CC section always fires (lines 343–344 of PluginProcessor.cpp):
+Post-record quantize (the QUANTIZE button) needs to modify `playbackStore_[]` beat positions in-place. If the UI button callback calls a `quantiseLoop()` method directly on the message thread while `playing_` is true, the audio thread is simultaneously scanning `playbackStore_[]` in `process()`. This is a data race — undefined behavior in C++. The existing SPSC invariant in `LooperEngine` states:
+
+> `playbackStore_` is safe only when `playing_ = false AND recording_ = false`.
+> (LooperEngine.cpp line 142–145)
+
+**Why it happens:**
+The existing deferred-request pattern (for `deleteRequest_` and `resetRequest_`) is the correct approach, but it is non-obvious. A developer implementing the QUANTIZE button naturally puts the quantize logic directly in the `onClick` lambda, which runs on the message thread.
+
+**How to avoid:**
+1. Post-record quantize MUST follow the deferred-request pattern: add `std::atomic<bool> pendingQuantize_ { false }` to `LooperEngine`. Set it from the message thread in the button callback.
+2. In `LooperEngine::process()`, at the top of the function (before any scan), check and service `pendingQuantize_`:
+   ```cpp
+   if (pendingQuantize_.exchange(false, std::memory_order_acq_rel))
+   {
+       // Modify playbackStore_ here — audio thread only, no concurrent reader
+       applyQuantizeToPlaybackStore();
+   }
+   ```
+3. The quantize logic executes on the audio thread when the audio thread is already inside `process()` — there is no concurrent reader at that point.
+4. Never expose a method that mutates `playbackStore_[]` callable from outside the audio thread when `playing_` is true.
+5. Add `ASSERT_AUDIO_THREAD()` at the top of `applyQuantizeToPlaybackStore()` to catch misuse in debug builds.
+
+**Warning signs:**
+- ThreadSanitizer (TSan) reports data race on `playbackStore_` array elements
+- Intermittent wrong pitches or wrong beat positions during playback after pressing QUANTIZE
+- `ASSERT_AUDIO_THREAD()` fires inside a quantize method (debug build)
+
+**Phase to address:** Trigger quantization phase.
+**Success criterion:** `pendingQuantize_` is an `atomic<bool>` set exclusively from the message thread. `playbackStore_` is written exclusively from within `process()` (audio thread). TSan clean under stress test.
+
+---
+
+### Pitfall 6: Live Quantize Subdivison Value Changes Mid-Recording Produces Inconsistent Rhythm
+
+**What goes wrong:**
+Live quantize reads the "quantize subdivision" APVTS parameter each block via `getRawParameterValue("quantizeSubdiv")->load()`. If the user changes the knob during an active recording, the first half of the loop snaps to 1/8 and the second half snaps to 1/16. On playback, the rhythm is inconsistent — some hits are grid-aligned to one grid, others to a different grid. This is not a crash but a musical correctness bug.
+
+**Why it happens:**
+`processBlock` parameter reads are designed to pick up live knob changes. For most parameters (volume, filter cutoff) this is correct. For quantize subdivision, the intent is "commit this grid for the entire recording pass" — but nothing enforces that commitment.
+
+**How to avoid:**
+1. Capture the quantize subdivision value into an audio-thread-only member (`liveQuantizeSubdivBeats_`) at the moment recording starts — specifically inside the `if (recordPending_)` block in `process()` where `recording_` is set to true.
+2. Use `liveQuantizeSubdivBeats_` for all live quantize calculations within that recording pass. Do NOT read the APVTS parameter again until the next recording start.
+3. Post-record quantize reads the APVTS parameter at the moment the QUANTIZE button is pressed — this is correct (it is a one-shot operation, not a continuous read).
+
+**Warning signs:**
+- Rhythm sounds inconsistent after twisting the quantize knob during an active recording
+- The pattern drifts differently depending on when the knob was moved
+
+**Phase to address:** Trigger quantization phase.
+**Success criterion:** The `liveQuantizeSubdivBeats_` member is written once at `recordPending_ → recording_` transition and not updated again until the next recording start.
+
+---
+
+## Moderate Pitfalls
+
+### Pitfall 7: Looper Progress Bar Displays a Visible Backward Jump at Loop Wrap
+
+**What goes wrong:**
+`PluginEditor::timerCallback()` reads `proc_.looper_.getPlaybackBeat()` (which reads `playbackBeat_`, an `atomic<float>` written in `process()`) and maps it to a 0.0–1.0 progress fraction. At loop wrap, `playbackBeat_` jumps from `loopLen - epsilon` to near 0.0 in a single audio block (~10ms at 48kHz/512). The timer fires at 30Hz (~33ms intervals). Between two timer ticks, up to 3 audio blocks execute. The timer may sample `playbackBeat_` at 0.05 on one tick and then 0.03 on the next tick (after the wrap), which looks like a backward jump in the progress bar.
+
+**Why it happens:**
+The 33ms timer interval is 3× longer than the typical audio block (~11ms). The atomic float stores only the beat at block start — the timer reads it asynchronously and can sample any point in the range. The wrap appears as a discontinuity because the bar draws linearly.
+
+**How to avoid:**
+1. Accept the ~33ms lag — it is imperceptible. Do NOT increase timer frequency to compensate (JUCE forum confirmed: 60Hz repaint timer jumps CPU to ~40%).
+2. In `paint()` or in `timerCallback()` before setting the progress fraction: detect wrap by checking if `newBeat < prevBeat - (loopLen * 0.5f)`. If so, treat it as a wrap event, not a backward jump. Either reset the display immediately to the new position (sharp snap, but expected at loop end) or interpolate across the wrap (cosmetic, not necessary).
+3. The `playbackBeat_` is `atomic<float>` (4 bytes, lock-free). Reading from the message thread is safe — no race, only staleness.
+4. Store `prevBeat_` in `PluginEditor` as a member and compare each timer tick to implement the wrap detection.
+
+**Warning signs:**
+- Progress bar sweeps right, then jumps sharply to the left at loop end (backward-looking)
+- CPU spike when progress bar timer is added at high frequency
+
+**Phase to address:** UI polish phase (progress bar).
+**Success criterion:** Progress bar does not visually jump backward at loop end. Verified by visual inspection with a 1-bar loop at 180 BPM.
+
+---
+
+### Pitfall 8: Animated Mute Button Pulsing Uses a Second juce::Timer
+
+**What goes wrong:**
+The mute/panic button needs to pulse visually when `midiMuted_` is true. A developer adds a `juce::Timer` member to `PluginEditor` (or to a custom component) for the animation, separate from the existing `startTimerHz(30)` at line 1100 of `PluginEditor.cpp`. JUCE creates one timer thread tick per registered timer. Two timers firing at similar frequencies can produce two `paint()` calls on the same frame (different timer periods create beat-frequency interference). JUCE coalesces repaints within the same message-pump iteration, so this usually does not cause visual artifacts — but it doubles the timer overhead and can cause subtle repaint CPU spikes.
+
+**Why it happens:**
+Treating the animated button as an independent self-contained component with its own timer is a natural instinct. The existing single-timer pattern in the editor is not obvious from the component perspective.
+
+**How to avoid:**
+1. Do NOT create a second `juce::Timer` for the mute animation. The existing `timerCallback()` at 30Hz is the animation driver for the entire editor.
+2. Add a member `int mutePulsePhase_ = 0` to `PluginEditor`. In `timerCallback()`, if `proc_.isMidiMuted()` is true, increment `mutePulsePhase_` (modulo some period, e.g., 30 for a 1-second pulse at 30Hz). Use `mutePulsePhase_` in `panicBtn_.setColour(...)` or equivalent to cycle the button's visual colour.
+3. Call `panicBtn_.repaint()` in `timerCallback()` when muted — one additional `repaint()` call per tick, coalesced by JUCE with the existing pad repaints.
+4. The existing `panicFlashCounter_` / `resetFlashCounter_` / `deleteFlashCounter_` pattern (lines 1455–1484 of `PluginEditor.cpp`) is the correct model to follow.
+
+**Warning signs:**
+- A second call to `startTimerHz()` or `startTimer()` appears anywhere in `PluginEditor.cpp` or its sub-components
+- CPU rises by 5–10% when `midiMuted_` is true compared to unmuted state
+- Paint profiler shows the editor painted twice per frame during mute
+
+**Phase to address:** UI polish phase.
+**Success criterion:** `grep "startTimerHz\|startTimer" Source/PluginEditor.cpp` returns exactly 1 result. Animation driven from existing `timerCallback()`.
+
+---
+
+### Pitfall 9: New APVTS Parameter Read in processBlock Uses ->getValue() Instead of ->load()
+
+**What goes wrong:**
+Adding a "quantize subdivision" APVTS parameter requires reading it in `processBlock`. The correct call is `apvts.getRawParameterValue("quantizeSubdiv")->load()`, which is a lock-free atomic float read. The incorrect call is `apvts.getParameter("quantizeSubdiv")->getValue()` or `apvts.getParameter("quantizeSubdiv")->getNormalisedValue()`, which in some JUCE versions routes through the APVTS listener infrastructure and may acquire an internal lock or trigger a notification — both illegal on the audio thread.
+
+**Why it happens:**
+`getRawParameterValue()` is less obviously named than `getParameter()`. Autocomplete suggestions both. `getValue()` works in tests and small projects where there is no contention, but silently risks a lock under DAW load.
+
+**How to avoid:**
+The codebase already uses the correct pattern uniformly throughout `PluginProcessor.cpp`. For example:
 ```cpp
-midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 74, ccCut), 0);
-midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, ccRes), 0);
+apvts.getRawParameterValue(ParamID::joystickThreshold)->load()
+apvts.getRawParameterValue("randomSubdiv0")->load()
 ```
-When no gamepad is connected, `getFilterX()` / `getFilterY()` return 0.0f (the atomic default). The math maps 0.0f to `atten * 0.5f` — so with the default attenuator of 64.0, the plugin outputs CC74=32 and CC71=32 every single audio block, forever, whether or not a gamepad is present. This saturates the DAW's MIDI output with junk CC messages at the audio callback rate (typically 44–96 times per second), which: (a) confuses any downstream synthesizer whose filter CC74/71 is mapped; (b) interferes with DAW automation recording; (c) generates thousands of CC events per second in the DAW's MIDI monitor.
-
-**Why it happens:**
-The CC output logic does not gate on gamepad connection state. The dead-zone inside `normaliseAxis()` returns 0.0f only for axis raw values (it checks the SDL axis), but the processor-level filter code runs unconditionally.
-
-**How to avoid:**
-Gate the filter CC output on `gamepad_.isConnected()`:
-```cpp
-if (gamepad_.isConnected()) {
-    midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 74, ccCut), 0);
-    midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 71, ccRes), 0);
-}
-```
-Additionally consider tracking the previous CC value and only emitting on change, to avoid redundant events even when connected.
+Every new `processBlock` parameter read MUST use `getRawParameterValue("id")->load()`. Add this to the code review checklist for any v1.1 parameter additions.
 
 **Warning signs:**
-- DAW MIDI Monitor shows thousands of CC74/CC71 messages flooding every second
-- Synthesizer connected to plugin output has its filter constantly overriding any automation
-- Ableton MIDI clips show dense CC automation recorded from the plugin even when no gamepad is plugged in
+- JUCE debug assertion: "This method should not be called from the audio thread" (in some JUCE builds)
+- Intermittent audio glitches under DAW CPU load (lock contention between audio thread and UI knob movement)
 
-**Phase to address:** First compile / first DAW test.
-
-**Severity: CRITICAL** — will make the plugin unusable for any user without a gamepad.
+**Phase to address:** Trigger quantization phase (when adding new parameters).
+**Success criterion:** `grep "getParameter(" Source/PluginProcessor.cpp` finds zero matches inside `processBlock`.
 
 ---
 
-### Pitfall 4: Note-Off Leak on Plugin Destruction / Bypass
+### Pitfall 10: MidiBuffer::addEvent sampleOffset Must Be in [0, blockSize) — Off-by-One at Block End
 
 **What goes wrong:**
-When the DAW stops or the plugin is removed/bypassed while a voice gate is open, the plugin never fires the note-off MIDI events. The downstream synthesizer's voices remain held at their last pitch indefinitely — the "stuck note" problem. The `TriggerSystem` holds gate state in `gateOpen_[v]` atomics and `activePitch_[v]` integers, but nothing flushes these as note-offs on `releaseResources()` or `PluginProcessor` destruction.
+`midi.addEvent(msg, sampleOff)` requires `sampleOff` to be in `[0, blockSize)`. If trigger quantization computes a within-block sample offset for where the quantized event should fire, and the event is exactly at the block end, the computed offset equals `blockSize` — off by one. The event is silently dropped or placed at offset 0 of the following block (host-dependent).
 
 **Why it happens:**
-In audio plugins, the `releaseResources()` callback is the correct place to emit cleanup MIDI. JUCE MIDI-only plugins must explicitly output note-offs there. The current implementation's `releaseResources()` body is empty.
+"Quantize to the next beat boundary" computes the beat boundary's sample position. If the boundary falls on exactly `blockSize` samples from the block start, the sample offset is `blockSize` — the most natural computation produces this edge case.
 
 **How to avoid:**
-In `PluginProcessor::releaseResources()`, iterate over all 4 voices and if `trigger_.isGateOpen(v)`, write `noteOff(voiceCh, activePitch, 0)` into a temporary MidiBuffer, then flush it via `getPlayHead()` if possible — or store a "pending all-notes-off" flag that fires at the top of the next `processBlock()`. Also emit `allNotesOff()` / `allSoundOff()` CC messages (CC123 / CC120) on the relevant channels.
+Clamp: `sampleOff = juce::jlimit(0, p.blockSize - 1, computedSampleOffset)`. The existing `TriggerSystem::processBlock` implicitly handles this through subdivision grid calculations. Any new quantization code must apply the same clamp. Add it as a one-liner wherever a computed offset is passed to `midi.addEvent()`.
 
-Additionally, when the DAW sends a `reset()` or when the looper fires simultaneous `gateOff` overrides at loop boundary, the pitch tracking must be current — verify that `activePitch_[v]` always reflects the last note-on pitch before emitting note-off.
-
-**Warning signs:**
-- Pressing Stop in DAW leaves synthesizer notes ringing
-- Removing/re-inserting plugin in DAW signal chain leaves voices stuck on the synth
-- Voice gate indicators in UI show "open" even after DAW stop
-
-**Phase to address:** Core MIDI output phase; verified in first DAW integration test.
-
-**Severity: CRITICAL**
-
----
-
-### Pitfall 5: FetchContent JUCE from `origin/master` (Unversioned)
-
-**What goes wrong:**
-The CMakeLists.txt uses `GIT_TAG origin/master` for JUCE:
-```cmake
-FetchContent_Declare(juce GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG origin/master)
-```
-This fetches the tip of JUCE master at configure time. JUCE master can introduce breaking API changes between point releases. When a team member or CI builds the project weeks later, they get a different JUCE than the initial developer, causing non-reproducible builds. JUCE 8's master also occasionally breaks compatibility with specific DAW plugin validators (especially the VST3 validator Steinberg publishes).
-
-**Why it happens:**
-`origin/master` is a common shortcut during early development to get the latest version. Version pinning is deferred as a "later" task and then forgotten.
-
-**How to avoid:**
-Pin JUCE to a specific release tag immediately:
-```cmake
-GIT_TAG 8.0.4   # or whichever is current stable
-```
-Check https://github.com/juce-framework/JUCE/releases for the current stable tag. Use `GIT_SHALLOW TRUE` to reduce clone time.
-
-SDL2 is already correctly pinned to `release-2.30.9` — apply the same discipline to JUCE.
-
-**Warning signs:**
-- Build breaks after `cmake --fresh` on a different machine
-- JUCE API call that worked last week fails to compile
-- VST3 validator reports different results on different developer machines
-
-**Phase to address:** Initial CMake / build setup — fix before first commit.
-
-**Severity: MAJOR** (will cause non-reproducible builds; acceptable temporarily but must be fixed before any collaboration or CI)
-
----
-
-### Pitfall 6: VST3 Category "Instrument" Blocks MIDI-Only Use in Some DAWs
-
-**What goes wrong:**
-The CMakeLists.txt declares:
-```cmake
-VST3_CATEGORIES "Instrument"
-IS_SYNTH FALSE
-NEEDS_MIDI_INPUT FALSE
-NEEDS_MIDI_OUTPUT TRUE
-IS_MIDI_EFFECT FALSE
-```
-Using `VST3_CATEGORIES "Instrument"` while `IS_SYNTH FALSE` and having no audio output buses creates an unusual plugin type. In Ableton Live, VST3 plugins categorized as "Instrument" are placed on instrument tracks that expect audio output. Since this plugin produces no audio, Live may warn or refuse to load it as an instrument, or load it but show a broken audio routing indicator. Reaper is more permissive. The correct VST3 category for a MIDI generator that is not a synthesizer is `"Generator"` or `"Tools"` combined with `IS_MIDI_EFFECT TRUE` (Fx track in Ableton) or using the MIDI effect routing approach.
-
-**Why it happens:**
-JUCE's plugin categories and the DAW's mental model of "instrument vs MIDI effect" do not map cleanly. A MIDI-only generator falls between categories.
-
-**How to avoid:**
-Test both approaches against Ableton 11/12 and Reaper 7 before finalizing:
-- Option A: `IS_MIDI_EFFECT TRUE`, `VST3_CATEGORIES "Tools"` — loads on MIDI effect track in Ableton (requires routing MIDI to a synth instrument track)
-- Option B: `IS_SYNTH TRUE` (even with no audio output), `VST3_CATEGORIES "Instrument"` — loads as instrument but outputs no audio (Reaper tolerates this; Ableton may show routing warnings)
-
-The safest approach for Ableton MIDI output is `IS_SYNTH TRUE` with audio output buses explicitly returning empty buffers — Ableton routes MIDI from instrument tracks more reliably than from MIDI effect slots. Test with the Steinberg VST3 Plugin Validator before release.
-
-**Warning signs:**
-- Plugin fails Steinberg's VST3 validator
-- Ableton refuses to route MIDI out of the plugin to an external instrument
-- Plugin appears in wrong category in DAW browser
-
-**Phase to address:** First DAW compatibility test phase.
-
-**Severity: MAJOR**
-
----
-
-### Pitfall 7: `std::vector::push_back` Heap Allocation on Audio Thread During Recording
-
-**What goes wrong:**
-`LooperEngine::recordJoystick()` and `recordGate()` call `events_.push_back()` from the audio thread (LooperEngine.cpp lines 89–92, 102–103). `push_back` can trigger `std::vector` reallocation when capacity is exceeded. Heap allocation on the real-time audio thread causes unbounded latency spikes — the OS memory allocator uses locks and can take milliseconds to satisfy an allocation request, causing audio dropouts. The `events_.reserve(4096)` in the constructor mitigates this until 4096 events are stored, but at 60 Hz joystick updates (two events per poll: X and Y) for a 16-bar loop at 120bpm, capacity can be exhausted in approximately 4 minutes of continuous recording.
-
-**Why it happens:**
-`std::vector` is the natural container. The `reserve()` call is a good attempt but insufficient for long sessions. Recording is an inherently unbounded operation if left uncapped.
-
-**How to avoid:**
-- Cap recording: when `events_.size() >= events_.capacity()`, stop recording (set `recording_` to false) and notify the UI. Alternatively, wrap around and overwrite old events (ring buffer semantics).
-- Pre-allocate with a safe upper bound. At 120 BPM, 16 bars = 32 beats. Joystick at 60 Hz = 120 events/second. Gate events are sparse. A 16-bar loop at 60 Hz for ~30 seconds = ~3600 event pairs = ~7200 events. Reserve 8192 to cover worst case.
-- Alternatively, calculate max events at `prepareToPlay` time using `sampleRate` and `bpm` to set a loop-length-appropriate reserve.
-
-**Warning signs:**
-- Audio dropouts appearing after minutes of recording but not at start
-- JUCE's JUCE_AUDIO_PROCESSOR_NOT_ON_AUDIO_THREAD assertion fires in debug builds (if `reserve` triggers reallocation through a custom allocator)
-- Profiler shows occasional multi-millisecond spikes in processBlock during recording
-
-**Phase to address:** Looper implementation phase.
-
-**Severity: MAJOR**
-
----
-
-### Pitfall 8: SDL2 SDL_PollEvent on Main Thread Conflicts with DAW Window Message Pump
-
-**What goes wrong:**
-`GamepadInput::timerCallback()` calls `SDL_PollEvent()` at 60 Hz on JUCE's main message thread. On Windows, SDL's event pump internally calls `PeekMessage()` / `DispatchMessage()` for certain events — specifically device-connection notifications (WM_DEVICECHANGE), which is how SDL2 detects controller hotplug. When running inside a DAW, the DAW owns the Windows message pump on the main thread. Two systems calling `PeekMessage()` on the same thread is not itself a problem (they share the queue), but SDL may dispatch messages intended for the DAW's window handles, or SDL's window registration (SDL creates a hidden HWnd even in headless mode for the event pump) can conflict with Ableton Live's MIDI device management, which also uses WM_DEVICECHANGE. This has been reported to cause controller detection failures or rare DAW message corruption in some hosts.
-
-**Why it happens:**
-SDL2 was designed for standalone applications where it owns the message loop. Inside a DLL hosted by a DAW, ownership of the message loop is ambiguous.
-
-**How to avoid:**
-- Explicitly set `SDL_HINT_NO_SIGNAL_HANDLERS` and `SDL_HINT_WINDOWS_NO_CLOSE_ON_ALT_F4` before `SDL_Init` (irrelevant hints but the underlying hint that matters is `SDL_HINT_JOYSTICK_THREAD` — set to "1" to enable SDL's background joystick polling thread on Windows, which bypasses the message pump entirely for gamepad state).
-- Use `SDL_HINT_JOYSTICK_THREAD "1"` before `SDL_Init`. This makes SDL poll joystick state on its own thread rather than via the message pump, eliminating the WM conflict. However, it means `SDL_PollEvent` is not needed — use `SDL_GameControllerGetAxis/Button` directly with this hint. Hotplug detection still works via the background thread.
-- If `SDL_HINT_JOYSTICK_THREAD` is set, the `SDL_PollEvent` loop in `timerCallback()` can be removed; just poll axis/button values directly.
-
-**Warning signs:**
-- DAW loses MIDI device connections after plugin is instantiated
-- Gamepad never detected even when plugged in (SDL's WM_DEVICECHANGE message eaten by DAW)
-- Ableton Live MIDI preferences showing device disconnections when plugin is active
-
-**Phase to address:** SDL2 integration phase, specifically tested in Ableton.
-
-**Severity: MAJOR** (LOW confidence on exact failure mode — specific DAW interaction is training-knowledge, needs empirical validation in Ableton)
-
----
-
-### Pitfall 9: Ableton Live MIDI Output Routing for Non-Instrument VST3 Plugins
-
-**What goes wrong:**
-Ableton Live's MIDI routing treats VST3 plugins differently based on their type declaration. A plugin on an Instrument track can output MIDI to an external instrument (via MIDI To routing). A plugin on a MIDI Effect track (IS_MIDI_EFFECT TRUE) can output MIDI but only if placed in the MIDI effect chain before an instrument. A pure MIDI generator (no audio output, IS_MIDI_EFFECT FALSE, IS_SYNTH FALSE) may not have its MIDI output routable to external hardware in Ableton Live without workarounds. Reaper handles all of these cases correctly and transparently.
-
-**Why it happens:**
-Ableton Live's routing model predates the VST3 MIDI generator category. It was designed around instruments (generate audio) and MIDI effects (transform MIDI in real time) — not MIDI-only generators that are also not effects.
-
-**How to avoid:**
-- Test both `IS_MIDI_EFFECT TRUE` and `IS_SYNTH TRUE` configurations in Ableton Live before settling on the final plugin type declaration.
-- If targeting Ableton as a primary DAW, consider using `IS_SYNTH TRUE` with a dummy stereo audio output bus (silence) to satisfy Ableton's instrument routing model. This is the approach used by many MIDI generator plugins (e.g., Max for Live devices exported as instruments).
-- Document clearly in plugin README which DAW routing setup to use.
-
-**Warning signs:**
-- In Ableton, the plugin's MIDI output does not appear in the "MIDI To" dropdown of other tracks
-- External synthesizer receives no MIDI from the plugin despite the plugin appearing to function correctly
-- Ableton MIDI routing panel shows no MIDI output from the plugin track
-
-**Phase to address:** DAW compatibility phase, required before any user testing.
-
-**Severity: MAJOR**
-
----
-
-### Pitfall 10: Windows Code Signing and Installer Requirements for Paid Distribution
-
-**What goes wrong:**
-Distributing an unsigned VST3 DLL on Windows 10/11 triggers Windows SmartScreen warnings ("Windows protected your PC"). Most musicians will not bypass this — they will assume the plugin is malware and request a refund. Additionally, some DAWs (Studio One, Logic Pro via Bootcamp, certain security-hardened setups) refuse to load unsigned DLLs or show aggressive warnings. A paid plugin distributed via Gumroad without code signing will have high refund/support rates from this alone.
-
-**Why it happens:**
-Code signing is a separate infrastructure step (obtaining an EV or OV certificate, signing the DLL and installer). Developers commonly defer it as a "business concern" and are surprised by SmartScreen blocking.
-
-**How to avoid:**
-- Obtain an OV (Organization Validation) or EV (Extended Validation) code signing certificate. EV certificates are trusted immediately by SmartScreen; OV certificates build trust over time (reputation score). EV is recommended for commercial plugins.
-- Use `signtool.exe` (included in Windows SDK) to sign the VST3 DLL and any installer executable.
-- Budget: EV certificates cost ~$400–600/year. OV certificates cost ~$200–400/year. Providers: DigiCert, Sectigo, GlobalSign.
-- NSIS or Inno Setup for the installer; Inno Setup is simpler for single-DLL plugins.
-- Alternative (LOW cost): Use a self-signed certificate with documented instructions for users to trust it — not recommended for paid plugins.
-
-**Warning signs:**
-- SmartScreen blocks DLL during first install
-- DAW plugin scanner skips or quarantines the DLL
-- Support tickets saying "plugin won't install" from Windows 11 users
-
-**Phase to address:** Distribution/release preparation phase.
-
-**Severity: MAJOR** for paid distribution; MINOR for personal/beta testing use.
-
----
-
-### Pitfall 11: MSVC Runtime DLL Dependency in VST3
-
-**What goes wrong:**
-If the VST3 DLL is built with MSVC (Visual Studio), it links against the MSVC C++ runtime (MSVCP140.dll, VCRUNTIME140.dll). These DLLs must be present on the end user's system. The MSVC redistributable package installs them, but it is not pre-installed on all Windows systems. Without it, the VST3 DLL fails to load with a cryptic "DLL not found" error. The user's DAW typically just reports the plugin as "failed to load" with no useful error message.
-
-**Why it happens:**
-CMake with MSVC defaults to dynamic CRT linking. The developer's machine has the runtime installed via Visual Studio. Test machines often have it too. Only clean-install user machines reveal the problem.
-
-**How to avoid:**
-- In CMakeLists.txt, set `CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"` to force static CRT linkage. This embeds the runtime in the DLL — no redistributable required. The tradeoff is a larger DLL (~200KB additional).
-- Alternatively, ship an installer that includes the MSVC redistributable installer (vc_redist.x64.exe) and runs it silently.
-- SDL2 static build already avoids SDL DLL dependency — apply same principle to CRT.
-
-```cmake
-# Add to CMakeLists.txt for static CRT
-set_property(TARGET ChordJoystick PROPERTY MSVC_RUNTIME_LIBRARY
-    "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-```
-
-**Warning signs:**
-- "Failed to load plugin" errors on fresh Windows installs during beta testing
-- User reports that Reaper/Ableton shows plugin in red or missing in scanner
-- Dependency Walker / Dependency Viewer shows unresolved MSVCP140.dll
-
-**Phase to address:** Build configuration phase.
-
-**Severity: MAJOR** for distribution, MINOR during development.
-
----
-
-### Pitfall 12: Looper + DAW Sync Race: ppqPosition Jumps at Transport Start
-
-**What goes wrong:**
-In `LooperEngine::process()`, when `isDawPlaying` is true, the loop position is derived from `std::fmod(p.ppqPosition, loopLen)`. When the DAW transport starts, `ppqPosition` jumps from its stopped value to the play cursor position. If the looper recorded events relative to a different starting ppqPosition, the first playback block after transport restart will scan for events in the new window, which may not match where events were recorded. This causes the looper to fire events at wrong positions or miss the loop start entirely for one cycle.
-
-**Why it happens:**
-DAW ppqPosition reflects the global song position, not a loop-relative position. The looper uses `fmod` to reduce it to loop-relative, but the reference point can shift between recording and playback sessions if the user repositions the DAW cursor.
-
-**How to avoid:**
-- Record the `ppqPosition` at the moment the looper starts recording (call it `recordStartPpq_`). All recorded event positions should be stored relative to this anchor: `pos = fmod(ppqPosition - recordStartPpq_, loopLen)`.
-- On playback, use the same anchor to compute the current loop-relative position: `beatAtBlockStart = fmod(ppqPosition - playbackStartPpq_, loopLen)`.
-- Reset the anchor whenever the user presses Record from a stopped state.
-- When no DAW sync is available, the internal clock is correct since it starts from 0.
-
-**Warning signs:**
-- Looper events fire slightly late or early after stopping and restarting the DAW
-- Events cluster at the wrong position when DAW cursor is moved before play
-- Gate notes stuck on because note-off fires before note-on in the next cycle
-
-**Phase to address:** Looper implementation phase.
-
-**Severity: MAJOR**
+**Phase to address:** Trigger quantization phase.
+**Success criterion:** All new `midi.addEvent()` calls in v1.1 have `jlimit(0, blockSize-1, sampleOff)` on the offset argument.
 
 ---
 
@@ -358,12 +269,11 @@ DAW ppqPosition reflects the global song position, not a loop-relative position.
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| `std::mutex` in audio thread | Easy synchronization, correct behavior in simple cases | Audio dropouts under contention; hard to debug timing-related glitches | Never for production audio thread paths |
-| `GIT_TAG origin/master` for JUCE | Always get latest features | Non-reproducible builds; breaking API changes | Never — pin immediately |
-| Filter CC always emitting | Simple code | Floods MIDI output when no gamepad; confuses synths and DAWs | Never for shipping code |
-| No note-off on releaseResources | Less code | Stuck notes on DAW stop/bypass | Never for a MIDI-output plugin |
-| `vector::push_back` on audio thread | Simple recording | Heap allocation glitches after reserve exhausted | Only with hard capacity cap enforced |
-| Unsigned DLL distribution | Faster to release | SmartScreen blocks install for paid users | Beta testing only |
+| Drive all animation from single 30Hz timer | Simple, no new objects | All UI updates coarse-grained; smooth animation impossible | Acceptable — 30Hz sufficient for this plugin |
+| playbackStore_ mutation via request flag | No mutex, real-time safe | Complex protocol; each new op needs its own atomic flag | Acceptable — consistent with existing reset/delete pattern |
+| FIFO capacity fixed at 2048 events | Zero allocation after init | Hard recording limit; dense sessions can hit cap | Acceptable — cap indicator already in UI |
+| float atomic for playbackBeat_ (4 bytes) | Lock-free on 32-bit builds | 23-bit mantissa = ~0.008 beat resolution at beat 100 | Acceptable — display only, not used for scheduling |
+| Capture quantize subdiv once at record start | Consistent rhythm per recording pass | User cannot change grid mid-record | Acceptable — this is the musically correct behavior |
 
 ---
 
@@ -371,12 +281,12 @@ DAW ppqPosition reflects the global song position, not a loop-relative position.
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| SDL2 in DLL | Calling SDL_Init/SDL_Quit per plugin instance | Reference-counted process-level singleton |
-| SDL2 event pump in DAW | SDL_PollEvent on main thread causes WM_DEVICECHANGE conflicts | Set `SDL_HINT_JOYSTICK_THREAD "1"` before SDL_Init; poll state directly |
-| JUCE APVTS + audio thread | Calling `getParameter()` (returns AudioParameter*) on audio thread — valid, but `getRawParameterValue()` is faster and lock-free | Use `getRawParameterValue()` exclusively on audio thread; current code is correct |
-| VST3 MIDI output in Ableton | IS_MIDI_EFFECT or IS_SYNTH confusion leaves MIDI unroutable | Test both modes; IS_SYNTH TRUE with empty audio output is most compatible |
-| MSVC CRT | Dynamic CRT means redistributable required | Static CRT (`/MT`) bundles runtime in DLL |
-| FetchContent + CI | Network fetch on every CI run is slow and fragile | Use `GIT_SHALLOW TRUE` and pin exact tag; consider vendoring |
+| JUCE allNotesOff() | Adding CC121 to panic path | CC123 only (what allNotesOff() sends); add CC120; no CC121 |
+| APVTS in processBlock | Using `getParameter()->getValue()` | Use `getRawParameterValue("id")->load()` exclusively |
+| juce::Timer in PluginEditor | Creating per-component timers for animation | Single editor-level timerCallback(), increment animation phase counters there |
+| LooperEngine playbackStore_ mutation | Calling from message thread onClick | Set atomic `pendingQuantize_` flag; service in process() on audio thread |
+| MidiBuffer sampleOffset | Passing `blockSize` as offset (off-by-one) | Clamp to `jlimit(0, blockSize-1, offset)` before addEvent() |
+| Quantize position at loop end | Storing event at beatPosition == loopLen | Apply `std::fmod(quantized, loopLen)` before storing |
 
 ---
 
@@ -384,24 +294,27 @@ DAW ppqPosition reflects the global song position, not a loop-relative position.
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| `std::mutex` block on audio thread | Intermittent audio dropouts; harder to reproduce at lower buffer sizes | Lock-free design for event buffer | Any buffer size < 512 samples under DAW load |
-| `vector::push_back` reallocation on audio thread | Sporadic millisecond spike in processBlock profiler | Hard capacity cap + reserve at construction | After 4096 events recorded (~3-5 min of dense recording) |
-| 12 `getRawParameterValue().load()` calls per block for scale notes | Minimal in practice — atomics are fast, but ~30 total loads per block | Cache scale params in a struct at top of processBlock | Not a real bottleneck at current scale; revisit if CPU profiling shows it |
-| Filter CC every block | MIDI buffer bloat; downstream synth busy processing redundant CCs | Gate on isConnected() + emit only on value change | Immediately — every block at the audio callback rate |
-| SDL timer at 60 Hz on message thread | Main thread load; JUCE timer jitter under DAW load | Background thread via SDL_HINT_JOYSTICK_THREAD | Jitter becomes audible when DAW GUI is heavily loaded |
+| CC sweep across 16 channels × 128 CCs | xrun at panic press; malloc in audio stack | Minimal panic (12 events max); ensureSize(256) in prepareToPlay | Immediately at first panic press |
+| 60Hz+ repaint timer for progress bar | ~40% CPU in idle UI; sluggish knobs | Stay at 30Hz; accept 33ms visual lag | Immediately on timer creation |
+| Sort playbackStore_ on audio thread during playback | Unpredictable latency spike | Sort only via pendingQuantize_ request, never during scan | At 2048 events (O(N log N) ~100µs) |
+| Post-record quantize from message thread while playing | Data race; UB; intermittent wrong notes | pendingQuantize_ consumed in process() | Non-deterministic; caught by TSan |
+| Second juce::Timer for mute animation | CPU spike when muted | Merge into existing timerCallback() | Immediately on timer creation |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Note cleanup:** Does the plugin send note-off for all open gates when `releaseResources()` is called? Verify by: start a note, stop DAW, check synth has no held voices.
-- [ ] **Gamepad-absent users:** Does the plugin work correctly (no MIDI spam, no crash, no missing UI controls) with zero gamepads attached? Verify by: run plugin with no controller, check MIDI monitor for spurious CC messages.
-- [ ] **MIDI channel routing:** Do all 4 voices actually transmit on their configured channels (not just channel 1)? Verify by: set voice 2 to channel 5, trigger it, confirm MIDI monitor shows ch5.
-- [ ] **Scale quantization edge cases:** Does quantize handle a scale with only one note active? With all 12 active? Verify boundary conditions in ScaleQuantizer.
-- [ ] **Looper boundary events:** Are gate note-offs always paired with their note-ons across loop boundaries? Verify that a gate that starts near the end of the loop and wraps does not produce orphaned note-ons.
-- [ ] **State persistence round-trip:** Save preset, close plugin, reopen — do all 40+ parameters restore correctly including the 12 custom scale notes? Test in both Ableton and Reaper.
-- [ ] **VST3 validator passes:** Run Steinberg's VST3 validator (vst3-validator or pluginval) against the built DLL with zero failures.
-- [ ] **SDL_Init failure is silent:** If SDL_Init fails (no gamepad driver installed), does the plugin still load and function as a mouse-driven instrument? Verify by blocking SDL_Init and confirming the plugin degrades gracefully.
+- [ ] **Panic sweep — no CC121:** MIDI monitor shows zero CC121 events during panic. `allNotesOff()` sends CC123, not CC121 — verify.
+- [ ] **Panic gate reset order:** `trigger_.resetAllGates()` executes before any CC sweep code in the panic block. Read the code, do not assume.
+- [ ] **Panic event count:** Panic produces at most 12 MIDI events per block (4 voices × noteOff + CC120 + CC123). Count with a debug counter.
+- [ ] **Quantize wrap:** An event recorded at `loopLen - 0.001` beats, quantized to the nearest 1-beat boundary, is stored as `beatPosition == 0.0` (not `loopLen`). Test with Catch2.
+- [ ] **Quantize thread safety:** The QUANTIZE button `onClick` lambda sets only `pendingQuantize_ = true`. No write to `playbackStore_` occurs on the message thread. Verify by reading the onClick implementation.
+- [ ] **Quantize subdivision captured once:** `liveQuantizeSubdivBeats_` is set inside the `if (recordPending_)` block in `process()`. It is never read from the APVTS after that point until the next recording start.
+- [ ] **Progress bar backward-jump guard:** The progress bar paint code checks for wrap (newBeat < prevBeat - loopLen/2) before computing the fill fraction. Verify visually with a 1-bar loop at fast tempo.
+- [ ] **Single timer:** `grep "startTimerHz\|startTimer" Source/PluginEditor.cpp` returns exactly 1 result.
+- [ ] **getRawParameterValue pattern:** `grep "getParameter(" Source/PluginProcessor.cpp` returns zero matches inside processBlock.
+- [ ] **sampleOffset clamp:** All new `midi.addEvent()` calls in v1.1 code use `jlimit(0, blockSize-1, sampleOff)`.
+- [ ] **ensureSize pre-allocation:** `midi.ensureSize(256)` appears in `prepareToPlay()`.
 
 ---
 
@@ -409,49 +322,54 @@ DAW ppqPosition reflects the global song position, not a loop-relative position.
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Mutex on audio thread | MEDIUM | Redesign LooperEngine event storage to use JUCE AbstractFifo + fixed array; replace all mutex guards with atomic flag for destructive ops |
-| SDL_Init/SDL_Quit per instance | LOW | Wrap in 10-line reference-counted singleton; can be done without touching callers |
-| Filter CC always emitting | LOW | Add one `if (gamepad_.isConnected())` guard around the CC block |
-| Note-off leak | LOW | Add flush loop to releaseResources(); ~10 lines |
-| JUCE unpinned version | LOW | Change one line in CMakeLists.txt; rebuild |
-| VST3 category wrong | MEDIUM | Change CMakeLists, rebuild, retest all DAW routing |
-| MSVC CRT | LOW | One CMakeLists.txt property; rebuild |
-| Vector reallocation on audio thread | MEDIUM | Refactor event storage to AbstractFifo with fixed capacity; requires LooperEngine redesign |
-| ppqPosition anchor drift | MEDIUM | Add recordStartPpq_ anchor field; adjust recording and playback position calculations |
-| Code signing | HIGH (time/cost) | Obtain EV certificate ($400-600); integrate signtool into build pipeline |
+| CC panic flood | LOW | Add ensureSize(256) in prepareToPlay; reduce panic to 12 events; one-block refactor |
+| CC121 corrupts downstream synth | LOW | Remove CC121 from panic path; replace with explicit pitchWheel(8192) + CC64=0 |
+| Stuck note after panic (wrong order) | LOW | Move `resetAllGates()` before CC sweep in panic block; 2-line reorder |
+| Post-record quantize data race | HIGH | Refactor to pendingQuantize_ atomic flag; cannot be patched in-place without risk |
+| Double trigger at loop wrap | MEDIUM | Add `std::fmod(quantized, loopLen)` after every quantize computation; + Catch2 test |
+| Second timer for animation | LOW | Merge into existing timerCallback; remove new Timer member; < 1 hour |
+| Quantize subdiv changes mid-record | LOW | Capture subdiv value once at record start into `liveQuantizeSubdivBeats_`; 5-line addition |
 
 ---
 
 ## Pitfall-to-Phase Mapping
 
-| Pitfall | Severity | Prevention Phase | Verification |
-|---------|----------|------------------|--------------|
-| std::mutex on audio thread | CRITICAL | Looper implementation | No xruns under DAW stress test with looper active |
-| SDL_Init/SDL_Quit per instance | CRITICAL | SDL2 integration (initial build) | Two plugin instances in one DAW process, both detect gamepad |
-| Filter CC always emitting | CRITICAL | First compile / smoke test | MIDI monitor shows no CC when gamepad disconnected |
-| Note-off leak | CRITICAL | Core MIDI output | Stop DAW with gates open; synth voices all clear |
-| FetchContent JUCE unpinned | MAJOR | Build setup (first task) | Second developer machine builds identical binary |
-| VST3 category/routing | MAJOR | DAW compatibility phase | MIDI output routes to external synth in Ableton AND Reaper |
-| Vector reallocation on audio thread | MAJOR | Looper implementation | Profiler shows no spikes after 5+ min of dense recording |
-| SDL event pump conflict | MAJOR | SDL2 integration | Ableton MIDI devices stable after plugin instantiation |
-| Ableton MIDI routing | MAJOR | DAW compatibility phase | External instrument receives MIDI in Ableton Live 11/12 |
-| Code signing | MAJOR | Release preparation | SmartScreen does not block install on clean Windows 11 VM |
-| MSVC CRT | MAJOR | Build configuration | Plugin loads on clean Windows 11 VM with no VS installed |
-| ppqPosition anchor drift | MAJOR | Looper implementation | Events fire at correct beat after DAW cursor repositioned |
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| CC panic buffer overflow | MIDI Panic phase | MIDI monitor: ≤ 12 events per panic invocation; no xrun |
+| CC121 corrupts downstream synth | MIDI Panic phase | MIDI monitor: zero CC121 in panic output |
+| Note-on/note-off ordering | MIDI Panic phase | After panic, 2 consecutive blocks produce zero note-on (all pads released) |
+| Quantize double-trigger at loop wrap | Trigger Quantization phase | Catch2 test: event at loopLen-0.001, quantize to 1-beat grid → stored as 0.0, fires once/cycle |
+| Post-record quantize data race | Trigger Quantization phase | TSan clean; QUANTIZE onClick contains no playbackStore_ write |
+| Live quantize subdiv changes mid-record | Trigger Quantization phase | Record with mid-record knob change: all gates snap to subdiv at record start |
+| Progress bar backward jump | UI Polish phase | Visual: bar sweeps forward continuously; no backward jump at wrap |
+| Second timer for animation | UI Polish phase | grep count: startTimerHz appears exactly once in PluginEditor.cpp |
+| getRawParameterValue pattern | All phases adding parameters | grep: no `->getValue()` in processBlock |
+| sampleOffset off-by-one | Trigger Quantization + Panic phases | jlimit clamp present on every new midi.addEvent() call in v1.1 |
+| ensureSize pre-allocation | MIDI Panic phase | prepareToPlay() contains midi.ensureSize(256) |
 
 ---
 
 ## Sources
 
-- Direct source code analysis: `Source/GamepadInput.cpp`, `Source/LooperEngine.cpp`, `Source/LooperEngine.h`, `Source/PluginProcessor.cpp`, `Source/PluginProcessor.h`, `Source/TriggerSystem.cpp`, `Source/PluginEditor.cpp`, `CMakeLists.txt` — HIGH confidence (first-hand evidence)
-- SDL2 subsystem reference counting behavior: `SDL_Init` / `SDL_Quit` documentation at https://wiki.libsdl.org/SDL2/SDL_Init — training knowledge, MEDIUM confidence; `SDL_HINT_JOYSTICK_THREAD` documentation at https://wiki.libsdl.org/SDL2/SDL_HINTS — training knowledge, MEDIUM confidence
-- JUCE audio thread constraints (no heap allocation, no mutex blocking): JUCE documentation "The Audio Callback" and JUCE forum consensus — MEDIUM confidence (external sources unavailable for verification this session)
-- VST3 MIDI generator category behavior in Ableton Live: training knowledge of Ableton Live 11/12 VST3 hosting behavior — LOW confidence, requires empirical testing
-- Windows code signing / SmartScreen: Microsoft documentation — MEDIUM confidence
-- MSVC static CRT: CMake MSVC_RUNTIME_LIBRARY documentation — HIGH confidence (well-documented CMake feature)
+### Primary (HIGH confidence — verified from actual codebase)
+- Direct review: `Source/LooperEngine.cpp` — finaliseRecording SPSC invariant (lines 139–145), wrap detection logic (lines 481–484), pendingDelete/pendingReset pattern
+- Direct review: `Source/PluginProcessor.cpp` — panic path (lines 471–477), CC dedup (lines 686–695), mute guard (line 481), allNotesOff ordering
+- Direct review: `Source/PluginEditor.cpp` — timerCallback (line 1443), startTimerHz(30) (line 1100), existing flashCounter pattern (lines 1455–1484)
+- Direct review: `Source/PluginProcessor.h` — pendingPanic_ atomic, pendingAllNotesOff_, pendingCcReset_ pattern (lines 156–158)
+
+### Secondary (MEDIUM confidence — verified via JUCE forum)
+- [JUCE forum: MidiBuffer::addEvent in processBlock](https://forum.juce.com/t/midibuffer-addevent-in-processblock/5184) — 2048 event pre-allocation confirmed; allocation risk if exceeded
+- [JUCE forum: Bug — VST3 Wrapper and MIDI AllNotesOff event](https://forum.juce.com/t/bug-vst3-wrapper-and-midi-allnotesoff-event/32054) — CC121 side effects on downstream VST3 instruments confirmed
+- [JUCE forum: MIDI input quantize to next beat or bar](https://forum.juce.com/t/midi-input-quantize-to-next-beat-or-next-bar/49113) — block-boundary constraint on MIDI sampleOffset
+- [JUCE forum: Repaint terrible performance](https://forum.juce.com/t/repaint-terrible-performance-why/59808) — 60Hz repaint timer causes ~40% CPU confirmed
+- [JUCE forum: Calling repaint in timer callback](https://forum.juce.com/t/calling-repaint-in-timer-callback-in-several-components/5170) — single timer pattern recommendation
+
+### MIDI Standard (HIGH confidence)
+- MIDI 1.0 Specification: CC120 = All Sound Off, CC121 = Reset All Controllers, CC123 = All Notes Off
+- JUCE source: `juce::MidiMessage::allNotesOff(ch)` emits CC123 value 0, NOT CC121
 
 ---
-
-*Pitfalls research for: JUCE VST3 MIDI plugin with SDL2 gamepad integration (ChordJoystick)*
-*Researched: 2026-02-22*
-*External research tools unavailable this session — all findings from direct code inspection + training knowledge. Mark LOW/MEDIUM confidence items for empirical validation during development.*
+*Pitfalls research for: ChordJoystick v1.1 — MIDI panic, trigger quantization, and UI polish additions to JUCE 8 lock-free plugin*
+*Researched: 2026-02-24*
+*All pitfalls derived from direct review of the v1.0 source code (LooperEngine.cpp, PluginProcessor.cpp, PluginEditor.cpp) + verified JUCE forum sources. No generic pitfalls included.*

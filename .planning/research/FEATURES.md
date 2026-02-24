@@ -1,238 +1,517 @@
 # Feature Research
 
-**Domain:** MIDI Chord Generator / Performance Controller VST Plugin
-**Researched:** 2026-02-22
-**Confidence:** MEDIUM (training data through Aug 2025; web search unavailable this session — verify competitor details before finalizing requirements)
+**Domain:** MIDI Chord Generator / Performance Controller VST Plugin — v1.1 Additions
+**Researched:** 2026-02-24
+**Confidence:** HIGH for MIDI spec items (CC numbers are standardized); MEDIUM for UI patterns and quantize algorithms (DAW conventions, verified by multiple sources); HIGH for SDL2 API (verified against SDL2 wiki)
 
 ---
 
-> **Note on sources:** WebSearch and WebFetch were unavailable during this research session.
-> All competitor analysis is drawn from training data (knowledge cutoff Aug 2025).
-> Confidence ratings reflect this limitation. Recommend manual spot-check against
-> current KVR Audio listings before locking requirements.
+> **Scope note:** This document supersedes the v1.0 FEATURES.md for the purpose of v1.1 planning.
+> It covers ONLY the four new feature domains requested: MIDI panic, trigger quantization,
+> looper position visualization, and gamepad type detection.
+> v1.0 table-stakes / differentiator analysis is preserved at the bottom for roadmap continuity.
 
 ---
 
-## Feature Landscape
+## Feature Domain 1: MIDI Panic Full Reset
 
-### Table Stakes (Users Expect These)
+### What Professional Implementations Do
 
-Features users assume exist. Missing these = product feels incomplete. In the paid plugin category, these are pre-purchase expectations; their absence triggers refund requests and negative reviews.
+**Standard MIDI channel mode messages (MIDI 1.0 spec, HIGH confidence):**
+
+| CC | Name | Value | Effect |
+|----|------|-------|--------|
+| 120 | All Sound Off | 0 | Immediate silence — cuts active audio regardless of release envelopes or hold pedal. Use for instant silence. |
+| 121 | Reset All Controllers | 0 | Resets pitch bend to 0, mod wheel (CC1) to 0, sustain pedal (CC64) to 0, expression (CC11) to 127, and all other continuous controllers to default values. Does NOT stop notes. |
+| 123 | All Notes Off | 0 | Transitions all notes to released state. Notes with held sustain (CC64 still on) will continue to ring until sustain is released. Respects release envelopes. |
+| 64 | Sustain Pedal | 0 | Explicitly releases hold pedal — must precede or accompany CC123 to guarantee note silence when synth has sustain active. |
+
+**Key distinction (HIGH confidence, MIDI spec):**
+- CC 120 (All Sound Off) = immediate cut, ignores release tails and hold pedal. Most aggressive.
+- CC 123 (All Notes Off) = polite release, respects release envelopes and sustain. Some synths ignore it while CC64 is on.
+- CC 121 (Reset All Controllers) = does not stop notes — only resets controller state.
+
+**Professional panic sequence (MEDIUM confidence — triangulated from Cubase docs, iConnectivity MIDI Panic App, Logic Pro support, multiple forum sources):**
+
+The de-facto industry sequence, sent on EVERY channel (1–16):
+
+```
+Step 1: CC 64  = 0    (sustain off — unlock any hold-pedal-held notes)
+Step 2: CC 120 = 0    (all sound off — immediate silence)
+Step 3: CC 123 = 0    (all notes off — set note state to off)
+Step 4: CC 121 = 0    (reset all controllers — zero pitch bend, mod, expression)
+Step 5: Pitch Bend = 8192  (center pitch bend to 0 — belt and suspenders)
+```
+
+**Why 16 channels, not just 4 voice channels:**
+- Stuck notes from previous plugin instances or external gear may be on any channel.
+- Real panic must be unconditional and cover the full MIDI channel space.
+- Cubase "Reset" and iConnectivity MIDI Panic both default to sending on all 16 channels.
+
+**Current v1.0 implementation (from source):**
+- `pendingPanic_` flag is set from UI button or R3 gamepad button.
+- On audio thread: sends `allNotesOff()` on the 4 configured voice channels only, resets TriggerSystem gates, stops looper.
+- Does NOT send CC 121, CC 64, pitch bend reset, or cover all 16 channels.
+- Filter CCs (CC74, CC71) are reset separately via `pendingCcReset_` on disconnect.
+
+**Gap for v1.1:** The current panic is a `juce::MidiMessage::allNotesOff()` on 4 channels (which sends CC123 per JUCE implementation). v1.1 should expand this to a full sweep: CC64=0, CC120=0, CC123=0, CC121=0, pitch bend center — on all 16 channels. Additionally, it should zero out filter CCs (CC74, CC71, CC12, CC1, CC76) on the filter channel, and reset pitch bend on all 4 voice channels.
+
+### Table Stakes vs. Differentiator
+
+| Aspect | Category | Notes |
+|--------|----------|-------|
+| Sends allNotesOff on voice channels | Table Stakes | Already in v1.0 |
+| Sends on ALL 16 channels | Table Stakes | Any professional panic does this |
+| CC 120 (All Sound Off) included | Table Stakes | Required for synths with long release tails |
+| CC 121 (Reset All Controllers) | Table Stakes | Required to clear stuck pitch bend / mod wheel |
+| CC 64 = 0 before allNotesOff | Table Stakes | Required when synth has hold pedal active |
+| Pitch bend reset to center | Table Stakes | Required when pitch bend RPN has been used |
+| Filter CC reset (CC74, CC71, etc.) on filter channel | Specific to ChordJoystick | Ensures filter returns to neutral on panic |
+
+### Implementation Notes
+
+- JUCE `MidiMessage::allNotesOff(ch)` sends CC 123 with value 0 on channel `ch`. This is correct but insufficient alone.
+- JUCE `MidiMessage::controllerEvent(ch, 120, 0)` sends All Sound Off.
+- JUCE `MidiMessage::controllerEvent(ch, 121, 0)` sends Reset All Controllers.
+- JUCE `MidiMessage::controllerEvent(ch, 64, 0)` sends Sustain Off.
+- JUCE `MidiMessage::pitchWheel(ch, 8192)` sends pitch bend center (8192 = 0 in JUCE's 0–16383 range).
+- All of these should be sent at sample offset 0 within the panic block.
+- Loop over channels 1–16 for the full sweep; also loop over the 4 voice channels for pitch bend reset (since the plugin sets RPN pitch bend range on note-on).
+
+**Complexity: LOW.** It's a larger loop and more CC messages, but no new architecture. The `pendingPanic_` path in `processBlock` is already in place.
+
+---
+
+## Feature Domain 2: Trigger / Gate Quantization
+
+### How It Works in Professional Tools
+
+**Two quantization modes (HIGH confidence — consistent across MPC, Ableton, Cubase docs):**
+
+**Mode A: Live / Input Quantize (applied during recording)**
+- Each gate event (note-on and note-off) is snapped to the nearest subdivision grid point as it is recorded.
+- The beat timestamp stored in `LooperEvent` is replaced with the rounded value before it enters the buffer.
+- MPC calls this "Time Correct" on the input. Ableton calls it "Record Quantization."
+- Subdivision options (standard industry practice): 1/4, 1/8, 1/16, 1/32 — same subdivisions already used for random gate.
+
+**Mode B: Post-Record Quantize (applied to existing loop)**
+- A QUANTIZE button iterates over all Gate events in `playbackStore_[]` and re-snaps each timestamp to the nearest grid.
+- The loop does not need to re-record; it re-times existing stored events.
+- After snapping, `playbackStore_` is updated in-place and playback continues from the corrected data.
+- Ableton: Cmd+U (quantize) in clip view. Pro Tools: Event > MIDI > Quantize. Both apply to existing MIDI.
+
+### The Quantization Algorithm (MEDIUM confidence — standard DSP/MIDI practice, multiple sources agree)
+
+**Input:** `beatPosition` (a `double` representing beats elapsed from loop start), `subdivBeats` (the grid cell size in beats), `strength` (0.0–1.0; 1.0 = full snap).
+
+**Steps:**
+
+```
+1. Compute grid index: gridIndex = round(beatPosition / subdivBeats)
+2. Compute snapped position: snappedBeat = gridIndex * subdivBeats
+3. Wrap to loop: snappedBeat = fmod(snappedBeat, loopLengthBeats)
+4. Apply strength (optional):
+   quantizedBeat = beatPosition + (snappedBeat - beatPosition) * strength
+5. Clamp to [0, loopLengthBeats)
+```
+
+**For ChordJoystick v1.1 (opinionated recommendation):**
+- Use strength = 1.0 (full snap). No partial quantize knob — too complex for a small UI, and the user already controls groove feel via the trigger source (joystick motion vs. pad vs. random).
+- Use `round()` not `floor()` — nearest grid, not ahead-of-time snap. This matches MPC "Time Correct" and Ableton record quantize behavior.
+- Only quantize Gate events (`LooperEvent::Type::Gate`) — do NOT quantize JoystickX/JoystickY or FilterX/FilterY events. Joystick position is a continuous control; snapping it defeats the expressiveness of the gesture.
+
+**Subdivision storage (grid cell size in beats):**
+
+| Subdivision | Beats (quarter-note = 1.0) |
+|-------------|---------------------------|
+| 1/4 | 1.0 |
+| 1/8 | 0.5 |
+| 1/16 | 0.25 |
+| 1/32 | 0.125 |
+
+**Quantize subdivision vs. random subdivision:**
+These are independent. The quantize subdivision is a separate APVTS parameter (`quantizeSubdiv`). The random subdivision (`randomSubdiv0..3`) controls how often random voices fire — a different concept entirely.
+
+### Live Quantize During Record
+
+**Implementation path:**
+- In `processBlock`, when `recordGate()` is called with a `beatPos`, if live quantize is armed, replace `beatPos` with `round(beatPos / subdivBeats) * subdivBeats` before passing it to `LooperEngine::recordGate()`.
+- The snap happens in the processor before the event enters the FIFO, so `finaliseRecording()` receives already-quantized timestamps.
+- This is cleaner than quantizing inside `LooperEngine` because the quantize parameters live in APVTS (not inside LooperEngine).
+
+**OR** (alternative): Apply quantization inside `LooperEngine::recordGate()` if a `quantizeEnabled_` atomic and `quantizeSubdivBeats_` are added to LooperEngine. This is also valid but couples quantization logic to the engine.
+
+**Recommendation:** Apply in `processBlock` (or in a helper called from there) — keeps LooperEngine focused on timing mechanics, not musical grid decisions.
+
+### Post-Record Quantize
+
+**Implementation path:**
+- PluginEditor `[QUANTIZE]` button sets an atomic flag `pendingQuantize_` in PluginProcessor.
+- `processBlock` reads the flag; when set, calls `looper_.quantizeGates(subdivBeats)`.
+- `LooperEngine::quantizeGates(double subdivBeats)` iterates `playbackStore_[0..playbackCount_-1]`, snaps Gate event `beatPosition` fields in-place, leaves JoystickX/Y and FilterX/Y events unchanged.
+- The operation must only run when `recording_ == false` — same invariant as `finaliseRecording()`. If looper is recording, defer until next non-recording block.
+- After in-place snap, playback immediately reflects corrected timing on the next loop cycle.
+
+**Complexity: MEDIUM.** The algorithm is simple (one multiply + round per event). The tricky part is thread safety: the audio thread owns `playbackStore_[]` exclusively during playback; the quantize operation must be atomic with respect to the playback read pointer. Because LooperEngine reads events sequentially during playback (no random access), updating timestamps in-place is safe as long as the quantize pass completes before the next `process()` call on the same thread. A simpler approach: copy to scratch, quantize scratch, then swap via `playbackCount_` atomic — same pattern as `finaliseRecording()`.
+
+### Table Stakes vs. Differentiator
+
+| Feature | Category | Notes |
+|---------|----------|-------|
+| Post-record QUANTIZE button | Table Stakes (for looper products) | MPC, Ableton, Boss RC all have this |
+| Live record quantize | Table Stakes | MPC "Time Correct on Input," Ableton record quantize |
+| Independent quantize subdivision | Table Stakes | Must be separate from random gate subdivision |
+| Quantize only Gate events (not joystick gestures) | ChordJoystick-specific | Gesture continuity is a core value; joystick snapping destroys it |
+| Quantize strength knob (partial snap) | Anti-Feature for v1.1 | Adds UI complexity without proportional value; defer to v2 |
+
+---
+
+## Feature Domain 3: Looper Playback Position Visualization
+
+### What Works in Small Plugin UIs
+
+**Industry patterns (MEDIUM confidence — from SooperLooper, hardware loopers, JUCE forum discussions):**
+
+**Pattern 1: Horizontal progress bar (most common)**
+- A thin horizontal bar fills left-to-right as the loop plays, resets to 0 at loop boundary.
+- Width represents total loop length; fill position = `getPlaybackBeat() / getLoopLengthBeats()`.
+- Used by: Boss RC series (LED strip), Ableton Looper device (horizontal bar), SooperLooper (position indicator added in v1.7.9).
+- Advantage: immediately readable, zero ambiguity, works at any pixel width (even 8px tall).
+- In ChordJoystick: place below the looper transport buttons row. A 6–8px tall bar spanning the looper section width is sufficient.
+
+**Pattern 2: Rotating indicator / clock hand**
+- A circular sweep shows position around a clock face.
+- Used by: Elektron hardware (Analog Four/Octatrack step indicators), some hardware sequencers.
+- Disadvantage: harder to read the absolute position at a glance; requires more horizontal real estate for a circle. Not recommended for a small secondary indicator.
+
+**Pattern 3: Beat tick marks with playhead**
+- Vertical tick marks at each beat (or subdivision); a moving cursor sweeps across.
+- Used by: DAW timeline view, Roland SP-404.
+- Disadvantage: requires enough pixel width to space ticks; at the plugin's current width (likely 600–800px), only 2-bar loops at 4/4 would have adequate tick spacing. For 16-bar loops the ticks compress to noise.
+
+**Recommendation: Horizontal progress bar (Pattern 1).**
+- A `juce::Component` with a custom `paint()` that fills a rectangle proportionally.
+- Height: 6px. Color: cyan (matching plugin aesthetic).
+- The timer callback in PluginEditor already reads `proc_.looper_.getPlaybackBeat()` — add position bar repaint there.
+- When loop is stopped: bar is empty (0 fill).
+- When loop is recording: bar shows recording progress in red/amber (alternate color), same fill logic.
+
+**API already available:**
+- `LooperEngine::getPlaybackBeat()` returns `double` — atomic float cast to double; updates each processBlock.
+- `LooperEngine::getLoopLengthBeats()` returns loop length in beats.
+- Ratio = `getPlaybackBeat() / getLoopLengthBeats()`, clamped to [0.0, 1.0].
+
+**Update rate:** PluginEditor timer currently fires at some rate (typically 30Hz in JUCE plugins using `startTimerHz(30)`). At 120 BPM, a 4/4 bar is 2 seconds; 30Hz gives ~60 position updates per bar — visually smooth.
+
+**Recording state color coding (MEDIUM confidence — consistent with hardware looper conventions):**
+- Stopped/idle: bar hidden or dim outline only
+- Playing back: cyan fill
+- Recording: red/amber fill (recording progress fills the bar as beats are recorded)
+- Record-armed (waiting for trigger): blinking/pulsing outline
+
+**Complexity: LOW.** One custom `juce::Component` with ~20 lines of `paint()` code. No new audio thread logic needed.
+
+### Anti-Pattern to Avoid
+
+**Beat number text display alone ("Bar 2 / Beat 3")** — Cognitive load is high when performing; a visual position bar is scannable peripherally. Do both if space permits, but the bar is primary.
+
+---
+
+## Feature Domain 4: Gamepad Controller Type Detection
+
+### SDL2 API (HIGH confidence — verified against SDL2 Wiki and SDL_gamecontroller.h)
+
+**Primary function: `SDL_GameControllerGetType(controller)`**
+- Available since SDL 2.0.12 (ChordJoystick uses SDL2 2.30.9 — well above this floor).
+- Returns `SDL_GameControllerType` enum.
+
+**Full enum (HIGH confidence — verified against SDL2 source):**
+
+| Value | Enum Constant | Display String |
+|-------|---------------|----------------|
+| 0 | SDL_CONTROLLER_TYPE_UNKNOWN | "Controller" |
+| 1 | SDL_CONTROLLER_TYPE_XBOX360 | "Xbox 360" |
+| 2 | SDL_CONTROLLER_TYPE_XBOXONE | "Xbox One" |
+| 3 | SDL_CONTROLLER_TYPE_PS3 | "PS3" |
+| 4 | SDL_CONTROLLER_TYPE_PS4 | "PS4" |
+| 5 | SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO | "Switch Pro" |
+| 6 | SDL_CONTROLLER_TYPE_VIRTUAL | "Virtual" |
+| 7 | SDL_CONTROLLER_TYPE_PS5 | "PS5" |
+| 8 | SDL_CONTROLLER_TYPE_AMAZON_LUNA | "Luna" |
+| 9 | SDL_CONTROLLER_TYPE_GOOGLE_STADIA | "Stadia" |
+| 10 | SDL_CONTROLLER_TYPE_NVIDIA_SHIELD | "Shield" |
+| 11 | SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT | "Joy-Con L" |
+| 12 | SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT | "Joy-Con R" |
+| 13 | SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR | "Joy-Con Pair" |
+
+**Secondary function: `SDL_GameControllerName(controller)`**
+- Returns implementation-dependent name string (e.g., "PS4 Controller", "Xbox One Controller", "DualSense Wireless Controller").
+- Available since SDL 2.0.0.
+- Useful as fallback display when type is UNKNOWN — shows the raw device name instead of "Controller".
+
+**Where to call it:**
+- `GamepadInput::timerCallback()` opens the controller via `tryOpenController()`.
+- At the point where `SDL_GameControllerOpen()` succeeds, call both `SDL_GameControllerGetType()` and `SDL_GameControllerName()`, convert to display string, store in an `std::atomic<int>` (for the type enum) and a `juce::String` (for the name).
+- The `juce::String` write from the SDL timer thread is safe as long as the UI reads it via a snapshot protected by a simple flag or reads during the `onConnectionChangeUI` callback (message thread).
+
+**Recommended approach for v1.1:**
+- Store type as `std::atomic<int> controllerType_` (default UNKNOWN).
+- Store name as a `juce::String controllerName_` written only when controller connects (inside `onConnectionChangeUI` callback on message thread — safe).
+- `gamepadStatusLabel_` in PluginEditor currently shows "GAMEPAD: Connected" / "No Controller" — extend to show type: "PS4 Connected", "Xbox One Connected", "Controller (Generic)", "No Controller".
+
+**Format of the display string:**
+```
+"PS4 Connected"         // SDL_CONTROLLER_TYPE_PS4
+"PS5 Connected"         // SDL_CONTROLLER_TYPE_PS5
+"Xbox One Connected"    // SDL_CONTROLLER_TYPE_XBOXONE
+"Xbox 360 Connected"    // SDL_CONTROLLER_TYPE_XBOX360
+"Switch Pro Connected"  // SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO
+"Controller Connected"  // SDL_CONTROLLER_TYPE_UNKNOWN (also append name if non-null)
+"No Controller"         // not connected
+```
+
+**Complexity: LOW.** One function call at connection time, a switch statement to map enum to string. The label is already in place in `PluginEditor`.
+
+---
+
+## v1.1 Feature Landscape
+
+### Table Stakes (Users Expect These in v1.1)
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Scale quantization with presets | Every chord plugin since 2018 has this; users search "scale lock" | MEDIUM | ChordJoystick already has 20+ presets + custom piano buttons — this is satisfied |
-| Real-time MIDI output to DAW | Core promise of any MIDI generator | LOW | JUCE handles transport; must work on Ableton and Reaper without extra routing steps |
-| DAW preset save/recall | Paid plugins without preset persistence feel broken; users expect state to survive DAW session close | LOW | APVTS covers this — already in requirements |
-| Stable operation (no crashes, no note sticking) | Musicians use plugins in live performance; hung notes or crashes are show-stoppers | HIGH | Note-off reliability is the hardest guarantee; test all gate/trigger paths exhaustively |
-| Note-off guarantee on plugin close/bypass | Standard expectation — all notes must silence on bypass or DAW stop | MEDIUM | JUCE processBlock() must send note-off on transport stop and plugin close |
-| Octave / transpose control | Every keyboard/MIDI tool has global transpose; users reach for this first | LOW | Already in requirements (global transpose −24 to +24, per-voice octave offset) |
-| Configurable MIDI channel output | Routing to specific instruments via channel is workflow-critical for multi-timbral setups | LOW | Already in requirements (per-voice channel 1–16) |
-| Visual feedback of current chord/pitch state | Users need to see what the plugin is doing — joystick position, active notes, current root | MEDIUM | XY display with position indicator is the primary UI; must show active pitches |
-| Basic latency transparency | Plugin must not add perceptible latency to MIDI output | MEDIUM | JUCE MIDI output in processBlock() is sample-accurate; do not buffer unnecessarily |
-| Windows DAW compatibility | Target DAWs (Ableton, Reaper) must load and pass MIDI without extra config | MEDIUM | JUCE VST3 is well-tested on both; SDL2 must not conflict with DAW audio threads |
+| Full MIDI panic (all 16 ch, CC120+121+123+64+PB) | Panic button that only covers 4 channels is incomplete; any stuck note on ch 5-16 from external gear is not cleared | LOW | Extend existing `pendingPanic_` path in processBlock; add CC loop over 16 channels |
+| Live record quantize | Expected by any musician who records loops; MPC users especially expect it | MEDIUM | Add `quantizeEnabled_` atomic + subdivision param; apply snap in processBlock before `recordGate()` |
+| Post-record QUANTIZE button | Standard looper feature; hardware loopers (Boss, TC Helicon) all have it | MEDIUM | Add `pendingQuantize_` flag, implement `LooperEngine::quantizeGates()` |
+| Quantize subdivision selector | Tied to quantize feature — useless without subdivision control | LOW | New APVTS parameter `quantizeSubdiv` (1/4, 1/8, 1/16, 1/32); ComboBox in UI |
+| Looper playback position bar | Without position indicator, users cannot see where in the loop they are | LOW | Custom Component, 6px bar, reads `getPlaybackBeat() / getLoopLengthBeats()` |
+| Gamepad type in status label | "Connected" without type is ambiguous when multiple controllers exist | LOW | `SDL_GameControllerGetType()` call at connect time |
 
-### Differentiators (Competitive Advantage)
-
-Features that set ChordJoystick apart from Scaler 2, Chord Prism, Ripchord, Chordjam, and Captain Chords. These are the reasons a musician picks this over free alternatives.
+### Differentiators (v1.1 Polish)
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| XY joystick mapped to harmonic axes | No competitor maps X and Y independently to different chord voices; this is genuinely novel — X = Fifth+Tension, Y = Root+Third | HIGH | The core innovation; must feel fluid and expressive, not jerky or quantized-feeling in motion |
-| Sample-and-hold pitch gate model | Joystick sets pitch continuously; pad press stamps the current pitch — pitch freezes on trigger. Most tools trigger immediately from quantized steps | HIGH | This allows "aim then shoot" musical gestures — a workflow no competitor offers |
-| Per-voice trigger source selection | Root, Third, Fifth, Tension each independently triggerable by pad, joystick motion, or random | HIGH | Competitors either trigger all voices together or have fixed arpeggio patterns; this is additive not prescriptive |
-| PS4/Xbox gamepad as first-class controller | No paid MIDI chord plugin has native gamepad support; controllers are $30–60 vs $200+ MIDI controllers | HIGH | Significant hardware cost reduction for target audience; must handle controller hot-plug gracefully |
-| DAW-synced gesture looper | Records joystick position AND gate events as a beat-locked loop — playback is tempo-relative, not absolute time | HIGH | Competitors (Chord Prism, Scaler 2) have chord sequence patterns but not joystick gesture capture |
-| Gamepad left-stick as filter CC | Sending CC71/CC74 from left stick while right stick controls harmony turns the controller into a two-handed expressive instrument | MEDIUM | No competitor does this — it's a composited instrument experience rather than a utility plugin |
-| Random gate with subdivisions + density | Per-voice randomized triggering at 1/4–1/32 with density control; not just a global random mode | MEDIUM | Most tools with random mode apply it globally; per-voice random enables polyrhythmic generative textures |
-| 12-key custom scale entry via piano UI | Users can draw any scale they want, not limited to presets | LOW | Standard in theory but often omitted or hidden in competitors; make it prominent |
+| Animated mute state visual feedback | MIDI mute is invisible without it — user doesn't know if plugin is muted or broken | LOW | Flash/pulse the MUTE button; already have `flashPanic_` pattern for R3 button |
+| Section visual grouping (UI panel borders) | Reduces cognitive load; distinguishes chord section vs. trigger section vs. looper section | LOW | Draw rounded rect borders or background fills in `paint()` |
+| Quantize only Gate events (not joystick gestures) | Preserves the expressive joystick gesture while tightening the rhythmic grid; no other looper does this | MEDIUM | Explicit Gate-type check in quantize pass |
 
-### Anti-Features (Commonly Requested, Often Problematic)
+### Anti-Features (Do NOT Build in v1.1)
 
-Features that seem attractive but create scope, maintenance, or conceptual debt in v1.
+| Feature | Why Not | Alternative |
+|---------|---------|-------------|
+| Quantize strength / percentage knob | Adds a parameter with no clear default; most users want 100% or 0% (on/off); partial quantize is a DAW clip-level concern | Binary on/off is sufficient; defer strength parameter to v2 |
+| MIDI output channel expansion beyond 4 voices | Current 4-voice model is the product's identity | Leave 4-voice routing as is |
+| Chord name display | Chord analysis engine is significant work; ChordJoystick voices can be non-traditional voicings that don't map to named chords cleanly | Show note names (C3, Eb4) — already derivable from held pitch |
+| Separate quantize per voice | Over-complicating for v1.1; one subdivision governs all voices | Single global quantize subdivision |
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Built-in audio synthesis / sound engine | "Play it without a synth" requests; feels more complete | Doubles scope; audio engine = separate domain (voice allocation, polyphony, CPU); changes plugin category from utility to instrument; breaks the MIDI-only value proposition | Document clearly that ChordJoystick drives external synths; ship with a short demo video showing Ableton + synth track setup |
-| MIDI input processing (incoming chord detection) | Users want to play a chord in and have it quantize | Inverse of the product — ChordJoystick generates, not analyzes; adding MIDI input requires note detection, voice attribution, chord analysis engine | Explicitly out of scope v1; if requested, log as future feature |
-| Standalone app mode | "Use without a DAW" | Standalone requires audio subsystem, UI windowing lifecycle, different distribution; adds weeks of work; Windows standalone has ASIO/WASAPI complexity | JUCE Standalone wrapper can be added later with minimal code; defer to v1.5 |
-| Built-in arpeggiator patterns | Users expect arpeggios in any chord tool | ChordJoystick's per-voice trigger model IS a more flexible arpeggiator; a separate arpeggiator conflicts with the trigger source model conceptually and creates UI bloat | Educate in docs: random + joystick motion trigger = generative arpeggio; TouchPlate sequencing = manual arpeggio |
-| macOS / AU support in v1 | Mac users will request it | Requires Mac build machine, AU wrapper, notarization, code signing with Apple developer account ($99/yr); SDL2 gamepad tested less thoroughly on macOS | Windows ships first; add macOS in v2 with a Mac dev environment ready |
-| Full preset browser UI | Professional plugins have preset browsers with categories, tags, search | A proper preset browser is a significant UI subsystem (list box, filtering, file I/O, import/export); APVTS + DAW preset management covers 80% of the need | Use DAW preset management for v1; a custom browser is a v2 feature |
-| MPE (MIDI Polyphonic Expression) | Expressive MIDI users ask for MPE support | MPE requires per-note pitch bend and channel management that conflicts with the fixed 4-voice channel model; MIDI 2.0/MPE is still a niche DAW feature | Standard MIDI channels are universal; MPE is v2+ when it has broader DAW support |
-| MIDI input learn / CC mapping | Power users want to remap controls | CC learn adds a state machine (listening mode, conflict detection, persistent mapping store) that significantly complicates the parameter model | APVTS host automation covers most DAW CC-to-parameter needs; defer to v2 |
-| Chord library / chord name display | Display the chord name (Cmaj7, Dm9) currently being played | Chord identification from 4 arbitrary pitches requires a chord analysis engine; edge cases multiply rapidly (polychords, inversions, non-standard voicings) | Show the raw pitch values (MIDI note numbers or note names); label the voices (Root / Third / Fifth / Tension) |
+---
 
 ## Feature Dependencies
 
 ```
-Scale Quantization
-    └──required by──> XY Joystick Pitch Mapping
-                          └──required by──> Sample-and-Hold Gate Model
-                                                └──required by──> Looper (records quantized positions)
+Trigger Quantization (Live)
+    └──requires──> Looper Record Gate path (already exists)
+    └──requires──> New APVTS param: quantizeSubdiv
+    └──requires──> New APVTS param: liveQuantizeEnabled (bool)
 
-Per-Voice Trigger Sources
-    └──required by──> TouchPlate UI
-    └──required by──> Joystick Motion Trigger
-    └──required by──> Random Gate (subdivisions + density)
+Trigger Quantization (Post-Record)
+    └──requires──> LooperEngine::quantizeGates() — new method
+    └──requires──> pendingQuantize_ atomic in PluginProcessor
+    └──requires──> quantizeSubdiv APVTS param (shared with live quantize)
+    └──requires──> QUANTIZE button in PluginEditor
 
-Gamepad Support (SDL2)
-    └──enables──> Gamepad as XY Controller
-    └──enables──> Gamepad Trigger Buttons (R1/R2/L1/L2)
-    └──enables──> Filter CC Left Stick
-    └──required by──> Gamepad Looper Controls (Cross/Square/Triangle/Circle)
+Looper Position Bar
+    └──requires──> getPlaybackBeat() — already in LooperEngine
+    └──requires──> getLoopLengthBeats() — already in LooperEngine
+    └──independent of quantize features
 
-Looper
-    └──requires──> DAW Transport Sync (JUCE AudioPlayHead)
-    └──requires──> Per-Voice Trigger Sources (to record gate events)
-    └──requires──> XY Joystick Pitch Mapping (to record positions)
+Full MIDI Panic
+    └──requires──> existing pendingPanic_ flag (already in place)
+    └──enhances by──> looping CC over 16 channels
+    └──independent of quantize features
 
-MIDI Channel Routing
-    └──required by──> Per-Voice MIDI Output
-    └──required by──> Filter CC Channel Output
+Gamepad Type Display
+    └──requires──> SDL_GameControllerGetType() call in tryOpenController()
+    └──requires──> controllerType_ storage in GamepadInput
+    └──requires──> onConnectionChangeUI callback (already wired to PluginEditor)
 
-APVTS Parameter State
-    └──required by──> All knobs, buttons, selectors (persistence)
-    └──required by──> DAW Preset Save/Recall
+Live Quantize
+    └──enhances──> Post-Record Quantize
+        (live quantize reduces need for post-record correction;
+         they are complementary, share the same subdivision param)
+
+Full Panic
+    └──should trigger──> Filter CC reset (already in pendingCcReset_ path)
+    └──should trigger after──> looper stop (already done)
 ```
 
 ### Dependency Notes
 
-- **Scale Quantization requires XY Joystick:** The joystick output is raw; quantization is the transform that makes pitches musical. Without scale quantization the joystick is just a pitch bend controller, not a chord generator.
-- **Sample-and-Hold requires Quantization:** The held pitch must be a quantized note; holding a raw joystick float would produce non-musical results.
-- **Looper requires DAW Transport Sync:** Beat-locked recording requires `AudioPlayHead::getCurrentPosition()` to stamp events with beat position, not wall-clock time.
-- **Gamepad conflicts with Mouse-only joystick:** Both drive the same XY parameter; must use last-input-wins priority — gamepad right stick overrides mouse drag when gamepad is connected, mouse resumes when gamepad disconnects. This is a subtle state management problem.
-- **Random Gate conflicts with Joystick Motion Trigger (per voice):** For a given voice, only one trigger source is active at a time; the per-voice selector is the resolution mechanism — it's a configuration choice, not a runtime conflict.
+- **quantizeSubdiv is shared** between live quantize and post-record quantize — one APVTS parameter, one ComboBox.
+- **Live quantize and post-record quantize are independent features** but share the subdivision selector. Plan them in the same phase to avoid adding the subdivision UI twice.
+- **Looper position bar has zero dependencies on new features** — it reads existing LooperEngine APIs and can be built in any phase.
+- **Full panic has zero external dependencies** — it is a pure processBlock change.
+- **Gamepad type detection has zero dependencies** — it is a pure GamepadInput change at connection time.
 
-## MVP Definition
+---
 
-### Launch With (v1)
-
-These are the features that make ChordJoystick a complete, shippable, paid plugin.
-
-- [x] XY joystick with mouse control (Y = Root+Third pitch, X = Fifth+Tension pitch) — the core innovation
-- [x] Scale quantization: 20+ presets + 12-key custom entry, nearest-note algorithm, ties go down — without this the joystick is noise
-- [x] 4-voice TouchPlate triggers (sample-and-hold, note-on/note-off) — the performance gesture system
-- [x] Per-voice trigger source: TouchPlate / Joystick Motion / Random — makes the system compositionally flexible
-- [x] Random gate with subdivisions (1/4–1/32) and density knob — adds generative value without MIDI input
-- [x] Global transpose + per-voice octave offset + interval knobs — registers and voicing control
-- [x] Per-voice MIDI channel routing (1–16) — multi-timbral setups are common; without this, routing to multiple instruments requires workarounds
-- [x] DAW-synced looper (record/play/stop/reset, 1–16 bars, standard time signatures) — the feature that elevates this from performance tool to composition tool
-- [x] PS4/Xbox gamepad support via SDL2 with hot-plug — the hardware differentiator
-- [x] Filter CC output (CC74/CC71) from gamepad left stick — completes the two-handed instrument concept
-- [x] APVTS state persistence (saves with DAW session and plugin presets) — non-negotiable for paid plugin quality
-- [x] Note-off guarantee on transport stop, plugin bypass, and DAW close
-
-### Add After Validation (v1.x)
-
-Add these once v1 ships and user feedback confirms demand:
-
-- [ ] Standalone app mode — when enough users ask for "use without Ableton"; JUCE makes this low-effort once VST3 is stable
-- [ ] macOS build + AU format — when a Mac build environment is set up
-- [ ] MIDI CC input learn — when power users request custom controller mapping
-- [ ] Velocity control per voice or per trigger — when users want dynamics beyond note-on velocity 127
-
-### Future Consideration (v2+)
-
-Defer until product-market fit is established and revenue justifies the scope:
-
-- [ ] Built-in preset browser UI — needs significant UI subsystem work; DAW presets cover v1
-- [ ] MPE output — needs DAW ecosystem to mature further; niche market now
-- [ ] MIDI chord analysis / input processing — inverse product direction; validate separately
-- [ ] Additional DAW sync modes (MIDI clock slave, Ableton Link) — for users who don't use a DAW host
-- [ ] Pattern sequencer for joystick positions — automating the XY path over time
-
-## Feature Prioritization Matrix
+## Feature Prioritization Matrix (v1.1)
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| XY joystick pitch mapping | HIGH | HIGH | P1 |
-| Scale quantization (20+ presets + custom) | HIGH | MEDIUM | P1 |
-| TouchPlate sample-and-hold gate | HIGH | MEDIUM | P1 |
-| Per-voice trigger source | HIGH | MEDIUM | P1 |
-| APVTS state persistence | HIGH | LOW | P1 |
-| Note-off guarantee (all paths) | HIGH | MEDIUM | P1 |
-| Global transpose + octave offsets | HIGH | LOW | P1 |
-| DAW-synced looper | HIGH | HIGH | P1 |
-| Per-voice MIDI channel routing | MEDIUM | LOW | P1 |
-| PS4/Xbox gamepad support | HIGH | HIGH | P1 |
-| Random gate (subdivisions + density) | MEDIUM | MEDIUM | P1 |
-| Filter CC (CC71/CC74) from gamepad | MEDIUM | LOW | P1 |
-| Visual XY position indicator | HIGH | LOW | P1 |
-| Active note display (4 voice pitches) | MEDIUM | LOW | P2 |
-| Standalone app mode | MEDIUM | MEDIUM | P3 |
-| Built-in preset browser | LOW | HIGH | P3 |
-| MIDI CC input learn | MEDIUM | HIGH | P3 |
-| Chord name display | LOW | HIGH | P3 |
-| macOS / AU support | HIGH | HIGH | P3 |
+| Full MIDI panic (16-channel sweep) | HIGH — fixes real stuck-note problem in live use | LOW | P1 |
+| Looper position bar | HIGH — removes "where am I in the loop?" confusion | LOW | P1 |
+| Post-record QUANTIZE button | HIGH — most requested looper feature after recording | MEDIUM | P1 |
+| Live trigger quantization | MEDIUM — nice for tightening performances | MEDIUM | P2 |
+| Quantize subdivision selector | HIGH (required by quantize) | LOW | P1 |
+| Gamepad type in status label | MEDIUM — polish, improves discoverability | LOW | P2 |
+| Animated mute state visual | MEDIUM — prevents "is it broken?" confusion | LOW | P2 |
+| Section visual grouping (UI) | LOW-MEDIUM — polish | LOW | P2 |
 
 **Priority key:**
-- P1: Must have for launch (all already in v1 requirements)
-- P2: Should have, add when possible
-- P3: Nice to have, future consideration
+- P1: Must ship in v1.1
+- P2: Should ship in v1.1, include if timeline allows
 
-## Competitor Feature Analysis
+---
 
-> Confidence: LOW-MEDIUM — Training data through Aug 2025. Verify against current product pages before finalizing.
+## Implementation Behavior Specifications
 
-| Feature | Scaler 2 (Plugin Boutique) | Chord Prism (Audiomodern) | Ripchord (Trackbout) | ChordJoystick Approach |
-|---------|---------------------------|--------------------------|---------------------|------------------------|
-| Scale quantization | YES — 40+ scales, key detection | YES — scale lock | YES — scale snap | YES — 20+ presets + custom 12-key |
-| Chord voicing | YES — inversion, spread, voice leading | YES — arpeggio mode | YES — 4-voice spread | YES — XY joystick controls interval positions |
-| Real-time performance UI | Partial — chord pads, not continuous | YES — XY pad | NO | YES — joystick is primary; continuous not step |
-| Arpeggiator | YES — multiple patterns | YES | NO | Per-voice trigger model supersedes this |
-| MIDI channel routing | Limited — single output channel | Limited | NO | YES — per-voice 1–16 |
-| Looper / recording | NO — chord progression recorder only | NO | NO | YES — beat-locked joystick + gate looper |
-| Gamepad support | NO | NO | NO | YES — PS4/Xbox via SDL2 |
-| State persistence | YES | YES | YES | YES (APVTS) |
-| Preset browser | YES — extensive | Partial | NO | NO (v1 relies on DAW presets) |
-| Sample-and-hold gate | NO | NO | NO | YES — core innovation |
-| Per-voice trigger source | NO | NO | NO | YES — TouchPlate / Motion / Random per voice |
-| Filter CC output | NO | NO | NO | YES — CC71/CC74 from gamepad left stick |
-| Pricing (approx.) | ~$49–59 | ~$30–40 | FREE | Paid (TBD) |
-| Platform | Win + Mac + Linux | Win + Mac | Win + Mac | Windows (v1) |
+### Panic: Full CC Reset Sequence
 
-### Key Competitive Observations
+Send the following on EACH of channels 1–16 (in order):
 
-1. **Scaler 2** is the market leader in paid chord generators. Its strength is its chord library and music theory depth. Its weakness is that it's a step-sequencer-oriented tool — chords are selected, not continuously navigated. ChordJoystick is more like an instrument than a utility.
+```cpp
+// Per channel ch (1-based):
+midi.addEvent(MidiMessage::controllerEvent(ch, 64, 0),   0);  // sustain off
+midi.addEvent(MidiMessage::controllerEvent(ch, 120, 0),  0);  // all sound off
+midi.addEvent(MidiMessage::allNotesOff(ch),              0);  // CC123 all notes off
+midi.addEvent(MidiMessage::controllerEvent(ch, 121, 0),  0);  // reset all controllers
+midi.addEvent(MidiMessage::pitchWheel(ch, 8192),         0);  // pitch bend center
+```
 
-2. **Chord Prism** is the closest competitor in the "expressive XY" space. It has an XY pad and scale lock. Key differentiators vs ChordJoystick: Chord Prism applies chords as polyphonic MIDI chords to X/Y — it maps chord type/root across axes, not individual voice intervals. It has no gamepad support, no looper, and no sample-and-hold gate model.
+Then additionally, for the filter MIDI channel (may overlap with voice channels):
+```cpp
+midi.addEvent(MidiMessage::controllerEvent(filterCh, 74, 0),  0);  // cutoff to 0
+midi.addEvent(MidiMessage::controllerEvent(filterCh, 71, 0),  0);  // res to 0
+midi.addEvent(MidiMessage::controllerEvent(filterCh, 12, 0),  0);  // VCF LFO to 0
+midi.addEvent(MidiMessage::controllerEvent(filterCh,  1, 0),  0);  // mod wheel to 0
+midi.addEvent(MidiMessage::controllerEvent(filterCh, 76, 0),  0);  // LFO rate to 0
+```
 
-3. **Ripchord** is free and simple — drag a MIDI note in to trigger a chord. No real-time joystick, no looper, no gamepad. Not a direct competitor but sets user expectations for "free alternative exists."
+Also: reset `prevCcCut_`, `prevCcRes_` to -1 so next filter CC emission fires fresh.
 
-4. **Chordjam** (Audiomodern) focuses on generative chord progressions with randomized triggers. No XY joystick, no per-voice gate control.
+### Quantize Algorithm (Gate Events Only)
 
-5. **The gap ChordJoystick fills:** Continuous harmonic navigation (not step-selection) + per-voice sample-and-hold gates + gamepad as first-class controller + beat-locked joystick looper. No competitor offers this combination. The closest analog is a hardware instrument (Roli Seaboard, Haken Continuum) that maps physical XY to harmonic space, but those are $500–$4000+ hardware devices. ChordJoystick is a software equivalent at a fraction of the cost.
+```cpp
+double quantizeGateBeat(double beatPosition, double subdivBeats, double loopLengthBeats)
+{
+    double gridIndex   = std::round(beatPosition / subdivBeats);
+    double snapped     = gridIndex * subdivBeats;
+    // Wrap to loop boundary
+    snapped = std::fmod(snapped, loopLengthBeats);
+    if (snapped < 0.0) snapped += loopLengthBeats;
+    return snapped;
+}
+```
 
-## Feature Complexity Reference (for Phase Planning)
+Subdivision in beats: 1/4 = 1.0, 1/8 = 0.5, 1/16 = 0.25, 1/32 = 0.125.
+Apply only to `LooperEvent::Type::Gate`. Skip JoystickX, JoystickY, FilterX, FilterY.
 
-| Feature | Complexity Driver | Build Phase Estimate |
-|---------|------------------|---------------------|
-| XY joystick UI + MIDI output | Smooth mouse tracking, JUCE Component custom drawing | Phase 2–3 |
-| Scale quantization engine | Nearest-note search over 2 octaves, tie-breaking logic | Phase 2 |
-| Sample-and-hold gate + note-on/off | State machine per voice (armed → triggered → releasing) | Phase 3 |
-| Per-voice trigger source routing | State selector driving 3 trigger backends | Phase 3 |
-| Random gate (synced) | JUCE Timer or processBlock() beat-sync subdivision counter | Phase 4 |
-| Joystick motion trigger | Threshold delta detection on XY changes | Phase 3 |
-| SDL2 gamepad integration | Hot-plug detection, axis normalization, button mapping | Phase 5 |
-| DAW-synced looper | AudioPlayHead beat position, event queue, playback interpolation | Phase 6 |
-| Per-voice MIDI channel routing | APVTS int parameter → juce::MidiMessage channel field | Phase 2 |
-| UI layout (TouchPlates, scale buttons, knobs) | JUCE Component layout, custom LookAndFeel | Phase 2–3 |
-| Note-off guarantee (all paths) | processBlock() state audit on transport stop + bypass | Phase 3 |
-| APVTS persistence | JUCE AudioProcessorValueTreeState — covered by framework | Phase 2 |
+### Looper Position Bar Paint Logic
+
+```cpp
+void LooperPositionBar::paint(juce::Graphics& g)
+{
+    const double beat       = proc_.looper_.getPlaybackBeat();
+    const double loopBeats  = proc_.looper_.getLoopLengthBeats();
+    const float  ratio      = (loopBeats > 0.0)
+                                ? juce::jlimit(0.0f, 1.0f, (float)(beat / loopBeats))
+                                : 0.0f;
+
+    g.fillAll(juce::Colours::black);
+
+    const bool isRecording = proc_.looperIsRecording();
+    const juce::Colour barColour = isRecording
+        ? juce::Colour(0xFFFF6600)   // amber when recording
+        : juce::Colour(0xFF00FFFF);  // cyan when playing
+
+    if (proc_.looperIsPlaying() || isRecording)
+        g.setColour(barColour);
+    else
+        g.setColour(juce::Colours::darkgrey.withAlpha(0.3f));
+
+    g.fillRect(getLocalBounds().toFloat().withWidth(getWidth() * ratio));
+}
+```
+
+Update: call `looperPositionBar_.repaint()` in `PluginEditor::timerCallback()`.
+
+### Gamepad Type Display
+
+```cpp
+// In GamepadInput::tryOpenController(), after SDL_GameControllerOpen() succeeds:
+SDL_GameControllerType type = SDL_GameControllerGetType(controller_);
+const char* name = SDL_GameControllerName(controller_);
+
+controllerType_.store((int)type, std::memory_order_relaxed);
+// controllerName_ written on message thread via onConnectionChangeUI callback;
+// pass the name string through the callback argument or via a separate atomic string.
+```
+
+```cpp
+// Helper: type enum → display string
+juce::String controllerTypeToString(int type)
+{
+    switch (type)
+    {
+        case SDL_CONTROLLER_TYPE_XBOX360:                      return "Xbox 360";
+        case SDL_CONTROLLER_TYPE_XBOXONE:                      return "Xbox One";
+        case SDL_CONTROLLER_TYPE_PS3:                          return "PS3";
+        case SDL_CONTROLLER_TYPE_PS4:                          return "PS4";
+        case SDL_CONTROLLER_TYPE_PS5:                          return "PS5";
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:          return "Switch Pro";
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:  return "Joy-Con";
+        default:                                               return "Controller";
+    }
+}
+// Display: typeStr + " Connected"
+```
+
+Note: `SDL_GameControllerGetType` is available since SDL 2.0.12. ChordJoystick uses SDL2 2.30.9. No version gate needed.
+
+---
 
 ## Sources
 
-- Training data: KVR Audio plugin database coverage (through Aug 2025) — LOW-MEDIUM confidence
-- Training data: Scaler 2 feature documentation (Plugin Boutique) — MEDIUM confidence
-- Training data: Chord Prism feature documentation (Audiomodern) — MEDIUM confidence
-- Training data: Ripchord product page (Trackbout) — MEDIUM confidence
-- Training data: Chordjam feature documentation (Audiomodern) — MEDIUM confidence
-- Training data: JUCE MIDI plugin patterns and APVTS documentation — HIGH confidence (framework behavior is stable)
-- Project context: `.planning/PROJECT.md` — HIGH confidence (authoritative for ChordJoystick requirements)
-- Verify against: https://www.kvraudio.com/plugins/chord-generators/ (current listings)
-- Verify against: https://www.plugin-alliance.com / Plugin Boutique / current Scaler 2 feature page
+### Primary (HIGH confidence)
+- MIDI 1.0 Specification: CC 120 (All Sound Off), CC 121 (Reset All Controllers), CC 123 (All Notes Off) — standardized, unchanging
+- SDL2 Wiki — `SDL_GameControllerGetType`: https://wiki.libsdl.org/SDL2/SDL_GameControllerGetType
+- SDL2 Wiki — CategoryGameController: https://wiki.libsdl.org/SDL2/CategoryGameController
+- SDL2 source — `SDL_gamecontroller.h` via libsdl-org/SDL: confirmed enum values for SDL_GameControllerType
+- Project source code — `PluginProcessor.cpp`, `GamepadInput.h`, `LooperEngine.h`, `PluginEditor.h` (v1.0 baseline)
+
+### Secondary (MEDIUM confidence)
+- Steinberg Cubase Reset Function docs (archive.steinberg.help): confirms "note-off messages + reset controllers on all MIDI channels" as standard panic
+- iConnectivity MIDI Panic Setup App docs: confirms default sequence includes Sustain Off, All Sound Off, Reset Controls, All Notes Off, Pitch Bend Off on all 16 channels
+- Logic Pro support (support.apple.com): confirms "Send discrete Note Offs" and "Send Reset Controllers (CC121)" as two separate panic operations
+- Ableton forum discussions (forum.ableton.com): confirms Ableton lacks built-in panic button; best practice is CC120 + CC123 + CC121 per channel
+- SooperLooper changelog v1.7.9: confirms loop position indicator is a standard expected looper UI feature
+- SDL_GameController blog post (blog.rubenwardy.com, Jan 2023): confirms SDL_GameControllerGetType usage pattern
+
+### Tertiary (LOW confidence — for context only)
+- KVR Audio forum discussions — looper plugin feature expectations
+- Fractal Audio forum — looper quantization behavior descriptions
+- MPC forum discussions — quantization terminology ("Time Correct") and live quantize behavior
 
 ---
-*Feature research for: JUCE VST3 MIDI Chord Generator / Performance Controller*
-*Researched: 2026-02-22*
+
+## Appendix: v1.0 Feature Landscape (Preserved for Roadmap Continuity)
+
+All v1.0 table stakes and differentiators remain valid from the 2026-02-22 research. Key competitive observations:
+
+- No competitor (Scaler 2, Chord Prism, Ripchord, Chordjam) offers gamepad support, beat-locked joystick looper, sample-and-hold gate model, or per-voice trigger source — ChordJoystick's core differentiators are intact.
+- v1.1 additions are pure polish and UX improvements to an already differentiated product.
+
+---
+*Feature research for: JUCE VST3 MIDI Chord Generator / Performance Controller — v1.1 Additions*
+*Researched: 2026-02-24*

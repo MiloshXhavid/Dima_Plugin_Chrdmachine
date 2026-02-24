@@ -1,233 +1,443 @@
-# Stack Research
+# Stack Research — v1.1 Feature APIs
 
-**Domain:** JUCE VST3 MIDI Generator Plugin (Windows) with SDL2 gamepad
-**Researched:** 2026-02-22
-**Confidence:** MEDIUM (WebSearch and WebFetch unavailable; based on codebase inspection + verified knowledge of JUCE/SDL2/VST3 ecosystem as of training cutoff August 2025; flag items marked LOW for external validation)
+**Domain:** JUCE VST3 MIDI Generator Plugin — v1.1 additions only
+**Researched:** 2026-02-24
+**Confidence:** HIGH (all JUCE APIs verified directly from JUCE 8.0.4 source in `build/_deps/juce-src`; all SDL2 APIs verified directly from SDL2 2.30.9 headers in `build/_deps/sdl2-src/include`)
 
----
-
-## Recommended Stack
-
-### Core Technologies
-
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| JUCE | 8.x — pin to a tagged release (e.g., `8.0.4`) | Plugin framework, APVTS, MIDI, GUI, Timer | Industry standard for VST3/AU/AAX on all platforms; provides `juce_add_plugin`, APVTS, GUI components, and DAW integration that would take months to replicate |
-| CMake | 3.22+ | Build system | JUCE's own CMake API requires 3.22 minimum; FetchContent support, generator-expression support, and MSVC toolchain integration are mature at this version |
-| SDL2 | 2.30.9 (static) | Gamepad/controller input | SDL2 is the proven cross-platform HID library for game controllers; SDL3 is NOT a drop-in replacement and has a different API; 2.30.9 is the latest stable SDL2 branch release |
-| C++17 | — | Language standard | JUCE 8 requires C++17 minimum; C++17 is well-supported by MSVC 19.x, Clang-cl, and Clang; `std::atomic`, structured bindings, and `if constexpr` are all used in the codebase |
-| MSVC 2022 (or Clang-cl 17+) | VS 2022 / LLVM 17+ | Compiler | VST3 SDK on Windows is tested against MSVC; JUCE CI uses MSVC for Windows builds; Clang-cl is a valid alternative with better diagnostics but may require extra CMake toolchain config |
-
-### Supporting Libraries
-
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| Catch2 | 3.x (3.7+) | Unit testing for non-audio logic | Use for ChordEngine, ScaleQuantizer, and LooperEngine unit tests — these are pure logic classes with no DAW dependency |
-| pluginval | Latest (v1.x) | Automated VST3 validation in DAW host simulator | Run before each release to catch host compatibility bugs (null playheads, channel layout rejections, state restore failures) |
-| Inno Setup | 6.x | Windows installer for paid distribution | Free, scriptable, widely used by indie plugin developers on Windows; produces a proper .exe installer that places the VST3 in the correct system folder |
-| PACE Eden / Gumroad | — | License enforcement / storefront | Gumroad handles payment + simple serial delivery for solo developer releases; defer DRM until sales volume warrants it |
-
-### Development Tools
-
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| Visual Studio 2022 | IDE + MSVC compiler | Required for Windows VST3; CMake generates a `.sln` that VS opens natively; use `cmake -G "Visual Studio 17 2022" -A x64` |
-| CMake 3.22+ | Build orchestration | Use `cmake --preset` pattern if adding CI; `cmake -B build -G "Visual Studio 17 2022"` for local dev |
-| pluginval | Host-agnostic VST3 validation | Download from Tracktion GitHub; run `pluginval.exe --validate ChordJoystick.vst3 --strictness-level 5` |
-| Process Monitor / DebugView | DAW load debugging | When a plugin silently fails to load in Ableton/Reaper, ProcMon shows missing DLL chains; DebugView captures `DBG()` output |
-| Dependency Walker / pedeps | DLL audit | Verify the VST3 bundle has zero external DLL dependencies before shipping (SDL2 must be statically linked) |
+> **Scope:** This file covers ONLY the four new-feature API questions for v1.1.
+> The full existing stack (JUCE 8.0.4, SDL2 2.30.9 static, CMake, C++17, MSVC, Catch2,
+> Inno Setup) is validated, locked, and documented in the v1.0 STACK.md.
+> No new external libraries are needed for any v1.1 feature.
 
 ---
 
-## Installation
+## Decision: No New Dependencies
 
-```cmake
-# CMakeLists.txt — correct setup (annotated with issues found in current codebase)
+All four v1.1 features can be implemented entirely with APIs already present in the locked
+stack. Rationale per feature:
 
-cmake_minimum_required(VERSION 3.22)
-project(ChordJoystick VERSION 1.0.0)
+| Feature | Why No New Library Needed |
+|---------|--------------------------|
+| MIDI panic sweep | `juce::MidiBuffer::addEvent` + 3 JUCE static factory methods already in `juce_audio_basics` |
+| Trigger quantization | Integer rounding on `beatPosition` field of existing `LooperEvent` struct |
+| Looper position bar | `juce::Component::paint()` + `juce::Graphics::fillRect()` + existing 30 Hz `juce::Timer` |
+| Controller name/type | `SDL_GameControllerName()` + `SDL_GameControllerGetType()` in SDL2 2.30.9 — already linked |
 
-include(FetchContent)
+---
 
-# JUCE: pin to a specific tag, NOT origin/master
-# origin/master changes without notice and has broken plugins mid-development before.
-# Check https://github.com/juce-framework/JUCE/releases for latest 8.x tag.
-FetchContent_Declare(
-    juce
-    GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-    GIT_TAG        8.0.4          # <-- use a specific release tag
-    GIT_SHALLOW    TRUE           # faster clone
-)
-set(JUCE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(JUCE_BUILD_EXTRAS   OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(juce)
+## Feature 1: MIDI Panic — Full CC Reset Sweep
 
-# SDL2: 2.30.9 is correct — this is the latest SDL2 (not SDL3)
-FetchContent_Declare(
-    SDL2
-    GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-    GIT_TAG        release-2.30.9
-    GIT_SHALLOW    TRUE
-)
-set(SDL_SHARED          OFF CACHE BOOL "" FORCE)
-set(SDL_STATIC          ON  CACHE BOOL "" FORCE)
-set(SDL_JOYSTICK        ON  CACHE BOOL "" FORCE)
-set(SDL_GAMECONTROLLER  ON  CACHE BOOL "" FORCE)
-# All other subsystems disabled — critical for plugin safety
-set(SDL_HAPTIC          OFF CACHE BOOL "" FORCE)
-set(SDL_AUDIO           OFF CACHE BOOL "" FORCE)
-set(SDL_VIDEO           OFF CACHE BOOL "" FORCE)
-set(SDL_RENDER          OFF CACHE BOOL "" FORCE)
-set(SDL_SENSOR          OFF CACHE BOOL "" FORCE)
-set(SDL2_DISABLE_INSTALL ON  CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(SDL2)
+### Confirmed JUCE 8 Static Factory Methods
+
+Verified from `build/_deps/juce-src/modules/juce_audio_basics/midi/juce_MidiMessage.cpp`:
+
+| Method | CC Number | MIDI Meaning |
+|--------|-----------|--------------|
+| `MidiMessage::allSoundOff(ch)` | CC 120 = 0 | All Sound Off — cuts active notes immediately |
+| `MidiMessage::allControllersOff(ch)` | CC 121 = 0 | Reset All Controllers — resets pitch bend, mod wheel, etc. |
+| `MidiMessage::allNotesOff(ch)` | CC 123 = 0 | All Notes Off — note-off for all held notes (allows release) |
+| `MidiMessage::controllerEvent(ch, 64, 0)` | CC 64 = 0 | Sustain Pedal off — explicit; allControllersOff does NOT guarantee CC64=0 on all synths |
+
+All four methods return `juce::MidiMessage` objects and are `noexcept`.
+
+### Correct Sweep Order
+
+Send in this order per channel to achieve maximum compatibility:
+
 ```
+1. allSoundOff(ch)         — CC 120: kills sustaining audio immediately
+2. allControllersOff(ch)   — CC 121: resets mod wheel, pitch bend register
+3. controllerEvent(ch,64,0)— CC  64: explicit sustain off (some synths ignore CC121 for sustain)
+4. allNotesOff(ch)         — CC 123: note-off for all voices
+```
+
+### Integration with Existing pendingPanic_ Pattern
+
+The current `pendingPanic_` atomic flag fires in `processBlock`, sending `allNotesOff` on the
+4 configured voice channels only. The v1.1 upgrade sends the full sweep on **all 16 MIDI
+channels**, not just voice channels. This ensures synths hold notes on channels other than
+1–4 are silenced.
+
+```cpp
+// In processBlock, replacing the current pendingPanic_ handler:
+if (pendingPanic_.exchange(false, std::memory_order_acq_rel))
+{
+    if (looper_.isPlaying()) looper_.startStop();
+
+    for (int ch = 1; ch <= 16; ++ch)
+    {
+        midi.addEvent(juce::MidiMessage::allSoundOff(ch),        0);
+        midi.addEvent(juce::MidiMessage::allControllersOff(ch),  0);
+        midi.addEvent(juce::MidiMessage::controllerEvent(ch, 64, 0), 0);
+        midi.addEvent(juce::MidiMessage::allNotesOff(ch),        0);
+    }
+
+    trigger_.resetAllGates();
+    flashPanic_.fetch_add(1, std::memory_order_relaxed);
+}
+```
+
+**Thread safety:** `midi.addEvent` is audio-thread-only and called only within `processBlock`.
+`pendingPanic_` is `std::atomic<bool>` — already used this way. No changes to threading model.
+
+**Buffer capacity:** 64 messages (4 msgs × 16 channels) added in a single block. `juce::MidiBuffer`
+is a heap-allocated growable container; this is not a stack-size concern.
+
+**Performance:** 64 `addEvent` calls is negligible — each is a small memcpy. Panic fires at most
+once per button press, not every block.
+
+### What NOT to Do
+
+- Do NOT call `MidiMessage::isResetAllControllers()` — that is a query, not a factory.
+- Do NOT assume `allControllersOff` resets CC64 sustain — some hardware synths (Roland,
+  Korg) require an explicit `controllerEvent(ch, 64, 0)`. Send it explicitly.
+- Do NOT send panic from the message thread — only `pendingPanic_.store(true)` from message
+  thread; let `processBlock` execute the actual `midi.addEvent` calls.
+- Do NOT use a loop over `voiceChs[]` only — that sends panic to 4 channels. Full panic means
+  all 16 channels so externally held notes from other sources are also cleared.
+
+---
+
+## Feature 2: Trigger Quantization (Live and Post-Record)
+
+### What Needs to Happen
+
+**Live quantization:** When a gate event is recorded, snap its `beatPosition` to the nearest
+grid subdivision boundary before storing it in the FIFO.
+
+**Post-record quantization:** Iterate `playbackStore_[0..playbackCount_-1]`, snapping each
+Gate-type event's `beatPosition` to the grid. Called from the UI thread after recording stops.
+
+### Quantization Math
+
+The looper timeline unit is already beats (quarter-note = 1.0). Subdivisions map to beat
+fractions:
+
+| Subdivision | Beats per grid step |
+|-------------|---------------------|
+| 1/4         | 1.0 |
+| 1/8         | 0.5 |
+| 1/16        | 0.25 |
+| 1/32        | 0.125 |
+
+Snap formula (no new API needed — pure arithmetic):
+
+```cpp
+double snapBeatToGrid(double beatPos, double gridStep, double loopLen)
+{
+    const double snapped = std::round(beatPos / gridStep) * gridStep;
+    return std::fmod(snapped, loopLen);   // wrap at loop boundary
+}
+```
+
+`std::round` is in `<cmath>`, already included in `LooperEngine.cpp`. `std::fmod` is also
+already used in `LooperEngine::recordGate`.
+
+### Live Quantization Integration Point
+
+In `LooperEngine::recordGate()`, after computing `pos = std::fmod(beatPos, loopLen)`, apply:
+
+```cpp
+if (liveQuantizeEnabled_.load())
+    pos = snapBeatToGrid(pos, gridStepBeats_.load(), loopLen);
+```
+
+Two new `std::atomic` members are needed:
+- `std::atomic<bool> liveQuantize_ { false }`
+- `std::atomic<float> quantizeGrid_ { 0.25f }` — grid step in beats (0.25 = 1/16)
+
+These follow the exact same pattern as existing `recGates_`, `recJoy_`, etc. atomics.
+
+### Post-Record Quantization Integration Point
+
+A new `quantizeLoop(float gridStepBeats)` public method on `LooperEngine`, called from the
+UI thread (message thread). Threading invariant: this method MUST only be called when
+`isPlaying() == false && isRecording() == false` — the same invariant as `finaliseRecording()`.
+
+```cpp
+void LooperEngine::quantizeLoop(float gridStepBeats)
+{
+    // THREADING INVARIANT: call only when playing_=false AND recording_=false
+    const double loopLen = getLoopLengthBeats();
+    const int count = playbackCount_.load(std::memory_order_relaxed);
+    for (int i = 0; i < count; ++i)
+    {
+        auto& ev = playbackStore_[i];
+        if (ev.type == LooperEvent::Type::Gate)
+            ev.beatPosition = snapBeatToGrid(ev.beatPosition, (double)gridStepBeats, loopLen);
+    }
+}
+```
+
+`playbackStore_` is a `std::array` class member — no allocation. Direct array write is safe
+because the threading invariant guarantees no concurrent reader (audio thread early-returns
+when `playing_=false`).
+
+### What NOT to Do
+
+- Do NOT quantize JoystickX/JoystickY/FilterX/FilterY events — only Gate events should snap.
+  Joystick position events are continuous and quantizing them would create audible jumps.
+- Do NOT call `quantizeLoop` while the looper is playing — this writes to `playbackStore_`
+  while the audio thread reads it. Enforce the stop-first invariant in the UI button handler.
+- Do NOT add a mutex — the existing lock-free invariant (stop first) is sufficient and keeps
+  the audio thread free of blocking calls.
+
+---
+
+## Feature 3: Looper Playback Position Bar (Animated)
+
+### Existing Infrastructure
+
+The looper already exposes what the progress bar needs:
+
+| API | Location | What It Returns |
+|-----|----------|-----------------|
+| `looper_.getPlaybackBeat()` | `LooperEngine::getPlaybackBeat()` | `double` — current beat offset within loop (0..loopLengthBeats) via `std::atomic<float>` |
+| `looper_.getLoopLengthBeats()` | `LooperEngine::getLoopLengthBeats()` | `double` — total loop length in beats |
+| `looper_.isPlaying()` | `LooperEngine::isPlaying()` | `bool` — whether looper is running |
+
+These are already accessible through `PluginProcessor`:
+- `proc_.looperIsPlaying()` — already called in `timerCallback()`
+- The looper is accessible via `proc_` — add accessor methods for beat/length if needed.
+
+### Recommended Implementation Pattern
+
+Create a simple `LooperPositionBar` custom `juce::Component` that:
+1. Receives a normalized position `[0..1]` each timer tick
+2. Draws a filled rectangle scaled to that fraction of its width
+3. Is repainted at the existing 30 Hz rate in `timerCallback()`
+
+```cpp
+class LooperPositionBar : public juce::Component
+{
+public:
+    void setPosition(float normalizedPos)  // 0..1
+    {
+        if (pos_ != normalizedPos) { pos_ = normalizedPos; repaint(); }
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        auto b = getLocalBounds().toFloat();
+        // Background
+        g.setColour(juce::Colour(0xFF252843));   // matches Clr::gateOff
+        g.fillRect(b);
+        // Progress fill
+        if (pos_ > 0.0f)
+        {
+            g.setColour(juce::Colour(0xFF1E3A6E));  // matches Clr::accent
+            g.fillRect(b.withWidth(b.getWidth() * pos_));
+        }
+        // Playhead cursor line
+        g.setColour(juce::Colour(0xFFFF3D6E));   // matches Clr::highlight
+        const float x = b.getWidth() * pos_;
+        g.drawLine(x, b.getY(), x, b.getBottom(), 2.0f);
+    }
+
+private:
+    float pos_ = 0.0f;
+};
+```
+
+In `PluginEditor::timerCallback()`, add after the existing looper button state updates:
+
+```cpp
+{
+    const double beat = proc_.looper_.getPlaybackBeat();    // or via accessor
+    const double len  = proc_.looper_.getLoopLengthBeats();
+    const float  norm = (len > 0.0) ? (float)(beat / len) : 0.0f;
+    looperPositionBar_.setPosition(proc_.looperIsPlaying() ? norm : 0.0f);
+}
+```
+
+**No additional timer needed.** The existing `startTimerHz(30)` in `PluginEditor` is
+sufficient — 30 Hz gives ~33 ms updates, imperceptible as lag for a visual position bar.
+
+### Why NOT Use `juce::ProgressBar`
+
+`juce::ProgressBar` monitors a `double&` value and runs its own internal timer. It was
+designed for one-shot loading bars, not real-time looping playback position. Using it
+would introduce a second internal timer and provide no useful behavior (no loop wrap,
+no playhead cursor). A custom `Component` with `paint()` is 15 lines and does exactly
+what's needed.
+
+### Direct Access to LooperEngine from Editor
+
+`LooperEngine` is a `private` member of `PluginProcessor`. The existing pattern is to
+expose needed state through forwarding methods on `PluginProcessor` (e.g.,
+`looperIsPlaying()`, `looperIsRecording()`). Add:
+
+```cpp
+// In PluginProcessor.h:
+double looperGetPlaybackBeat()     const { return looper_.getPlaybackBeat(); }
+double looperGetLoopLengthBeats()  const { return looper_.getLoopLengthBeats(); }
+```
+
+These are read-only queries — no threading concern. `getPlaybackBeat()` reads
+`std::atomic<float>` internally.
+
+---
+
+## Feature 4: Gamepad Controller Name / Type Detection
+
+### Confirmed SDL2 2.30.9 API
+
+Verified from `build/_deps/sdl2-src/include/SDL_gamecontroller.h`:
+
+```c
+// Returns the human-readable name of the controller.
+// Available since SDL 2.0.0. Returns NULL if controller is NULL.
+const char* SDL_GameControllerName(SDL_GameController* gamecontroller);
+
+// Returns the type enum of the controller.
+// Available since SDL 2.0.12. Returns SDL_CONTROLLER_TYPE_UNKNOWN (0) on failure.
+SDL_GameControllerType SDL_GameControllerGetType(SDL_GameController* gamecontroller);
+```
+
+### SDL_GameControllerType Enum (verified from SDL2 2.30.9 header)
+
+```c
+typedef enum {
+    SDL_CONTROLLER_TYPE_UNKNOWN            = 0,
+    SDL_CONTROLLER_TYPE_XBOX360            = 1,
+    SDL_CONTROLLER_TYPE_XBOXONE            = 2,
+    SDL_CONTROLLER_TYPE_PS3                = 3,
+    SDL_CONTROLLER_TYPE_PS4                = 4,
+    SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO = 5,
+    SDL_CONTROLLER_TYPE_VIRTUAL            = 6,
+    SDL_CONTROLLER_TYPE_PS5                = 7,
+    SDL_CONTROLLER_TYPE_AMAZON_LUNA        = 8,
+    SDL_CONTROLLER_TYPE_GOOGLE_STADIA      = 9,
+    SDL_CONTROLLER_TYPE_NVIDIA_SHIELD      = 10,
+    SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_LEFT  = 11,
+    SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT = 12,
+    SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_JOYCON_PAIR  = 13,
+    SDL_CONTROLLER_TYPE_MAX                = 14
+} SDL_GameControllerType;
+```
+
+### Integration Pattern
+
+Both functions are called on the message thread (inside `timerCallback()` in `GamepadInput`,
+or in the UI callback). They take `SDL_GameController*` — the same `controller_` pointer
+already held by `GamepadInput`.
+
+Add a method to `GamepadInput`:
+
+```cpp
+// Returns display string: "DualShock 4", "Xbox One", etc.
+// Falls back to raw SDL name if type is UNKNOWN or unrecognized.
+juce::String getControllerDisplayName() const
+{
+    if (!controller_) return "No controller";
+
+    const SDL_GameControllerType type = SDL_GameControllerGetType(controller_);
+    switch (type)
+    {
+        case SDL_CONTROLLER_TYPE_PS4:                return "DualShock 4";
+        case SDL_CONTROLLER_TYPE_PS5:                return "DualSense";
+        case SDL_CONTROLLER_TYPE_PS3:                return "DualShock 3";
+        case SDL_CONTROLLER_TYPE_XBOX360:            return "Xbox 360";
+        case SDL_CONTROLLER_TYPE_XBOXONE:            return "Xbox One";
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:return "Switch Pro";
+        default: break;
+    }
+    // Fall back to raw SDL name string for unrecognized types
+    const char* name = SDL_GameControllerName(controller_);
+    return name ? juce::String(name) : "Controller";
+}
+```
+
+`SDL_GameControllerGetType` and `SDL_GameControllerName` are both called inside
+`timerCallback()` which already runs on the JUCE message thread. `controller_` is only
+written in `tryOpenController()` and `closeController()`, both also on the message thread.
+No threading concern.
+
+**Important:** `SDL_GameControllerName` returns a `const char*` pointing to an internal
+SDL buffer. Copy it to a `juce::String` immediately — do not store the raw pointer.
+
+### Display in PluginEditor
+
+The existing gamepad status label pattern is:
+
+```cpp
+// In GamepadInput — triggered via onConnectionChangeUI callback:
+if (onConnectionChangeUI) onConnectionChangeUI(connected);
+```
+
+In `PluginEditor`, the `onConnectionChangeUI` lambda already updates a status label.
+Change the label text in that lambda to call `getControllerDisplayName()`:
+
+```cpp
+proc_.getGamepad().onConnectionChangeUI = [this](bool connected)
+{
+    if (connected)
+    {
+        const juce::String name = proc_.getGamepad().getControllerDisplayName();
+        gamepadStatusLabel_.setText("PAD: " + name, juce::dontSendNotification);
+    }
+    else
+    {
+        gamepadStatusLabel_.setText("PAD: none", juce::dontSendNotification);
+    }
+};
+```
+
+---
+
+## No New Libraries Required — Verification
+
+| Feature | Checked Against | Result |
+|---------|----------------|--------|
+| CC sweep (allSoundOff/allControllersOff/allNotesOff) | `juce_MidiMessage.cpp` source | All 3 methods confirmed in JUCE 8.0.4 |
+| CC64 explicit sustain off | `juce_MidiMessage.h` — `controllerEvent(int, int, int)` | Confirmed |
+| Quantize math | `<cmath>` — `std::round`, `std::fmod` | Already in `LooperEngine.cpp` includes |
+| Progress bar paint | `juce::Component::paint()`, `juce::Graphics::fillRect()` | Core JUCE, no extra module |
+| SDL controller name | `SDL_gamecontroller.h` — `SDL_GameControllerName` | In SDL 2.0.0+ |
+| SDL controller type | `SDL_gamecontroller.h` — `SDL_GameControllerGetType` | In SDL 2.0.12+ (project uses 2.30.9) |
 
 ---
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| FetchContent (pinned tag) | Git submodule | Submodule is fine and avoids re-cloning on clean builds; FetchContent with `GIT_SHALLOW TRUE` achieves similar speed; submodule gives more direct version control — choose submodule if the team is comfortable with git submodule workflow |
-| FetchContent (pinned tag) | System-installed JUCE | Use installed JUCE (`find_package(JUCE)`) only when targeting Linux package managers or Nix; on Windows it adds setup friction for contributors |
-| SDL2 static | SDL3 static | SDL3 has an entirely different API (no `SDL_GameControllerOpen`, uses `SDL_OpenGamepad`); migration would require rewriting `GamepadInput.cpp`; SDL2 is still maintained and appropriate for this project |
-| MSVC 2022 | MinGW-w64 | MinGW produces `.dll` VST3 bundles that many DAWs reject (Ableton historically has MinGW compatibility issues with exception handling); MSVC is the safe choice for paid distribution |
-| Catch2 v3 | Google Test | Both work for JUCE plugin testing; Catch2 has better REQUIRE/CHECK macros for musical assertions and integrates with CMake CTest cleanly via `catch_discover_tests` |
-| Inno Setup | NSIS | Both produce Windows installers; Inno Setup has cleaner scripting syntax and is more actively maintained in 2025 |
+| Recommended | Alternative | Why Not |
+|-------------|-------------|---------|
+| Sweep all 16 channels | Sweep only voiceChs[4] | Does not silence notes held on other channels from external triggers or previous routing |
+| Custom `LooperPositionBar` Component | `juce::ProgressBar` | ProgressBar has no looping behavior, no playhead cursor, runs its own internal timer; custom component is simpler |
+| `std::round` for quantize snap | Nearest-grid-down (floor) | Nearest-to-grid (round) matches user expectation: notes slightly after the beat land on-beat; notes far before the beat land on previous beat |
+| `SDL_GameControllerGetType` for display name | `SDL_GameControllerName` only | Raw SDL names are vendor-specific strings like "Wireless Controller" (PS4) or "Xbox 360 Controller"; type enum gives clean human-readable names with a fallback |
 
 ---
 
-## What NOT to Use
+## What NOT to Add
 
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `GIT_TAG origin/master` for JUCE | JUCE master can break plugin compilation between commits; "it worked yesterday" failures are common; a commit from master that changed AudioProcessor API broke hundreds of plugins in 2023 | Pin to a specific release tag: `8.0.4` or latest `8.x.y` |
-| SDL3 | SDL3's `SDL_Gamepad` API is entirely different from SDL2's `SDL_GameController` API; all `SDL_GameControllerOpen`, `SDL_GameControllerGetAxis`, `SDL_CONTROLLER_AXIS_*` calls in `GamepadInput.cpp` would need rewriting; SDL3 also has a different initialization and event model | SDL2 release-2.30.9 (already in use) |
-| SDL2 dynamic linking (DLL) in a plugin | A VST3 plugin is loaded into a host process; shipping SDL2.dll alongside the plugin requires the host's working directory to have that DLL, which is unreliable; static linking bundles SDL2 into the VST3 binary cleanly | `SDL_STATIC ON` (already configured correctly) |
-| SDL_INIT_VIDEO in a plugin | SDL's video subsystem tries to create a window event loop and may interfere with the host's message pump; it also links additional Windows DLLs (opengl32, etc.) that are unnecessary | `SDL_INIT_GAMECONTROLLER` only (already correct in the codebase) |
-| Projucer (`.jucer` files) | JUCE 8 CMake API is the supported path; Projucer and CMake cannot easily coexist; all JUCE documentation and CI examples now use CMake | CMake with `juce_add_plugin` |
-| ASIO SDK for audio | This is a MIDI-only plugin with no audio buses; including ASIO adds licensing complexity with no benefit | No audio SDK needed; `isBusesLayoutSupported` correctly rejects all audio layouts |
-| `juce_audio_utils` (if unused) | This module includes deprecated code and increases compile time; audit whether it is actually needed | Include only modules in use: `juce_audio_processors`, `juce_gui_basics` are the minimum for this plugin |
-| Windows XP / Win32 only target | JUCE 8 requires Windows 10+; older targets reduce the available Windows API surface | Target Windows 10+ minimum |
-
----
-
-## Stack Patterns by Variant
-
-**If building for Windows distribution only (v1):**
-- Use MSVC 2022 x64 release build
-- Static link SDL2 (already done)
-- Ship as a single `.vst3` folder (bundle directory structure required by VST3 spec)
-- Installer places bundle in `%COMMONPROGRAMFILES%\VST3\`
-
-**If adding unit tests later:**
-- Add a separate CMake executable target (not a plugin target) that links `juce_audio_processors` without DAW context and `Catch2`
-- ChordEngine, ScaleQuantizer, and LooperEngine are pure logic classes well-suited to standalone testing
-- GamepadInput cannot be unit tested without a physical controller; use mock/interface pattern
-
-**If adding macOS support (v2):**
-- JUCE CMake handles AU/VST3 for macOS via the same `juce_add_plugin` call with `FORMATS VST3 AU`
-- SDL2 builds on macOS via the same FetchContent approach
-- Requires Apple Developer ID and notarization for distribution (separate effort)
-
----
-
-## Version Compatibility
-
-| Component | Compatible With | Notes |
-|-----------|-----------------|-------|
-| JUCE 8.0.x | SDL2 2.30.x | No direct interaction; both are statically compiled into the plugin binary; no known conflicts |
-| JUCE 8.0.x | C++17 | JUCE 8 requires C++17; C++20 is experimental in JUCE as of 2025 but not required |
-| SDL2 2.30.9 | MSVC 2022 | Fully supported; SDL2's CMake build produces `SDL2-static` target cleanly with MSVC |
-| JUCE 8.0.x | CMake 3.22 | JUCE 8 CMake API minimum is 3.22; `cmake_minimum_required(VERSION 3.22)` is correct |
-| JUCE 8.0.x | Visual Studio 17 2022 (MSVC 19.3x) | Fully supported; JUCE CI validates against VS2022 |
-| JUCE 8.0.x | Windows 10 / Windows 11 | Supported; Windows 11 Pro is the development target |
-| Catch2 3.x | JUCE 8 standalone tests | Catch2 3.x requires C++14+; works fine alongside JUCE modules in a separate test executable |
-
----
-
-## SDL2 in a DAW Plugin — Special Considerations
-
-This is the highest-risk integration in the stack. The following are confirmed patterns from the existing code, with confidence notes.
-
-### What the codebase does correctly (MEDIUM confidence)
-
-1. **SDL includes isolated to `.cpp`** — `GamepadInput.h` uses forward declarations (`struct _SDL_GameController`); SDL headers only appear in `GamepadInput.cpp`. This prevents SDL type leakage into JUCE headers and reduces include-order conflicts.
-
-2. **Only `SDL_INIT_GAMECONTROLLER` initialized** — Avoids SDL's video/audio subsystems which conflict with host message pumps and audio drivers.
-
-3. **Polling via `juce::Timer` at 60 Hz** — Instead of a blocking SDL event loop (`SDL_WaitEvent`), the code uses `SDL_PollEvent` inside a `juce::Timer::timerCallback()`. This runs on the JUCE message thread, which is the correct thread for UI callbacks. No separate thread is created for SDL.
-
-4. **Atomic state handoff** — All gamepad state is written to `std::atomic<float/bool>` members. The audio thread reads these without locks. This is the correct pattern for JUCE plugin threading.
-
-5. **Static linking** — `SDL2-static` is linked; no `SDL2.dll` dependency at runtime.
-
-### Known risks (LOW confidence — requires runtime validation)
-
-1. **SDL_Init in plugin constructor** — `SDL_Init` is called in `GamepadInput()` which is called from `PluginProcessor()`. Some DAWs scan plugins by loading and immediately unloading them. SDL_Init/SDL_Quit pairs called rapidly during scanning may cause issues on some systems. Consider deferring SDL_Init until the editor is opened, or making it a no-op if already initialized.
-
-2. **SDL_Quit in plugin destructor** — If multiple instances of the plugin are loaded, the second instance's destructor will call `SDL_Quit` and break the first instance's event loop. SDL uses a reference-count internally for some subsystems but `SDL_Quit` may not be reference-counted across DLL instances. Mitigation: use a process-wide singleton for `GamepadInput` or track SDL init with a static counter.
-
-3. **Message pump interference** — No reports of `SDL_PollEvent` conflicting with JUCE's message loop on Windows as of 2025, but this is not officially documented as safe. The 60 Hz polling approach avoids blocking, which is the key safety property. LOW confidence that this will never cause issues in all DAW hosts.
-
-4. **XInput vs DirectInput on Windows** — SDL2 on Windows can use XInput (Xbox controller protocol) or DirectInput. PS4 controllers require DirectInput or DS4Windows. SDL2's `SDL_GAMECONTROLLER` subsystem normalizes both, but PS4 support without DS4Windows is implementation-dependent on the SDL2 version. Flag for validation with a physical PS4 controller.
-
----
-
-## Build and CI Considerations (Windows)
-
-### Release build configuration
-
-```cmake
-# Add to CMakeLists.txt for release builds
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_options(ChordJoystick PRIVATE /O2 /GL)
-    target_link_options(ChordJoystick PRIVATE /LTCG)
-endif()
-```
-
-### VST3 bundle structure
-
-JUCE's CMake output already creates the correct VST3 bundle directory on Windows:
-```
-ChordJoystick.vst3/
-  Contents/
-    x86_64-win/
-      ChordJoystick.vst3   (the actual DLL)
-```
-
-`COPY_PLUGIN_AFTER_BUILD TRUE` in the CMakeLists.txt copies this bundle to the system VST3 folder automatically during development builds. This must be disabled for release/installer builds.
-
-### Code signing
-
-- Windows VST3 plugins do not require code signing to load in DAWs (unlike macOS notarization)
-- However, Windows Defender SmartScreen will flag an unsigned `.exe` installer
-- For Gumroad distribution: sign the Inno Setup installer with a code signing certificate (EV or OV)
-- Certificate options: DigiCert, Sectigo — EV certificates get immediate SmartScreen reputation; OV certificates require a reputation period
-- Cost: ~$300-500/year for EV; ~$100-200/year for OV
-
-### Installer (Inno Setup)
-
-Inno Setup script should:
-1. Copy `ChordJoystick.vst3/` bundle to `{commoncf64}\VST3\`
-2. Include an uninstaller
-3. Optionally check if the DAW is running and warn before install
-4. No DLL redistribution needed (SDL2 is statically linked)
+| Do Not Add | Why |
+|------------|-----|
+| Any quantization library (e.g., third-party beat quantizer) | The math is four lines of `std::round` / `std::fmod` — a library adds zero value |
+| `juce::ProgressBar` widget | It runs its own timer, has no playhead cursor concept, and was not designed for looping progress |
+| SDL3 upgrade for controller type | SDL3 has a fully different API; `SDL_GameControllerGetType` is in SDL2 2.0.12+, already satisfied by 2.30.9 |
+| New APVTS parameters for quantize grid | Quantize grid should be a simple UI state selector (ComboBox mapping to a float step), not a DAW-automatable parameter — it is a one-shot action, not a continuous value |
+| A new thread for quantize processing | Post-record quantization is a fast linear scan (~2048 events max, each a double write) — runs in microseconds on the message thread when looper is stopped |
 
 ---
 
 ## Sources
 
-- Codebase inspection: `CMakeLists.txt`, `Source/GamepadInput.h`, `Source/GamepadInput.cpp`, `Source/PluginProcessor.h`, `Source/PluginProcessor.cpp` — HIGH confidence (direct evidence)
-- `.planning/PROJECT.md` — HIGH confidence (authoritative project spec)
-- JUCE 8 CMake API knowledge (training data, August 2025 cutoff) — MEDIUM confidence; verify current JUCE release tag at https://github.com/juce-framework/JUCE/releases
-- SDL2 2.30.x lifecycle knowledge (training data) — MEDIUM confidence; verify SDL2 vs SDL3 maintenance status at https://github.com/libsdl-org/SDL/releases
-- SDL2 in DAW plugin threading patterns — MEDIUM confidence for general patterns; LOW confidence for host-specific compatibility claims
-- VST3 Windows installer practices — MEDIUM confidence (community knowledge, training data)
-- Windows code signing practices — MEDIUM confidence (training data, verify current certificate providers and pricing)
+### PRIMARY — HIGH Confidence (verified from source in repo)
+
+- `build/_deps/juce-src/modules/juce_audio_basics/midi/juce_MidiMessage.cpp` lines 643–674 — exact CC numbers for `allNotesOff` (123), `allSoundOff` (120), `allControllersOff` (121) confirmed
+- `build/_deps/juce-src/modules/juce_audio_basics/midi/juce_MidiMessage.h` lines 535–546 — method signatures confirmed
+- `build/_deps/sdl2-src/include/SDL_gamecontroller.h` lines 63–441 — `SDL_GameControllerType` enum and `SDL_GameControllerName`/`SDL_GameControllerGetType` signatures confirmed from SDL 2.30.9
+- `Source/LooperEngine.h` — `getPlaybackBeat()`, `getLoopLengthBeats()` accessor signatures confirmed
+- `Source/PluginEditor.cpp` line 1100 — `startTimerHz(30)` existing refresh rate confirmed
+- `Source/PluginProcessor.cpp` lines 471–477 — existing `pendingPanic_` pattern confirmed
+
+### SECONDARY — MEDIUM Confidence
+
+- SDL2 Wiki `SDL_GameControllerGetType` — availability since SDL 2.0.12 confirmed via web search
+- SDL2 Wiki `SDL_GameControllerName` — return type `const char*` and availability since SDL 2.0.0 confirmed via web search
 
 ---
 
-*Stack research for: ChordJoystick — JUCE 8 VST3 MIDI Generator Plugin*
-*Researched: 2026-02-22*
+*Stack research for: ChordJoystick v1.1 — JUCE VST3 MIDI Generator Plugin*
+*Researched: 2026-02-24*

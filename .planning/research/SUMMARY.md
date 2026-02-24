@@ -1,192 +1,225 @@
 # Project Research Summary
 
-**Project:** ChordJoystick
-**Domain:** JUCE VST3 MIDI-only chord generator / performance controller plugin with SDL2 gamepad support (Windows)
-**Researched:** 2026-02-22
-**Confidence:** MEDIUM (direct codebase inspection + verified JUCE/SDL2/VST3 training knowledge; web search unavailable this session)
+**Project:** ChordJoystick v1.1
+**Domain:** JUCE VST3 MIDI Effect Plugin — incremental polish release on a shipping v1.0 product
+**Researched:** 2026-02-24
+**Confidence:** HIGH
 
 ## Executive Summary
 
-ChordJoystick is a MIDI-only VST3 plugin built on JUCE 8 that maps an XY joystick (mouse or gamepad) to harmonic space, allowing musicians to continuously navigate chord voicings rather than step-select them. The plugin generates 4-voice MIDI with per-voice trigger sources (TouchPlate, joystick motion, or random subdivisions), a DAW-synced beat looper, and native PS4/Xbox controller support via SDL2. The codebase already has substantial scaffolding in place: APVTS parameter layout, ChordEngine, ScaleQuantizer, TriggerSystem, LooperEngine, and GamepadInput are all present. Research confirms the architecture and stack choices are sound for a paid Windows VST3 release, but four critical bugs and several major distribution issues exist that must be resolved before any public release.
+ChordJoystick v1.1 is a four-feature incremental release on a fully-shipped, lock-free JUCE 8 VST3 MIDI generator. All four features — full MIDI panic sweep, trigger/gate quantization, looper playback position bar, and gamepad controller name display — are implementable entirely within the existing JUCE 8.0.4 and SDL2 2.30.9 stack. No new libraries, no new external dependencies, and no architectural changes to the established threading model are required. The existing patterns for atomic flags, APVTS parameter reads, and the single-timer UI repaint loop cover every new requirement.
 
-The recommended build path follows the component dependency graph: stabilize the pure-logic engine layer first (ScaleQuantizer, ChordEngine), then wire up MIDI output in a DAW-testable state, then harden the real-time threading (replace the LooperEngine mutex), then integrate SDL2 safely (SDL singleton, SDL_HINT_JOYSTICK_THREAD), then address Ableton routing, and finally prepare the distribution chain (static CRT, code signing, installer). No external dependencies need to change — the stack of JUCE 8, SDL2 2.30.9 static, MSVC 2022, and CMake 3.22+ is correct and proven. The single most urgent action is pinning JUCE to a specific release tag in CMakeLists.txt before any further commits.
+The recommended approach is to ship each feature in isolation, ordered by blast radius: panic sweep first (isolated processBlock change, zero new state), then quantize infrastructure (new atomics + new APVTS parameter), then the two pure-UI additions (progress bar, gamepad name). This order ensures the highest-risk item — the lock-free quantize path touching LooperEngine's `playbackStore_` — is built after the simpler changes are validated and the new APVTS parameter is already in place.
 
-The competitive landscape strongly supports ChordJoystick's differentiators: no competitor (Scaler 2, Chord Prism, Ripchord) offers continuous harmonic navigation via joystick, per-voice sample-and-hold gates, gamepad as a first-class controller, or a beat-locked joystick looper. These features are genuinely novel in the paid plugin market. The risk profile is dominated by real-time threading constraints (mutex in audio thread, unconditional CC flood) and Windows distribution mechanics (code signing, MSVC CRT, DAW routing compatibility) rather than any product-direction uncertainty.
+The primary risks are in the trigger quantization feature and its interaction with LooperEngine's threading invariant. Post-record quantize MUST use the deferred `pendingQuantize_` flag pattern (set on message thread, serviced inside `process()` on audio thread) — writing directly to `playbackStore_[]` from the message thread while the looper is playing is undefined behavior. The secondary risk is CC121: it must not appear in the panic sweep because downstream VST3 instruments (Kontakt, Waves CLA-76) map CC121 to plugin parameters, causing knobs to jump. Both pitfalls have clear, confirmed prevention strategies documented below.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The existing stack is correct. JUCE 8 via CMake FetchContent, SDL2 2.30.9 static, C++17, and MSVC 2022 on Windows 11 are the right choices for a paid VST3 plugin targeting Ableton and Reaper. The only immediate change required is replacing `GIT_TAG origin/master` with a pinned release tag (e.g., `8.0.4`) in the JUCE FetchContent block — the current unpinned state produces non-reproducible builds. SDL2 is already correctly pinned and statically linked. All subsystems not needed for gamepad operation (SDL_AUDIO, SDL_VIDEO, SDL_HAPTIC) are already disabled, which is the correct approach for a plugin embedded in a DAW.
+The stack is fully locked and validated for v1.1. JUCE 8.0.4, SDL2 2.30.9 static, CMake, C++17, MSVC, and Inno Setup are unchanged. Every v1.1 API needed has been verified directly from source headers in the repo's `build/_deps/` directory.
 
-**Core technologies:**
-- **JUCE 8.x (pin to 8.0.4):** Plugin framework, APVTS, MIDI, GUI, Timer — industry standard; provides everything needed for VST3 DAW integration
-- **SDL2 2.30.9 (static):** Gamepad/controller HID — SDL2 (not SDL3) is the stable choice; static linking avoids DLL dependency in the plugin bundle
-- **CMake 3.22+:** Build system — required minimum for JUCE 8 CMake API; `juce_add_plugin` is the correct entry point
-- **MSVC 2022 / C++17:** Compiler — VST3 on Windows requires MSVC for reliable DAW compatibility; MinGW causes exception-handling issues in some hosts
-- **Catch2 3.x:** Unit testing for pure-logic classes (ChordEngine, ScaleQuantizer) — testable without a DAW host
+**Core APIs in play for v1.1 (no new libraries):**
+- `juce::MidiMessage` static factories (`allSoundOff`, `allNotesOff`, `controllerEvent`, `pitchWheel`) — confirmed in `juce_MidiMessage.cpp`; used for expanded panic sweep on all 16 channels
+- `std::round` / `std::fmod` from `<cmath>` — already included in `LooperEngine.cpp`; the entire quantize algorithm is four lines of arithmetic
+- `juce::Component::paint()` + `juce::Graphics::fillRect()` — core JUCE, no extra module; used for the custom `LooperPositionBar` component; do NOT use `juce::ProgressBar` (runs its own internal timer)
+- `SDL_GameControllerGetType()` (SDL 2.0.12+) + `SDL_GameControllerName()` (SDL 2.0.0+) — both confirmed in `SDL_gamecontroller.h` from SDK 2.30.9; called on message thread only
+
+**One new APVTS parameter required:** `quantizeSubdiv` — a `juce::AudioParameterChoice` with choices {1/4, 1/8, 1/16, 1/32}, default index 1 (1/8 note). Shared by both live quantize and post-record quantize.
 
 ### Expected Features
 
-ChordJoystick's entire v1 feature set is already defined in requirements and is confirmed as the correct scope. No competitor offers this combination. All P1 features must ship together — the product is only coherent when the full interaction model (joystick + gates + gamepad + looper) is present.
+**Must have — P1 (table stakes for v1.1):**
+- Full MIDI panic sweep on all 16 channels — current v1.0 panic covers only the 4 voice channels; stuck notes from external gear on any other channel are not cleared. Required sweep: CC64=0, CC120 (`allSoundOff`), CC123 (`allNotesOff`) per channel. Do NOT include CC121.
+- Looper playback position bar — users cannot tell where in the loop they are; standard looper UI expectation (Boss RC, Ableton Looper, SooperLooper)
+- Post-record QUANTIZE button — most-requested looper feature after recording; Boss, TC Helicon, and MPC all ship this
+- Quantize subdivision selector (1/4, 1/8, 1/16, 1/32) — required by quantize feature; shared between live and post-record modes
 
-**Must have (table stakes — users will refund without these):**
-- Scale quantization with 20+ presets + custom 12-key piano entry
-- Real-time MIDI output with note-off guarantee on transport stop and plugin close
-- APVTS state persistence (saves with DAW session and presets)
-- Visual XY position indicator and active note display
-- Octave / transpose control and per-voice MIDI channel routing
-
-**Should have (core differentiators — the reason to buy this over free alternatives):**
-- XY joystick mapped to harmonic axes (Y = Root+Third, X = Fifth+Tension) — the central innovation
-- Sample-and-hold pitch gate model ("aim then shoot" — no competitor has this)
-- Per-voice trigger source: TouchPlate / Joystick Motion / Random subdivisions
-- PS4/Xbox gamepad as first-class controller with hot-plug via SDL2
-- DAW-synced beat looper recording joystick position and gate events
-- Filter CC (CC71/CC74) from gamepad left stick — two-handed instrument experience
+**Should have — P2 (differentiators and polish):**
+- Live record quantization — tightens performances at recording time; shares subdivision parameter and algorithm with post-record; build in the same phase
+- Gamepad controller type in status label ("PS4 Connected" vs "Connected") — low effort, removes ambiguity when multiple controllers exist
+- Animated mute state visual feedback — prevents "is it broken?" confusion when plugin is muted
+- Section visual grouping in UI (panel borders/fills) — reduces cognitive load
 
 **Defer to v2+:**
-- macOS / AU support — requires Apple developer account, notarization, Mac build environment
-- Standalone app mode — JUCE makes this low-effort but adds ASIO/WASAPI complexity
-- Preset browser UI — DAW presets cover v1 needs adequately
-- MPE output — DAW ecosystem niche; conflicts with 4-voice channel model
-- MIDI CC input learn — adds significant state machine complexity
+- Quantize strength knob (partial snap) — binary on/off sufficient; strength adds UI complexity without proportional value
+- Separate quantize grid per voice — over-complicating for v1.1; one global subdivision governs all voices
+- Chord name display — requires significant analysis engine work; non-traditional voicings do not map cleanly to named chords
 
 ### Architecture Approach
 
-The architecture follows the standard JUCE plugin threading model: UI and gamepad threads communicate with the audio thread exclusively through `std::atomic<T>` members and edge-flag consume patterns (`atomic::exchange(false)`). APVTS parameter reads on the audio thread use `getRawParameterValue()` which returns a stable `std::atomic<float>*`. The component hierarchy is clean and flat: ScaleQuantizer and ChordEngine are stateless pure functions, TriggerSystem and LooperEngine are stateful with atomic boundaries, and GamepadInput runs SDL2 poll at 60Hz on JUCE's message thread. The data flow (mouse/gamepad → atomics → processBlock → ChordEngine → ScaleQuantizer → MidiBuffer → DAW) is architecturally sound. One critical violation exists: LooperEngine acquires a `std::mutex` inside `processBlock()`, which must be replaced before any production release.
+All four features fit cleanly into the existing two-thread model. The existing atomic-flag deferred-request pattern (used by `pendingPanic_`, `deleteRequest_`, `resetRequest_`) governs any write to `playbackStore_[]`. The existing single 30 Hz `juce::Timer` in `PluginEditor` drives all UI animation. No new threads, no new mutexes, no structural changes to any existing component boundary are needed.
 
-**Major components:**
-1. **PluginProcessor** — Orchestration hub; owns APVTS, calls all subsystems in processBlock, bridges all thread boundaries
-2. **ChordEngine + ScaleQuantizer** — Pure stateless pitch computation: joystick XY + intervals + transpose → quantized MIDI note; testable without DAW
-3. **TriggerSystem** — 4-voice gate state machine; handles TouchPlate / Joystick / Random trigger sources; fires note-on/off callbacks at sample offsets
-4. **LooperEngine** — Beat-timestamped event recorder and playback engine; DAW-synced via AudioPlayHead ppqPosition; currently has mutex violation
-5. **GamepadInput** — SDL2 60Hz Timer poll on message thread; normalizes axes; edge-detects buttons; writes to atomics consumed in processBlock
-6. **PluginEditor** — All JUCE Component rendering; APVTS attachments; 30Hz Timer repaint for gate LEDs and looper beat display
+**Components modified by v1.1:**
+
+1. `PluginProcessor::processBlock()` — panic block extended to 16-channel CC sweep; `quantizeSubdiv` APVTS parameter added in `createParameterLayout()`
+2. `LooperEngine` — new `snapToGrid()` static helper + `subdivIndexToBeats()`; `liveQuantize_` and `quantizeSubdivIdx_` atomics; `quantizePlayback()` method (serviced via `pendingQuantize_` flag inside `process()`); modified `recordGate()` for live snap
+3. `PluginProcessor.h` — new forwarding methods: `looperGetPlaybackBeat()`, `looperGetLoopLengthBeats()`, `looperQuantize()`, `looperSetLiveQuantize()`, `looperSetQuantizeSubdiv()`
+4. `GamepadInput` — `getControllerName()` accessor; `controllerName_` plain `juce::String` (message thread only); name populated in `timerCallback()` after `SDL_GameControllerOpen()` succeeds
+5. `PluginEditor` — new `LooperPositionBar` custom component; `timerCallback()` extended for progress bar read and QUANTIZE button enable/disable gating; gamepad name label update
+
+**processBlock step order (unchanged — v1.1 changes are drop-in):**
+1–5: existing (deadzone sync, gamepad poll, DAW playhead, looper process, DAW stop detection)
+6. MIDI Panic sweep — extended from 4-channel to 16-channel CC sweep [v1.1]
+7–8: existing (midiMuted_ gate, looper gate playback)
+9. TriggerSystem::processBlock() → `recordGate()` — live quantize snap applied inside `recordGate()` via atomics [v1.1]
+10–13: existing (recording activation, joystick/filter recording, filter CC, looper config sync)
 
 ### Critical Pitfalls
 
-1. **std::mutex in processBlock via LooperEngine** — Blocks the audio thread when UI calls reset/deleteLoop simultaneously; causes xruns. Fix: replace event storage with lock-free AbstractFifo + fixed-size array; use atomic flags for destructive operations. Address in the looper implementation phase before any DAW testing.
+1. **CRITICAL: Do NOT send CC121 in panic sweep** — CC121 ("Reset All Controllers") is mapped to plugin parameters by downstream VST3 instruments (Kontakt, Waves CLA-76, others). JUCE's VST3 wrapper routes CC121 through `getMidiControllerAssignment()`, causing knobs to jump. Send only: `CC64=0` (sustain off), `CC120` (`allSoundOff`), `CC123` (`allNotesOff`) per channel. Verify with MIDI monitor that zero CC121 events appear in panic output.
 
-2. **SDL_Init / SDL_Quit per plugin instance** — Multiple plugin instances in the same DAW process race on SDL's global state during initialization; one instance's destructor calls SDL_Quit and silently breaks other instances. Fix: process-level reference-counted singleton (10 lines). Address in the initial SDL2 integration phase.
+2. **CRITICAL: Post-record quantize MUST use `pendingQuantize_` deferred-request pattern** — `playbackStore_[]` is a plain `std::array` with no mutex; the audio thread reads it every block during playback. Setting an atomic flag from the message thread `onClick` handler and servicing it at the top of `LooperEngine::process()` (audio thread) is the only safe path. The QUANTIZE UI button must also be disabled while the looper is playing. Direct write from message thread while playing = undefined behavior data race.
 
-3. **Filter CC flooding when no gamepad is connected** — CC74 and CC71 are emitted every processBlock unconditionally, flooding the downstream synth at the audio callback rate (~175 msgs/sec). Fix: gate on `gamepad_.isConnected()` and emit only on value change. Address at first smoke test — this makes the plugin unusable without a gamepad.
+3. **CRITICAL: Apply `std::fmod(quantized, loopLen)` on all quantized beat positions** — rounding a position near the loop end produces a value equal to `loopLen`. Storing `beatPosition == loopLen` causes the event to be silently missed (no playback window covers `beatPosition >= loopLen`) or double-triggered after wrap. `fmod` is the single guard preventing both failure modes.
 
-4. **Note-off not sent on releaseResources()** — `releaseResources()` body is empty; held voices stick on the downstream synth when the DAW stops or the plugin is bypassed. Fix: iterate open gates and emit noteOff + allNotesOff in releaseResources(). Address in the core MIDI output phase.
+4. **Gate-on and gate-off must be snapped by the same delta to preserve gate length** — when live quantizing, the snap delta applied to the gate-on event must also be applied to its paired gate-off event. Snapping gate-on only compresses or extends gate length unpredictably.
 
-5. **JUCE fetched from origin/master** — Non-reproducible builds; JUCE master can break plugin API mid-development. Fix: pin to a specific release tag (`GIT_TAG 8.0.4`) in CMakeLists.txt. Address immediately — one-line change.
+5. **Single 30 Hz timer — no second timer** — adding a `juce::Timer` for mute animation or any other purpose doubles timer overhead and creates beat-frequency interference with existing repaints. All animation is driven from the single `startTimerHz(30)` in `PluginEditor` via phase counters. Verify: `grep "startTimerHz\|startTimer" Source/PluginEditor.cpp` must return exactly 1 result.
 
 ## Implications for Roadmap
 
-Based on combined research, the component dependency graph, and the pitfall-to-phase mapping, seven phases are recommended. The ordering follows strict dependency requirements: pure logic before audio wiring, real-time safety before DAW testing, single-host before multi-host, and functionality before distribution.
+Based on combined research, suggested phase structure for v1.1:
 
-### Phase 1: Build Foundation and JUCE Version Lock
-**Rationale:** The CMakeLists.txt has a critical `GIT_TAG origin/master` issue that produces non-reproducible builds. This must be fixed before any further development. This phase also establishes the VST3 plugin loading baseline and validates the APVTS parameter round-trip — nothing else can be verified until the plugin loads cleanly in a DAW.
-**Delivers:** Reproducible build with pinned JUCE tag; plugin loads in Reaper without crashes; all 40+ APVTS parameters save/restore correctly; static CRT configured for distribution readiness.
-**Addresses:** Scale quantization APVTS wiring, global transpose, per-voice octave offsets, MIDI channel routing (all low-complexity P1 features that require no additional logic — just wiring)
-**Avoids:** JUCE unpinned version (Pitfall 5), MSVC CRT dependency (Pitfall 11)
-**Research flag:** Standard patterns — skip research-phase. CMakeLists changes are mechanical; JUCE CMake API is well-documented.
+### Phase 1: MIDI Panic Full Sweep
 
-### Phase 2: Core Engine Validation (ChordEngine + ScaleQuantizer)
-**Rationale:** ChordEngine and ScaleQuantizer are pure functions with no DAW dependency — they can be verified with Catch2 unit tests before any audio plumbing. Building confidence in the pitch computation layer before wiring it into processBlock prevents subtle pitch bugs from being obscured by threading issues later.
-**Delivers:** Catch2 test suite covering scale quantization edge cases (single note, all 12 notes, tie-breaking), ChordEngine pitch computation across all 4 voices, and custom 12-key scale entry logic. All tests passing.
-**Addresses:** Scale quantization (20+ presets + custom entry), XY joystick pitch math, interval/octave offset correctness
-**Avoids:** Discovering pitch bugs late when they're entangled with MIDI output and threading
-**Research flag:** Standard patterns — skip research-phase. Pure C++ logic with known algorithms; well-covered by unit tests.
+**Rationale:** Isolated processBlock change with zero new state and zero new threading concerns. Highest user-safety impact, lowest implementation risk. Ship and validate in DAW before touching LooperEngine.
 
-### Phase 3: Core MIDI Output and Note-Off Guarantee
-**Rationale:** TriggerSystem's gate state machine is the heart of the performance interaction. Wiring it to produce actual MIDI note-on/off events in processBlock, and guaranteeing note-off on all exit paths (releaseResources, bypass, DAW stop), is the minimum viable product state for any meaningful DAW testing. The note-off guarantee is a table-stakes feature whose absence produces the most viscerally broken user experience.
-**Delivers:** All 4 voices producing sample-accurate MIDI note-on/off via TouchPlate triggers; note-off flushed on transport stop and plugin bypass; MIDI channel routing verified per voice; visual gate LED feedback in UI.
-**Addresses:** TouchPlate sample-and-hold gate model, note-off guarantee (all paths), per-voice MIDI channel routing, visual XY position indicator
-**Avoids:** Note-off leak (Pitfall 4), MIDI channel off-by-one (Architecture anti-pattern 4)
-**Research flag:** Standard patterns — skip research-phase. JUCE processBlock and MidiBuffer patterns are well-established.
+**Delivers:** Panic that silences stuck notes on all 16 MIDI channels (CC64=0 + CC120 + CC123 per channel), including notes from external gear, other plugin instances, and sustain-pedal-held notes. Also stops the looper and resets filter CCs.
 
-### Phase 4: Per-Voice Trigger Sources and Random Gate
-**Rationale:** Once basic note-on/off works via TouchPlate, adding the two additional trigger sources (joystick motion threshold and random subdivisions) completes the core interaction model. Random gate with DAW-synced subdivisions requires `AudioPlayHead` beat position — establishing this integration here also lays groundwork for the looper.
-**Delivers:** Per-voice trigger source selector (TouchPlate / Joystick Motion / Random) fully functional; random gate with 1/4–1/32 subdivision and density control, DAW-synced; joystick motion trigger with configurable threshold.
-**Addresses:** Per-voice trigger source routing, random gate (subdivisions + density), joystick motion trigger
-**Avoids:** Trigger source conflict when multiple sources enabled for same voice (Architecture — per-voice selector is the resolution)
-**Research flag:** Standard patterns — skip research-phase. Subdivision-synced timing is a known pattern using ppqPosition modulo.
+**Addresses features from FEATURES.md:** Full 16-channel panic sweep (P1 table stakes). Also confirm `pendingCcReset_` or explicit filter CC zeros (CC74, CC71) are emitted in the same panic block without duplication.
 
-### Phase 5: LooperEngine Hardening and DAW Sync
-**Rationale:** The LooperEngine as coded has two critical issues that must be resolved before use: the mutex in the audio thread (Pitfall 1) and the ppqPosition anchor drift (Pitfall 12), plus the vector reallocation risk (Pitfall 7). This phase refactors LooperEngine to be real-time safe, then validates beat-locked recording and playback against Ableton and Reaper. This is the highest-complexity phase.
-**Delivers:** Lock-free LooperEngine using AbstractFifo + fixed-size event array; atomic flags for UI-side destructive operations (reset, delete); ppqPosition anchor recorded at loop start; hard capacity cap preventing audio-thread allocation; verified 1–16 bar loop record/play/stop in both Ableton and Reaper.
-**Addresses:** DAW-synced looper (record/play/stop/reset, 1–16 bars), looper transport controls
-**Avoids:** Mutex on audio thread (Pitfall 1), vector reallocation on audio thread (Pitfall 7), ppqPosition anchor drift (Pitfall 12)
-**Research flag:** Needs research-phase during planning. Lock-free event buffer design has multiple valid approaches (AbstractFifo, double-buffer swap, SPSC queue); phase research should evaluate which fits the record-then-playback pattern best.
+**Avoids pitfalls:**
+- PITFALL 2: No CC121 in sweep. Panic uses `CC64=0` + `allSoundOff(ch)` + `allNotesOff(ch)` only.
+- PITFALL 3: `trigger_.resetAllGates()` stays BEFORE the CC sweep loop. Do not reorder.
+- PITFALL 1 (buffer overflow): Sweep is 16 ch × 3 events = 48 events (~240 bytes). Add `midi.ensureSize(256)` in `prepareToPlay()`. Do not expand to CC0–127 sweep.
 
-### Phase 6: SDL2 Gamepad Integration (Safe)
-**Rationale:** SDL2 integration is deferred until the plugin's core behavior is stable. The SDL2 pitfalls (singleton lifecycle, message pump conflict) are self-contained and can be addressed in a focused phase. Setting `SDL_HINT_JOYSTICK_THREAD "1"` before SDL_Init eliminates the WM_DEVICECHANGE message pump conflict with DAWs. The process-level singleton prevents multi-instance SDL_Init/SDL_Quit races.
-**Delivers:** SDL2 singleton lifecycle with reference counting; `SDL_HINT_JOYSTICK_THREAD "1"` configured before init; gamepad right stick drives joystick XY via existing atomics; gamepad buttons drive TouchPlate triggers; hot-plug detection confirmed; filter CC (CC71/CC74) from left stick gated on isConnected(); no MIDI spam when no gamepad attached.
-**Addresses:** PS4/Xbox gamepad support with hot-plug, filter CC output (CC71/CC74), gamepad looper transport controls
-**Avoids:** SDL_Init/SDL_Quit per instance (Pitfall 2), filter CC flooding (Pitfall 3), SDL event pump conflict (Pitfall 8)
-**Research flag:** Needs research-phase for SDL_HINT_JOYSTICK_THREAD behavior with specific SDL2 2.30.9 version — verify the hint is honored in this version and understand implications for SDL_PollEvent usage pattern.
+**Verification:** MIDI monitor shows exactly 48 events (16 × 3) per panic invocation; zero CC121. After panic with all pads released, two consecutive `processBlock` calls produce zero note-on events.
 
-### Phase 7: DAW Compatibility, Distribution, and Release
-**Rationale:** Final phase resolves all distribution blockers: Ableton MIDI routing (the most DAW-specific concern), code signing, and installer creation. These are best addressed together as they share the goal of producing a shippable, user-installable plugin.
-**Delivers:** Ableton Live 11/12 and Reaper 7 confirmed MIDI routing (VST3 category/IS_SYNTH setting finalized); pluginval passing at strictness level 5; Inno Setup installer placing bundle in correct VST3 system folder; EV or OV code signing certificate applied to DLL and installer; SmartScreen not blocking on clean Windows 11 VM.
-**Addresses:** DAW compatibility (Windows), Windows distribution, code signing
-**Avoids:** VST3 category/routing confusion (Pitfall 6), Ableton MIDI routing issues (Pitfall 9), code signing/SmartScreen blocks (Pitfall 10), MSVC CRT missing on end-user machines (Pitfall 11)
-**Research flag:** Needs research-phase to determine the correct IS_SYNTH / IS_MIDI_EFFECT / VST3_CATEGORIES combination for Ableton Live MIDI output routing — this is empirically validated, not documented definitively.
+---
+
+### Phase 2: Trigger Quantization Infrastructure
+
+**Rationale:** The quantize feature touches LooperEngine internals and requires a new APVTS parameter. Build and validate the audio-thread path (live quantize + post-record quantize) before adding any UI. The APVTS `quantizeSubdiv` parameter must exist before the UI ComboBox can attach to it.
+
+**Delivers:** `snapToGrid()` static helper + `subdivIndexToBeats()` lookup table; `liveQuantize_` and `quantizeSubdivIdx_` atomics on LooperEngine; `quantizePlayback()` method serviced via `pendingQuantize_` flag inside `process()`; `quantizeSubdiv` APVTS parameter declared; forwarding methods on PluginProcessor; Catch2 test for loop-wrap edge case.
+
+**Addresses features from FEATURES.md:** Live record quantize (P2), post-record QUANTIZE button infrastructure (P1), quantize subdivision selector (P1).
+
+**Avoids pitfalls:**
+- PITFALL 5 (data race): `pendingQuantize_` flag pattern. Message thread sets flag only; audio thread services it inside `process()`. Never write `playbackStore_[]` from the message thread while playing.
+- PITFALL 4 (double-trigger at wrap): `std::fmod(quantized, loopLen)` on every quantized position before storing. Add `jassert(ev.beatPosition >= 0.0 && ev.beatPosition < loopLen)` in debug builds.
+- PITFALL 6 (mid-record subdivision change): Capture `liveQuantizeSubdivBeats_` once at `recordPending_ -> recording_` transition; do not re-read APVTS during an active recording pass.
+- PITFALL 9 (wrong parameter read): All new `processBlock` reads use `getRawParameterValue("id")->load()` — never `getParameter()->getValue()`.
+- PITFALL 10 (sampleOffset off-by-one): Any new `midi.addEvent()` calls use `jlimit(0, blockSize-1, sampleOff)`.
+
+**Recommended build sub-order within this phase:**
+1. Add `quantizeSubdiv` APVTS parameter in `createParameterLayout()`
+2. Add `snapToGrid()` + `subdivIndexToBeats()` static helpers in `LooperEngine.cpp`
+3. Add `liveQuantize_` and `quantizeSubdivIdx_` atomics; modify `recordGate()` for live snap
+4. Add `pendingQuantize_` atomic; implement `quantizePlayback()`; service flag in `process()`
+5. Add PluginProcessor forwarding methods
+6. Write Catch2 tests: `snapToGrid` wrap edge case; live quantize; post-record quantize
+
+**Verification:** Catch2 test — event at `loopLen - 0.001`, quantize to 1-beat grid, stored as `beatPosition == 0.0`, fires exactly once per loop cycle. TSan clean under post-record quantize stress test.
+
+---
+
+### Phase 3: UI — Looper Position Bar + Quantize Controls
+
+**Rationale:** Pure UI additions with zero audio-thread changes. Depends on Phase 2 forwarding methods existing on PluginProcessor. The progress bar reads existing atomics; the QUANTIZE button and subdivision ComboBox wire to Phase 2 infrastructure.
+
+**Delivers:** `LooperPositionBar` custom component in the looper section (6–8px tall horizontal bar, cyan fill during playback, amber fill during recording); QUANTIZE button (disabled while looper is playing or recording); quantize subdivision ComboBox (1/4, 1/8, 1/16, 1/32) with APVTS attachment; live quantize enable toggle.
+
+**Addresses features from FEATURES.md:** Looper position bar (P1), QUANTIZE button UI (P1), subdivision selector UI (P1), live quantize toggle (P2).
+
+**Avoids pitfalls:**
+- PITFALL 8 (second timer): All animation driven from existing `startTimerHz(30)`. No new timer objects. `LooperPositionBar` has no `juce::Timer` member; it is repainted from the editor's `timerCallback()`.
+- PITFALL 7 (backward jump at wrap): Store `prevBeat_` in PluginEditor; detect wrap when `newBeat < prevBeat - loopLen * 0.5f`; treat as expected forward wrap, not visual backward jump.
+- QUANTIZE button must call `setEnabled(!looperIsPlaying() && !looperIsRecording())` each timer tick — the `pendingQuantize_` invariant requires the looper to be stopped.
+- Do NOT use `juce::ProgressBar` — runs its own internal timer; has indeterminate-mode animation incompatible with audio-driven position; does not match the PixelLookAndFeel aesthetic.
+
+**Verification:** `grep "startTimerHz\|startTimer" Source/PluginEditor.cpp` returns exactly 1 result. Progress bar sweeps forward continuously; no backward jump at loop end (visual inspection, 1-bar loop at 180 BPM). QUANTIZE button is greyed out while looper plays.
+
+---
+
+### Phase 4: UI Polish — Gamepad Name + Mute Animation
+
+**Rationale:** Lowest-risk, highest-polish additions. Zero audio-thread impact. Both are message-thread-only changes with no new state beyond a cached string and a phase counter.
+
+**Delivers:** Gamepad status label showing controller type ("PS4 Connected", "Xbox One Connected", "Controller Connected" with SDL raw name fallback) using `SDL_GameControllerGetType()` + name string cached in `GamepadInput::timerCallback()`; animated mute button pulses when `midiMuted_` is true (driven from existing timer via `mutePulsePhase_` counter); optional section visual grouping in the editor.
+
+**Addresses features from FEATURES.md:** Gamepad type display (P2), animated mute state (P2), section visual grouping (P2).
+
+**Avoids pitfalls:**
+- PITFALL 8 (second timer): Mute pulse animation uses `mutePulsePhase_` counter incremented in existing `timerCallback()`; no new timer.
+- `SDL_GameControllerName()` must only be called on the message thread. Cache to `controllerName_` (plain `juce::String`) in `GamepadInput::timerCallback()`; read from `PluginEditor::timerCallback()` on the same thread. No atomics needed — both timers run on the message thread.
+- Copy `SDL_GameControllerName()` return value to `juce::String` immediately; do not store the raw `const char*` pointer (points to an internal SDL buffer).
+
+**Verification:** `grep "startTimerHz\|startTimer" Source/PluginEditor.cpp` still returns exactly 1 result. Status label shows "PS4 Connected" with a PS4 controller attached. Mute button visibly pulses at ~1 Hz when muted; stops when unmuted.
+
+---
 
 ### Phase Ordering Rationale
 
-- **Phases 1–2 before Phase 3:** Pure logic and build correctness must be verified before real-time threading is exercised. A pitch bug found in unit tests is a 5-minute fix; the same bug found after looper integration is a multi-hour debugging session.
-- **Phase 3 before Phase 4:** The note-off guarantee must be in place before trigger source complexity is added. Adding random gates on top of an existing note-off bug creates unpredictable stuck-note scenarios that are hard to attribute.
-- **Phase 5 before Phase 6:** The LooperEngine mutex must be resolved before gamepad integration because both the looper transport controls (SDL button events) and the existing mutex contention paths interact. Fixing the mutex with gamepad already integrated adds a second variable.
-- **Phase 6 before Phase 7:** SDL2 integration issues (especially the message pump conflict in Ableton) affect DAW compatibility testing. DAW compatibility testing should run against the full stack.
-- **Phases 1–4 are sequential with no unusual risk.** Phases 5 and 6 are the technically risky phases and are appropriately flagged for research.
+- **Phase 1 first:** Zero new state or threading concerns; fixes a real live-performance safety issue; validates the extended panic path in complete isolation before LooperEngine is touched.
+- **Phase 2 before Phase 3:** UI cannot wire to quantize controls that do not exist yet. `quantizeSubdiv` APVTS parameter must be declared before a `ComboBox::AttachmentType` can attach to it. PluginProcessor forwarding methods must exist before `PluginEditor` calls them.
+- **Phase 3 before Phase 4:** Progress bar and quantize UI complete the P1 feature set. Phase 4 is pure P2 polish — should not block Phase 3.
+- **Phases 3 and 4 are independent** and could be parallelized; they share no code paths.
 
 ### Research Flags
 
-**Phases needing deeper research during planning:**
-- **Phase 5 (LooperEngine Hardening):** Lock-free single-producer single-consumer event buffer design has multiple valid approaches; phase research should evaluate AbstractFifo vs double-buffer swap vs a purpose-built ring buffer against the specific read/write pattern (audio thread writes during record, audio thread reads during playback, UI thread triggers destructive ops via atomic flags).
-- **Phase 6 (SDL2 Gamepad):** Verify `SDL_HINT_JOYSTICK_THREAD "1"` behavior in SDL2 2.30.9 specifically — this hint changes the polling model and invalidates the current `SDL_PollEvent` timer pattern; confirm the correct replacement API call sequence.
-- **Phase 7 (Distribution):** Ableton Live MIDI routing for MIDI-only VST3 generators is not definitively documented; empirical testing with IS_SYNTH TRUE vs IS_MIDI_EFFECT TRUE vs combined approaches is required.
+Phases with well-documented patterns — no `research-phase` needed:
 
-**Phases with standard patterns (skip research-phase):**
-- **Phase 1:** CMakeLists pinning, APVTS wiring, MSVC_RUNTIME_LIBRARY — all mechanical, well-documented.
-- **Phase 2:** Pure C++ unit testing with Catch2 — no novel patterns.
-- **Phase 3:** JUCE processBlock MIDI output and releaseResources — standard patterns in JUCE documentation and forum consensus.
-- **Phase 4:** ppqPosition-based subdivision timing — established pattern, no novel risk.
+- **Phase 1 (Panic sweep):** Algorithm fully specified; all CC numbers are MIDI spec constants; integration is 10-line replacement of an existing block.
+- **Phase 3 (Progress bar):** Custom component pattern fully specified in STACK.md; all APIs confirmed; 30 Hz timer already in place.
+- **Phase 4 (Gamepad name):** Single function call at connect time; threading analysis complete; label wiring already exists.
+
+Phase warranting careful validation during implementation:
+
+- **Phase 2 (Quantize infrastructure):** The `pendingQuantize_` deferred-request protocol and the `fmod` wrap guard are non-obvious. Write Catch2 tests for `snapToGrid()` and the loop-wrap edge case BEFORE integrating into `LooperEngine`. Follow the sub-order in Phase 2 above: helpers first, atomics second, `recordGate()` modification third, `quantizePlayback()` fourth. Each step should be independently reviewable.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | MEDIUM | Derived from direct codebase inspection + training knowledge; JUCE 8.x CMake API is stable; SDL2 in plugin context is less documented; verify JUCE release tag at github.com/juce-framework/JUCE/releases |
-| Features | MEDIUM | Competitor analysis from training data through Aug 2025; manual verification against current KVR Audio listings recommended before locking requirements; project-internal feature decisions are HIGH confidence |
-| Architecture | HIGH | Based on direct source file analysis; threading model is verifiable from code; JUCE audio thread constraints are well-established domain knowledge |
-| Pitfalls | MEDIUM | Critical pitfalls (mutex, SDL lifecycle, CC flood, note-off) confirmed from source code — HIGH confidence on those four; DAW-specific behaviors (Ableton routing, SDL message pump) are MEDIUM/LOW confidence and require empirical validation |
+| Stack | HIGH | All APIs verified directly from source headers in `build/_deps/`; no version ambiguity; confirmed no new libraries needed |
+| Features | HIGH for MIDI spec items; MEDIUM for UI patterns | CC numbers are MIDI 1.0 standard (immutable); UI patterns triangulated from Boss RC, Ableton Looper, SooperLooper changelog, and MPC docs |
+| Architecture | HIGH | Derived from direct source code analysis of `LooperEngine.h`, `PluginProcessor.cpp`, `PluginEditor.cpp`; threading invariants confirmed from inline comments and ASSERT macros |
+| Pitfalls | HIGH | All pitfalls derived from actual v1.0 source review + confirmed JUCE bug tracker entries and forum reports (CC121 VST3 issue; MidiBuffer allocation; 60Hz repaint CPU cost) |
 
-**Overall confidence:** MEDIUM
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Ableton MIDI routing:** The correct combination of IS_SYNTH, IS_MIDI_EFFECT, and VST3_CATEGORIES for reliable MIDI output routing in Ableton Live 11/12 is not definitively resolvable from training data alone. Must be empirically tested in Phase 7 — budget time for multiple build/test cycles with different configurations.
-- **SDL_HINT_JOYSTICK_THREAD in SDL2 2.30.9:** Verify this hint exists and functions as documented in this exact SDL2 version. If unavailable or unreliable, the fallback is accepting the message pump co-existence (which may work in practice) and adding robust error handling around SDL_PollEvent.
-- **PS4 controller support without DS4Windows:** SDL2's GameController API normalizes XInput and DirectInput but PS4 DualShock 4 support on Windows may require DS4Windows for full axis mapping. Flag for validation with a physical PS4 controller during Phase 6.
-- **LooperEngine event buffer sizing:** The correct maximum event capacity depends on the maximum loop length, gamepad poll rate, and whether gate events grow independently of joystick events. Calculate a hard upper bound in prepareToPlay() using sampleRate and bpm rather than using a fixed compile-time constant.
-- **Competitor feature verification:** KVR Audio listings for Scaler 2, Chord Prism, and Ripchord should be spot-checked against current product pages before marketing copy is finalized. Confidence is MEDIUM on specific competitor feature claims.
+- **`fmod` guard on gate-off events:** ARCHITECTURE.md specifies that gate-off retains its original position (preserving gate length). Confirm during Phase 2 implementation whether gate-off events can also land outside `[0, loopLen)` via the live quantize path, and whether they need the `fmod` guard or a clamp. If gate-on is snapped by delta D, apply the same delta to gate-off to preserve gate length rather than snapping gate-off independently.
+
+- **Filter CC reset in panic vs. `pendingCcReset_` path:** FEATURES.md specifies panic should zero filter CCs (CC74, CC71, CC12, CC1, CC76 on the filter channel). ARCHITECTURE.md's panic code snippet does not include this. Confirm during Phase 1 whether `pendingCcReset_` is already triggered by the panic path. If so, avoid emitting duplicate CCs in the same block; if not, add explicit filter CC zeros to the panic block.
+
+- **`midi.ensureSize(256)` in `prepareToPlay()`:** Confirm whether `prepareToPlay()` currently calls `ensureSize` before adding it. One-line addition with no risk; must be in Phase 1.
 
 ## Sources
 
-### Primary (HIGH confidence)
-- Direct source analysis: `Source/PluginProcessor.h/.cpp`, `Source/TriggerSystem.h/.cpp`, `Source/LooperEngine.h/.cpp`, `Source/GamepadInput.h/.cpp`, `Source/ChordEngine.h`, `Source/ScaleQuantizer.h`, `Source/PluginEditor.h`, `CMakeLists.txt`
-- `.planning/PROJECT.md` — authoritative project specification
+### Primary (HIGH confidence — verified from source in repo)
+- `build/_deps/juce-src/modules/juce_audio_basics/midi/juce_MidiMessage.cpp` — CC123 (`allNotesOff`), CC120 (`allSoundOff`), CC121 (`allControllersOff`) confirmed; `allControllersOff` excluded from recommended panic sweep
+- `build/_deps/juce-src/modules/juce_audio_basics/midi/juce_MidiMessage.h` — `pitchWheel`, `controllerEvent`, `allSoundOff`, `allNotesOff` signatures confirmed
+- `build/_deps/sdl2-src/include/SDL_gamecontroller.h` — `SDL_GameControllerType` enum (14 values) and function signatures confirmed from SDL2 2.30.9
+- `Source/LooperEngine.h` — `playbackBeat_` atomic<float>, `getPlaybackBeat()`, `getLoopLengthBeats()`, SPSC FIFO threading invariant, `ASSERT_AUDIO_THREAD()` macro
+- `Source/PluginProcessor.cpp` — existing `pendingPanic_` exchange pattern (lines 471–477), processBlock step order
+- `Source/PluginEditor.cpp` — `startTimerHz(30)` (line 1100), flash counter pattern (lines 1455–1484), gamepad status label
 
 ### Secondary (MEDIUM confidence)
-- JUCE 8 CMake API and APVTS patterns — training knowledge, Aug 2025 cutoff
-- SDL2 2.30.x lifecycle and threading patterns — training knowledge
-- JUCE audio thread real-time constraints — established domain knowledge, consistent across JUCE documentation and community
-- VST3 Windows installer and code signing practices — training knowledge
-- KVR Audio plugin database coverage (competitor features) — training knowledge, Aug 2025 cutoff
+- MIDI 1.0 Specification — CC120, CC121, CC123 semantics (standardized, immutable)
+- JUCE bug tracker — VST3 wrapper CC121 side-effects on downstream instruments (Waves CLA-76, Kontakt)
+- JUCE forum — MidiBuffer 2048-event pre-allocation; 60Hz repaint timer ~40% CPU cost; single-timer pattern recommendation
+- SDL2 Wiki — `SDL_GameControllerGetType` availability since SDL 2.0.12; `SDL_GameControllerName` since SDL 2.0.0
+- SooperLooper changelog v1.7.9 — loop position indicator as standard looper UI feature
+- Cubase, Logic Pro, iConnectivity MIDI Panic docs — 16-channel all-controllers sweep as industry-standard panic sequence
 
-### Tertiary (LOW confidence — requires empirical validation)
-- Ableton Live 11/12 VST3 MIDI generator routing behavior — training knowledge only; must be tested
-- SDL2 message pump behavior inside DAW host on Windows — training knowledge; specific DAW interactions unverified
-- PS4 controller SDL2 support without DS4Windows — training knowledge; validate with physical hardware
+### Tertiary (LOW confidence — context only)
+- KVR Audio forums — looper plugin feature expectations
+- MPC forum — "Time Correct" quantization terminology and live quantize behavior descriptions
 
 ---
-*Research completed: 2026-02-22*
+*Research completed: 2026-02-24*
 *Ready for roadmap: yes*
