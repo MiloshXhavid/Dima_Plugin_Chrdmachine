@@ -333,7 +333,11 @@ void TouchPlate::mouseDown(const juce::MouseEvent&)
         proc_.apvts.getRawParameterValue("triggerSource" + juce::String(voice_))->load());
     if (src == 0)  // only active in PAD mode
     {
-        proc_.setPadState(voice_, true);
+        // Hold mode is inverted: press = mute (note-off), release = note-on (hold resumes).
+        if (proc_.padHold_[voice_].load())
+            proc_.setPadState(voice_, false);
+        else
+            proc_.setPadState(voice_, true);
         repaint();
     }
 }
@@ -342,8 +346,14 @@ void TouchPlate::mouseUp(const juce::MouseEvent&)
 {
     const int src = static_cast<int>(
         proc_.apvts.getRawParameterValue("triggerSource" + juce::String(voice_))->load());
-    if (src == 0 && !proc_.padHold_[voice_].load())
-        proc_.setPadState(voice_, false);
+    if (src == 0)
+    {
+        // Hold mode: release = note-on (hold resumes). Normal: release = note-off.
+        if (proc_.padHold_[voice_].load())
+            proc_.setPadState(voice_, true);
+        else
+            proc_.setPadState(voice_, false);
+    }
     repaint();  // always repaint so dim state stays current
 }
 

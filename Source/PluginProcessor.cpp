@@ -329,12 +329,20 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     // ── Poll gamepad triggers (momentary held-state gates + D-pad) ───────────
     if (gamepad_.isConnected() && gamepadActive_.load(std::memory_order_relaxed))
     {
-        // Momentary voice gates: rising edge → note-on, falling edge → note-off
+        // Voice gates — hold mode is inverted: press = note-off (mute), release = note-on (hold resumes).
+        // Normal mode: press = note-on, release = note-off.
         for (int v = 0; v < 4; ++v)
         {
-            const bool held = gamepad_.getVoiceHeld(v);
-            if (held && !gamepadVoiceWasHeld_[v])       trigger_.setPadState(v, true);
-            else if (!held && gamepadVoiceWasHeld_[v])  trigger_.setPadState(v, false);
+            const bool held    = gamepad_.getVoiceHeld(v);
+            const bool rising  = held  && !gamepadVoiceWasHeld_[v];
+            const bool falling = !held &&  gamepadVoiceWasHeld_[v];
+            const bool holdOn  = padHold_[v].load();
+
+            if (rising)
+                trigger_.setPadState(v, !holdOn);   // hold: note-off; normal: note-on
+            else if (falling)
+                trigger_.setPadState(v, holdOn);    // hold: note-on (resume); normal: note-off
+
             gamepadVoiceWasHeld_[v] = held;
         }
 
