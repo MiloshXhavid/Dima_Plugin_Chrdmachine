@@ -393,13 +393,14 @@ GlobalTouchPlate::GlobalTouchPlate(PluginProcessor& p) : proc_(p) {}
 void GlobalTouchPlate::mouseDown(const juce::MouseEvent&)
 {
     pressed_ = true;
-    // Trigger only voices that are in PAD mode (triggerSource == 0)
+    // Trigger only voices that are in PAD mode (triggerSource == 0).
+    // Respect hold mode per voice: in hold mode press = note-off (mirrors individual TouchPlate).
     for (int v = 0; v < 4; ++v)
     {
         const int src = static_cast<int>(
             proc_.apvts.getRawParameterValue("triggerSource" + juce::String(v))->load());
         if (src == 0)
-            proc_.setPadState(v, true);
+            proc_.setPadState(v, !proc_.padHold_[v].load());
     }
     repaint();
 }
@@ -412,7 +413,7 @@ void GlobalTouchPlate::mouseUp(const juce::MouseEvent&)
         const int src = static_cast<int>(
             proc_.apvts.getRawParameterValue("triggerSource" + juce::String(v))->load());
         if (src == 0)
-            proc_.setPadState(v, false);
+            proc_.setPadState(v, proc_.padHold_[v].load());
     }
     repaint();
 }
@@ -1075,22 +1076,16 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(filterXModeBox_);
     filterXModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterXMode", filterXModeBox_);
 
-    // ── MIDI Panic button ─────────────────────────────────────────────────────
-    // One-shot: press sends allNotesOff on all voice channels, button stays pressable.
-    // Gamepad: R3 (separate toggle-mute path in processBlock, unchanged here).
-    panicBtn_.setButtonText("MIDI PANIC");
-    panicBtn_.setClickingTogglesState(false);   // PATCH-04: one-shot, not toggle
-    panicBtn_.setTriggeredOnMouseDown(true);
-    panicBtn_.setTooltip("Send allNotesOff on all voice channels and reset gates. Gamepad: R3.");
-    styleButton(panicBtn_);
-    panicBtn_.setColour(juce::TextButton::buttonColourId,  juce::Colour(0xFF5C1010));  // dark red
-    panicBtn_.setColour(juce::TextButton::textColourOffId, Clr::text);
-    panicBtn_.onClick = [this]
-    {
-        proc_.triggerPanic();   // PATCH-04: one-shot — fires allNotesOff this block, button stays pressable
-        // flashPanic_ is incremented from the audio thread; timerCallback handles the 167ms highlight
-    };
-    addAndMakeVisible(panicBtn_);
+    // ── Filter Mod hint label (bottom-right) ─────────────────────────────────
+    filterModHintLabel_.setText(
+        "When Filter Mod active = Filter will jump to its configuration between "
+        "left Joystick Position and Cutoff Atten. Deactivate for true Synth preset playback "
+        "or choose default Filter Position with left Joystick and Cutoff Attenuator",
+        juce::dontSendNotification);
+    filterModHintLabel_.setFont(juce::Font(8.5f));
+    filterModHintLabel_.setJustificationType(juce::Justification::topLeft);
+    filterModHintLabel_.setColour(juce::Label::textColourId, Clr::textDim.withAlpha(0.7f));
+    addAndMakeVisible(filterModHintLabel_);
 
     startTimerHz(30);
 }
@@ -1119,7 +1114,9 @@ void PluginEditor::resized()
     // ── RIGHT COLUMN ──────────────────────────────────────────────────────────
 
     // Joystick pad (top right, square-ish)
-    const int padSize = juce::jmin(right.getWidth(), right.getHeight() / 2);
+    // Cap padSize so the controls + hint label below always have enough room.
+    // With window height 760 the right column is ~656px; controls need ~360px + ~50px hint.
+    const int padSize = juce::jmin(right.getWidth(), 230);
     joystickPad_.setBounds(right.removeFromTop(padSize));
 
     right.removeFromTop(6);
@@ -1189,6 +1186,10 @@ void PluginEditor::resized()
     gateTimeSlider_  .setBounds(right.removeFromTop(18));
     right.removeFromTop(10);
     thresholdSlider_ .setBounds(right.removeFromTop(18));
+
+    // Filter Mod hint — remaining space at the bottom of the right column
+    right.removeFromTop(10);
+    filterModHintLabel_.setBounds(right);
 
     // ── LEFT COLUMN ───────────────────────────────────────────────────────────
 
@@ -1286,13 +1287,6 @@ void PluginEditor::resized()
     }
 
     left.removeFromTop(6);
-
-    // Panic button — bottom-left corner, above footer (small, not full width)
-    {
-        left.removeFromBottom(2);
-        auto panicRow = left.removeFromBottom(22);
-        panicBtn_.setBounds(panicRow.removeFromLeft(100));
-    }
 
     // Looper
     {
@@ -1451,8 +1445,6 @@ void PluginEditor::timerCallback()
         resetFlashCounter_ = 5;   // ~167ms at 30Hz
     if (proc_.flashLoopDelete_.exchange(0, std::memory_order_relaxed) > 0)
         deleteFlashCounter_ = 5;
-    if (proc_.flashPanic_.exchange(0, std::memory_order_relaxed) > 0)
-        panicFlashCounter_ = 5;
 
     if (resetFlashCounter_ > 0)
     {
@@ -1476,29 +1468,6 @@ void PluginEditor::timerCallback()
     {
         loopDeleteBtn_.setColour(juce::TextButton::buttonColourId,  Clr::accent);
         loopDeleteBtn_.setColour(juce::TextButton::textColourOffId, Clr::text);
-    }
-
-    // Panic button: show MUTED (from R3 toggle) or flash on press, otherwise dark red.
-    // triggerPanic() always clears midiMuted_, so pressing the UI button always unmutes.
-    {
-        const bool muted = proc_.isMidiMuted();
-        panicBtn_.setButtonText(muted ? "MUTED" : "MIDI PANIC");
-        if (muted)
-        {
-            panicBtn_.setColour(juce::TextButton::buttonColourId,  Clr::highlight);
-            panicBtn_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        }
-        else if (panicFlashCounter_ > 0)
-        {
-            --panicFlashCounter_;
-            panicBtn_.setColour(juce::TextButton::buttonColourId,  Clr::highlight);
-            panicBtn_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-        }
-        else
-        {
-            panicBtn_.setColour(juce::TextButton::buttonColourId,  juce::Colour(0xFF5C1010));
-            panicBtn_.setColour(juce::TextButton::textColourOffId, Clr::text);
-        }
     }
 
     // Grey out LEFT Y / LEFT X dropdowns when Filter Mod is off — makes grouping clear

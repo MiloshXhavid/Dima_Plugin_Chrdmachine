@@ -25,6 +25,7 @@ typedef struct _SDL_GameController SDL_GameController;
 //   Square (X)         → looper reset
 //   Triangle (Y)       → looper record
 //   Circle (B)         → looper delete
+//   R3 (RightStick btn)→ MIDI panic
 
 class GamepadInput : private juce::Timer
 {
@@ -57,6 +58,7 @@ public:
     bool consumeDpadDown()  { return dpadDownTrig_.exchange(false); }
     bool consumeDpadLeft()  { return dpadLeftTrig_.exchange(false); }
     bool consumeDpadRight() { return dpadRightTrig_.exchange(false); }
+    bool consumeRightStickTrigger() { return rightStickTrig_.exchange(false); }
 
     // Whether a gamepad is connected
     bool isConnected() const { return controller_ != nullptr; }
@@ -114,6 +116,7 @@ private:
     std::atomic<bool>  looperRecord_    {false};
     std::atomic<bool>  looperReset_     {false};
     std::atomic<bool>  looperDelete_    {false};
+    std::atomic<bool>  rightStickTrig_  {false};
 
     // 20ms button debounce — each button tracks previous state and last-change timestamp
     struct ButtonState
@@ -133,6 +136,7 @@ private:
     ButtonState btnDpadDown_;
     ButtonState btnDpadLeft_;
     ButtonState btnDpadRight_;
+    ButtonState btnRightStick_;
 
     bool sdlInitialised_    = false;  // guard: SdlContext::release() only if acquire() succeeded
 };

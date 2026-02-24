@@ -194,13 +194,14 @@ private:
     // ── Filter (gamepad) ─────────────────────────────────────────────────────
     juce::Slider filterXAttenKnob_, filterYAttenKnob_;
     juce::Label  filterXAttenLabel_, filterYAttenLabel_;
+    juce::TextButton filterModBtn_;  // [FILTER MOD ON] / [FILTER MOD OFF]
 
     // ── Looper ────────────────────────────────────────────────────────────────
     juce::TextButton  loopPlayBtn_, loopRecBtn_, loopResetBtn_, loopDeleteBtn_;
     juce::TextButton  loopRecJoyBtn_;    // [REC JOY]
     juce::TextButton  loopRecGatesBtn_;  // [REC GATES]
     juce::TextButton  loopSyncBtn_;      // [DAW SYNC]
-    juce::TextButton  loopRecWaitBtn_;   // [REC TOUCH] wait-for-trigger toggle
+    juce::TextButton  loopRecWaitBtn_;   // [START REC BY TOUCH] starts recording immediately on touch
     juce::Label       bpmDisplayLabel_;  // shows effective BPM (free tempo or DAW BPM)
     juce::ComboBox    loopSubdivBox_;
     juce::Label       loopSubdivLabel_;
@@ -208,6 +209,7 @@ private:
     juce::Label       loopLengthLabel_;
     juce::Label       gamepadStatusLabel_;
     juce::TextButton  gamepadActiveBtn_;  // [GAMEPAD ON] / [GAMEPAD OFF] per-instance toggle
+    juce::Label       filterModHintLabel_;  // bottom-right hint text for Filter Mod behaviour
     juce::ComboBox    filterYModeBox_;    // Y axis: Resonance / LFO Rate / Mod Wheel
     juce::ComboBox    filterXModeBox_;    // X axis: Cutoff / VCF LFO / Mod Wheel
 

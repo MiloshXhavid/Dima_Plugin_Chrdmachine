@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=ChordJoystick MK2
-AppVersion=2.0.0
+AppVersion=1.2
 AppPublisher=Dima Xhavid
 AppPublisherURL=https://gumroad.com
 OutputBaseFilename=DimaChordJoystickMK2-Setup

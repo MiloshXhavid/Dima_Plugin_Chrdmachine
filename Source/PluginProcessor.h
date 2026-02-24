@@ -165,6 +165,11 @@ private:
     // Held (sample-and-hold) pitches for each voice
     std::array<int, 4> heldPitch_ {60, 64, 67, 70};
 
+    // Pitch that was actually sent in the last looper gate-on per voice.
+    // gateOff MUST use this pitch (not heldPitch_, which may have changed) to
+    // send the matching noteOff and avoid stuck notes.
+    std::array<int, 4> looperActivePitch_ {-1, -1, -1, -1};
+
     // Build ChordEngine::Params from current APVTS + joystick state
     ChordEngine::Params buildChordParams() const;
 

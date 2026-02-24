@@ -179,6 +179,13 @@ void GamepadInput::timerCallback()
         if (debounce(curLeft,  btnDpadLeft_)  && btnDpadLeft_.prev)  dpadLeftTrig_.store(true);
         if (debounce(curRight, btnDpadRight_) && btnDpadRight_.prev) dpadRightTrig_.store(true);
     }
+
+    // ── R3 (right stick click) → MIDI panic ──────────────────────────────────
+    {
+        const bool cur = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0;
+        if (debounce(cur, btnRightStick_) && btnRightStick_.prev)
+            rightStickTrig_.store(true);
+    }
 }
 
 // ── Consume helpers ───────────────────────────────────────────────────────────

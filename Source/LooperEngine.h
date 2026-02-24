@@ -48,7 +48,7 @@ public:
     struct LooperEvent
     {
         double beatPosition;   // beat offset within loop (0..loopLengthBeats)
-        enum class Type { JoystickX, JoystickY, Gate } type;
+        enum class Type { JoystickX, JoystickY, FilterX, FilterY, Gate } type;
         int    voice;          // gate events: which voice (0-3); joystick: -1
         float  value;          // joystick: -1..1; gate: 1=on, 0=off
     };
@@ -69,6 +69,10 @@ public:
         float   joystickX    = 0.0f;
         bool    hasJoystickY = false;
         float   joystickY    = 0.0f;
+        bool    hasFilterX   = false;
+        float   filterX      = 0.0f;
+        bool    hasFilterY   = false;
+        float   filterY      = 0.0f;
         bool    gateOn[4]    = {};
         bool    gateOff[4]   = {};
         bool    dawStopped   = false;  // true on the block where DAW stops (send all-notes-off)
@@ -91,15 +95,17 @@ public:
     void setLoopLengthBars(int bars);  // clamped 1..16
 
     // New mode setters (called from PluginEditor or PluginProcessor)
-    void setRecJoy(bool b)   { recJoy_.store(b);   }
-    void setRecGates(bool b) { recGates_.store(b); }
-    void setSyncToDaw(bool b){ syncToDaw_.store(b);}
+    void setRecJoy(bool b)    { recJoy_.store(b);    }
+    void setRecGates(bool b)  { recGates_.store(b);  }
+    void setRecFilter(bool b) { recFilter_.store(b); }
+    void setSyncToDaw(bool b) { syncToDaw_.store(b); }
 
     bool isCapReached()  const { return capReached_.load();                                                    }
     bool isRecordArmed() const { return recording_.load() || recordPending_.load() || recWaitArmed_.load(); }
     bool isSyncToDaw()   const { return syncToDaw_.load();                                                  }
     bool isRecJoy()      const { return recJoy_.load();                                                     }
     bool isRecGates()    const { return recGates_.load();                                                   }
+    bool isRecFilter()   const { return recFilter_.load();                                                  }
 
     void setRecWaitForTrigger(bool b) { recWaitForTrigger_.store(b); }
     bool isRecWaitForTrigger()  const { return recWaitForTrigger_.load(); }
@@ -112,6 +118,7 @@ public:
     // All three methods must only be called from the audio thread.
     BlockOutput process(const ProcessParams& p);
     void recordJoystick(double beatPos, float x, float y);
+    void recordFilter(double beatPos, float x, float y);
     void recordGate(double beatPos, int voice, bool on);
 
     // UI read-out
@@ -141,6 +148,7 @@ private:
     std::atomic<bool> recordPending_ { false }; // REC pressed, waiting for next valid clock
     std::atomic<bool> recJoy_            { false };  // [REC JOY] armed
     std::atomic<bool> recGates_          { false };  // [REC GATES] armed
+    std::atomic<bool> recFilter_         { true };   // filter recording always on
     std::atomic<bool> syncToDaw_         { false };  // [DAW] sync to DAW playhead
     std::atomic<bool> capReached_        { false };  // overflow indicator for UI
     std::atomic<bool> recWaitForTrigger_ { false };  // mode: wait for trigger to start rec
@@ -153,8 +161,10 @@ private:
     // ── Audio-thread-only (no atomic needed) ─────────────────────────────────
     double internalBeat_    = 0.0;
     double loopStartPpq_    = -1.0;  // DAW sync anchor; -1 = not anchored
-    float  lastRecordedX_   = 0.0f;  // for sparse joystick recording threshold
-    float  lastRecordedY_   = 0.0f;
+    float  lastRecordedX_       = 0.0f;  // for sparse pitch joystick recording threshold
+    float  lastRecordedY_       = 0.0f;
+    float  lastRecordedFilterX_ = 0.0f;  // for sparse filter joystick recording threshold
+    float  lastRecordedFilterY_ = 0.0f;
     bool   prevDawPlaying_  = false; // tracks DAW play/stop transitions for auto-stop/start
     double recordedBeats_   = 0.0;   // beats recorded in current pass (auto-stop)
 

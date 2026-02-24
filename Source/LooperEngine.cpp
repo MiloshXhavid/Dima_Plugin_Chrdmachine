@@ -170,8 +170,10 @@ void LooperEngine::finaliseRecording()
         }  // ScopedRead destructs here: finishedRead(newCount) → validStart=newCount
         fifo_.reset();  // now safe: validStart=validEnd=newCount → reset to 0,0
         playbackCount_.store(count, std::memory_order_release);
-        return;
+        // fall through to open-gate choke below
     }
+    else
+    {
 
     // Case 2: punch-in merge — existing content AND new events.
     // Step A: drain new events from FIFO into scratchNew_ (class member — avoids ~49KB stack alloc).
@@ -224,9 +226,79 @@ void LooperEngine::finaliseRecording()
     for (int i = 0; i < mergedCount; ++i)
         playbackStore_[i] = scratchMerged_[i];
     playbackCount_.store(mergedCount, std::memory_order_release);
+
+    } // end Case 2
+
+    // ── Choke open gates at loop boundary ────────────────────────────────────
+    // If the last gate event for a voice is "on", the note would hold forever on
+    // playback (gate-on was recorded while touchplate was still held at loop end).
+    // Inject a gate-off near the very end of the loop so the note is cut cleanly
+    // before the next cycle restarts.
+    {
+        int n = playbackCount_.load(std::memory_order_relaxed);
+        const double chopBeat = getLoopLengthBeats() * (1.0 - 1e-9);
+
+        // Per-voice: find the gate event with the highest beatPosition (final state).
+        double lastBeat [4] = { -1.0, -1.0, -1.0, -1.0 };
+        float  lastValue[4] = {  0.0f, 0.0f, 0.0f, 0.0f };
+
+        for (int i = 0; i < n; ++i)
+        {
+            const auto& ev = playbackStore_[i];
+            if (ev.type != LooperEvent::Type::Gate) continue;
+            if (ev.voice < 0 || ev.voice >= 4)      continue;
+            if (ev.beatPosition > lastBeat[ev.voice])
+            {
+                lastBeat [ev.voice] = ev.beatPosition;
+                lastValue[ev.voice] = ev.value;
+            }
+        }
+
+        for (int v = 0; v < 4 && n < LOOPER_FIFO_CAPACITY; ++v)
+        {
+            if (lastBeat[v] >= 0.0 && lastValue[v] > 0.5f)
+                playbackStore_[n++] = { chopBeat, LooperEvent::Type::Gate, v, 0.0f };
+        }
+
+        playbackCount_.store(n, std::memory_order_release);
+    }
 }
 
 // ─── Recording helpers (audio-thread-only) ────────────────────────────────────
+
+void LooperEngine::recordFilter(double beatPos, float x, float y)
+{
+    ASSERT_AUDIO_THREAD();
+    if (!recording_.load(std::memory_order_relaxed))   return;
+    if (!recFilter_.load(std::memory_order_relaxed))   return;
+
+    const double loopLen = getLoopLengthBeats();
+    if (loopLen <= 0.0) return;
+
+    const float thresh = joystickThresh_.load(std::memory_order_relaxed);
+    const bool  xMoved = std::abs(x - lastRecordedFilterX_) > thresh;
+    const bool  yMoved = std::abs(y - lastRecordedFilterY_) > thresh;
+    if (!xMoved && !yMoved) return;
+
+    const double pos = std::fmod(beatPos, loopLen);
+
+    if (xMoved)
+    {
+        if (fifo_.getFreeSpace() < 1) { capReached_.store(true, std::memory_order_relaxed); return; }
+        LooperEvent ex { pos, LooperEvent::Type::FilterX, -1, x };
+        auto scope = fifo_.write(1);
+        scope.forEach([&](int idx) { eventBuf_[idx] = ex; });
+        lastRecordedFilterX_ = x;
+    }
+    if (yMoved)
+    {
+        if (fifo_.getFreeSpace() < 1) { capReached_.store(true, std::memory_order_relaxed); return; }
+        LooperEvent ey { pos, LooperEvent::Type::FilterY, -1, y };
+        auto scope = fifo_.write(1);
+        scope.forEach([&](int idx) { eventBuf_[idx] = ey; });
+        lastRecordedFilterY_ = y;
+    }
+}
 
 void LooperEngine::recordGate(double beatPos, int voice, bool on)
 {
@@ -460,6 +532,14 @@ LooperEngine::BlockOutput LooperEngine::process(const ProcessParams& p)
             case LooperEvent::Type::JoystickY:
                 out.hasJoystickY = true;
                 out.joystickY    = ev.value;
+                break;
+            case LooperEvent::Type::FilterX:
+                out.hasFilterX = true;
+                out.filterX    = ev.value;
+                break;
+            case LooperEvent::Type::FilterY:
+                out.hasFilterY = true;
+                out.filterY    = ev.value;
                 break;
             case LooperEvent::Type::Gate:
                 if (ev.voice >= 0 && ev.voice < 4)

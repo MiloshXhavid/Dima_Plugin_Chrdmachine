@@ -351,7 +351,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         }
 
         // L3 (left stick press): trigger all PAD-mode voices, held while pressed.
-        // Mirrors the ALL touchplate — only voices in PAD mode (src == 0) are affected.
+        // Mirrors the ALL touchplate — respect hold mode per voice (same inversion as individual pads).
         {
             const bool held = gamepad_.getAllNotesHeld();
             if (held != allNotesWasHeld_)
@@ -361,7 +361,11 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     const int src = (int)apvts.getRawParameterValue(
                         "triggerSource" + juce::String(v))->load();
                     if (src == 0)
-                        trigger_.setPadState(v, held);
+                    {
+                        const bool holdOn = padHold_[v].load();
+                        // hold mode: press=note-off, release=note-on (mirrors individual TouchPlate)
+                        trigger_.setPadState(v, holdOn ? !held : held);
+                    }
                 }
                 allNotesWasHeld_ = held;
             }
@@ -471,9 +475,28 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     if (pendingPanic_.exchange(false, std::memory_order_acq_rel))
     {
         if (looper_.isPlaying()) looper_.startStop();
-        for (int v = 0; v < 4; ++v)
-            midi.addEvent(juce::MidiMessage::allNotesOff(voiceChs[v]), 0);
+        // Hard-kill sound on every active channel:
+        //   CC64=0  — release sustain so held notes don't linger
+        //   CC120=0 — all sound off (immediate cut, ignores sustain)
+        //   CC123   — all notes off (belt-and-suspenders for synths that ignore CC120)
+        {
+            const int fCh = (int)apvts.getRawParameterValue(ParamID::filterMidiCh)->load();
+            bool sent[17] = {};
+            auto killCh = [&](int ch)
+            {
+                if (ch < 1 || ch > 16 || sent[ch]) return;
+                sent[ch] = true;
+                midi.addEvent(juce::MidiMessage::controllerEvent(ch, 64,  0), 0);
+                midi.addEvent(juce::MidiMessage::controllerEvent(ch, 120, 0), 0);
+                midi.addEvent(juce::MidiMessage::allNotesOff(ch),             0);
+            };
+            for (int v = 0; v < 4; ++v) killCh(voiceChs[v]);
+            killCh(fCh);
+        }
         trigger_.resetAllGates();
+        looperActivePitch_.fill(-1);
+        prevCcCut_.store(-1, std::memory_order_relaxed);
+        prevCcRes_.store(-1, std::memory_order_relaxed);
         flashPanic_.fetch_add(1, std::memory_order_relaxed);
     }
 
@@ -489,13 +512,15 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const int ch0 = voiceChs[v] - 1;  // 0-based for MIDI message
         if (loopOut.gateOn[v])
         {
-            // PATCH-01: CC64=127 sustain-on before every note-on
-            midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 64, 127), 0);
-            midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, heldPitch_[v], (uint8_t)100), 0);
+            // Snapshot the pitch at gate-on so gateOff uses the same note number
+            // even if heldPitch_[v] changes before the gate closes.
+            looperActivePitch_[v] = heldPitch_[v];
+            midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, looperActivePitch_[v], (uint8_t)100), 0);
         }
-        if (loopOut.gateOff[v])
+        if (loopOut.gateOff[v] && looperActivePitch_[v] >= 0)
         {
-            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, heldPitch_[v], (uint8_t)0), 0);
+            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, looperActivePitch_[v], (uint8_t)0), 0);
+            looperActivePitch_[v] = -1;
         }
     }
 
@@ -528,8 +553,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 : looper_.getPlaybackBeat();
             looper_.recordGate(beatPos, voice, true);
 
-            // PATCH-01: CC64=127 sustain-on before every note-on
-            midi.addEvent(juce::MidiMessage::controllerEvent(ch0 + 1, 64, 127), sampleOff);
             midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100),
                           sampleOff);
         }
