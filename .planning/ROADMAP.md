@@ -115,7 +115,7 @@ Plans:
 | 08. Post-v1.0 Patch Verification | v1.1 | 1/2 | In progress | - |
 | 09. MIDI Panic and Mute Feedback | v1.1 | 2/2 | Complete | 2026-02-25 |
 | 10. Trigger Quantization Infrastructure | 5/5 | Complete    | 2026-02-25 | - |
-| 11. UI Polish and Installer | v1.1 | 0/4 | Not started | - |
+| 11. UI Polish and Installer | 1/4 | In Progress|  | - |
 
 ---
 *v1.0 shipped 2026-02-23 — 7 phases, 17 plans, ~3,966 C++ LOC*

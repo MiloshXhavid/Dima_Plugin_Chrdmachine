@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 11 of 11 (UI Polish + Installer)
-Plan: 0 of TBD — Not started (Phase 10 complete)
-Status: Phase 10 complete — all quantize features verified in DAW; ready to begin Phase 11
-Last activity: 2026-02-25 — Plan 10-05 complete (build + human DAW verification of quantize infrastructure; all 6 checklist items approved)
+Plan: 1 of TBD — Plan 11-01 complete
+Status: Phase 11 in progress — section panels (LOOPER/FILTER MOD/GAMEPAD) added, QUANTIZE TRIGGER label added, qDropW widened to 58px
+Last activity: 2026-02-25 — Plan 11-01 complete (section panels with knockout floating labels, paint/resized changes, build clean)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -20,7 +20,7 @@ v1.1 Polish [█████░░░░░] 36% (7/TBD plans)
   Phase 08  [██████████]   Patch Verification    Complete (1 plan done)
   Phase 09  [██████████]   MIDI Panic + Mute     Complete (2 plans done)
   Phase 10  [██████████]   Quantize Infra        Complete (5/5 plans done)
-  Phase 11  [░░░░░░░░░░]   UI Polish + Installer Not started
+  Phase 11  [█░░░░░░░░░]   UI Polish + Installer In progress (1 plan done)
 ```
 
 ## Performance Metrics
@@ -62,6 +62,9 @@ Recent decisions affecting v1.1:
 - **Post mode auto-re-applies after finaliseRecording() (10-03)** — pendingQuantize_ set to true in finaliseRecording() when quantizeMode_ == 2; new overdubs auto-quantized on next process() call
 - **Quantize UI radio group ID=1 (10-04)** — no other radio groups existed in PluginEditor; ID=1 used for Off/Live/Post TextButtons; timerCallback() syncs toggle states + disables all four controls during recording
 - **Phase 10 complete — all quantize features verified in DAW (10-05)** — build clean, TC 12 233/233 assertions pass, human DAW checklist fully approved
+- **drawSectionPanel as paint() lambda (11-01)** — matches existing drawFilterGroup pattern; knockout floating label uses fillRect behind text to erase border line
+- **filterModPanelBounds_ = union of 6 controls (11-01)** — covers filterModBtn_, filterRecBtn_, filterYModeBox_, filterXModeBox_, gateTimeSlider_, thresholdSlider_ + expanded(4,6)
+- **qDropW widened 48→58px (11-01)** — "1/32" text was truncated at 48px; 58px confirmed sufficient
 
 ### Pending Todos
 
@@ -75,6 +78,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-25 (10-05 complete)
-Stopped at: Completed 10-05-PLAN.md — Phase 10 complete
+Last session: 2026-02-25 (11-01 complete)
+Stopped at: Completed 11-01-PLAN.md — section panels + QUANTIZE TRIGGER label
 Resume file: None
