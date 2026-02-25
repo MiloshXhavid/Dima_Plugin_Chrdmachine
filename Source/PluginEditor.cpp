@@ -1461,6 +1461,12 @@ void PluginEditor::resized()
         gamepadStatusLabel_.setBounds(row);             // remainder to status label
     }
 
+    // GAMEPAD panel — just the gamepadActiveBtn_ / panicBtn_ / status label row
+    gamepadPanelBounds_ = gamepadActiveBtn_.getBounds()
+        .getUnion(panicBtn_.getBounds())
+        .getUnion(gamepadStatusLabel_.getBounds())
+        .expanded(4, 6);
+
     // Left-stick axis mode combos — grouped under the FILTER MOD button
     // (greyed out when FILTER MOD is OFF)
     right.removeFromTop(12);
@@ -1473,6 +1479,16 @@ void PluginEditor::resized()
     gateTimeSlider_  .setBounds(right.removeFromTop(18));
     right.removeFromTop(10);
     thresholdSlider_ .setBounds(right.removeFromTop(18));
+
+    // FILTER MOD panel — encompasses filterYModeBox_, filterXModeBox_, gateTimeSlider_, thresholdSlider_
+    // and the filterModBtn_ / filterRecBtn_ buttons in the row above.
+    filterModPanelBounds_ = filterModBtn_.getBounds()
+        .getUnion(filterRecBtn_.getBounds())
+        .getUnion(filterYModeBox_.getBounds())
+        .getUnion(filterXModeBox_.getBounds())
+        .getUnion(gateTimeSlider_.getBounds())
+        .getUnion(thresholdSlider_.getBounds())
+        .expanded(4, 6);
 
     // Filter Mod hint is now drawn directly in paint() aligned with the left footer rows.
     filterModHintLabel_.setBounds(0, 0, 0, 0);
@@ -1582,6 +1598,11 @@ void PluginEditor::resized()
 
     // Looper
     {
+        // Looper panel bounds — capture before controls consume the area
+        // (arpBlockBounds_ has already been removed from the bottom, so `left` here
+        //  is exactly the looper section content area)
+        looperPanelBounds_ = left;  // full remaining left area = looper section
+
         auto section = left;
 
         // Buttons row 1: PLAY / REC / RST / DEL
@@ -1626,7 +1647,7 @@ void PluginEditor::resized()
         {
             auto qRow = section.removeFromTop(20);
             constexpr int qBtnW = 32;
-            constexpr int qDropW = 48;
+            constexpr int qDropW = 58;  // widened from 48 — "1/32" was truncated at 48px
             constexpr int qGap = 2;
 
             quantizeOffBtn_ .setBounds(qRow.removeFromLeft(qBtnW)); qRow.removeFromLeft(qGap);
@@ -1733,6 +1754,40 @@ void PluginEditor::paint(juce::Graphics& g)
                    (int)fb.getWidth(), 12, juce::Justification::centred);
     }
 
+    // ── Section panels: LOOPER / FILTER MOD / GAMEPAD ─────────────────────────
+    auto drawSectionPanel = [&](juce::Rectangle<int> bounds, const juce::String& title)
+    {
+        if (bounds.isEmpty()) return;
+        const auto fb = bounds.toFloat().reduced(1.0f, 0.0f);
+
+        // 1. Fill panel background
+        g.setColour(Clr::panel.brighter(0.12f));
+        g.fillRoundedRectangle(fb, 7.0f);
+
+        // 2. Draw border
+        g.setColour(Clr::accent.brighter(0.5f));
+        g.drawRoundedRectangle(fb.reduced(0.5f), 7.0f, 1.5f);
+
+        // 3. Measure title text width
+        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 9.5f, juce::Font::bold));
+        const int textW = g.getCurrentFont().getStringWidth(title) + 10;
+        const int textH = 12;
+        const int textX = (int)(fb.getCentreX()) - textW / 2;
+        const int textY = (int)fb.getY() - textH / 2;  // centered on top border line
+
+        // 4. Knockout: fill behind label to erase the border line
+        g.setColour(Clr::panel.brighter(0.12f));
+        g.fillRect(textX, textY, textW, textH);
+
+        // 5. Draw label text
+        g.setColour(Clr::textDim);
+        g.drawText(title, textX, textY, textW, textH, juce::Justification::centred);
+    };
+
+    drawSectionPanel(looperPanelBounds_,    "LOOPER");
+    drawSectionPanel(filterModPanelBounds_, "FILTER MOD");
+    drawSectionPanel(gamepadPanelBounds_,   "GAMEPAD");
+
     // Scale preset panel — aligned to exact left/right edges of the trigger dropdown columns
     if (scalePresetBox_.isVisible() && scaleKeys_.isVisible())
     {
@@ -1764,6 +1819,17 @@ void PluginEditor::paint(juce::Graphics& g)
     drawAbove(filterXModeBox_,      "LEFT X");
     drawAbove(gateTimeSlider_,      "JOYSTICK GATE LENGTH");
     drawAbove(thresholdSlider_,     "JOY THRESH");
+
+    // "QUANTIZE TRIGGER" section label — spans from Off button left edge to subdiv box right edge
+    if (quantizeOffBtn_.isVisible())
+    {
+        const int labelX = quantizeOffBtn_.getX();
+        const int labelW = quantizeSubdivBox_.getRight() - labelX;
+        g.setColour(Clr::textDim.brighter(0.2f));
+        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 9.5f, juce::Font::plain));
+        g.drawText("QUANTIZE TRIGGER", labelX, quantizeOffBtn_.getY() - 13, labelW, 12,
+                   juce::Justification::left);
+    }
 
     // ── Footer: how-to-use instructions (left column only) ───────────────────
     {
