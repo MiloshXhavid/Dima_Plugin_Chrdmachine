@@ -711,12 +711,11 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     trigger_.processBlock(tp);
 
     // ── Arpeggiator ───────────────────────────────────────────────────────────
-    // Cycles through all 4 voices in the selected pattern regardless of pad
-    // state. Voices with an open pad gate are skipped (pad priority). Gate time
-    // (5-100 % of subdivision) controls how long each arp note rings.
-    if (!arpOn)
+    // Requires DAW transport running. When DAW sync is active the step phase
+    // locks to the PPQ grid; otherwise it free-runs on the effective BPM.
+    if (!arpOn || !isDawPlaying)
     {
-        // Kill any hanging arp note when ARP is toggled off.
+        // Kill any hanging arp note when ARP is off or DAW stops.
         if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
         {
             const int ch0 = voiceChs[arpActiveVoice_] - 1;
@@ -763,12 +762,26 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             }
         }
 
-        arpPhase_ += beatsThisBlock;
-
-        while (arpPhase_ >= subdivBeats)
+        // Count how many subdivision steps fire in this block.
+        // Sync mode: derive from PPQ position so steps lock to the beat grid.
+        // Free mode: accumulate phase independently.
+        int stepsToFire = 0;
+        const bool syncToDaw = looper_.isSyncToDaw();
+        if (syncToDaw && ppqPos >= 0.0)
         {
-            arpPhase_ -= subdivBeats;
+            const auto stepsAtStart = static_cast<long long>(ppqPos / subdivBeats);
+            const auto stepsAtEnd   = static_cast<long long>((ppqPos + beatsThisBlock) / subdivBeats);
+            stepsToFire = static_cast<int>(stepsAtEnd - stepsAtStart);
+            arpPhase_ = std::fmod(ppqPos, subdivBeats);  // keep coherent
+        }
+        else
+        {
+            arpPhase_ += beatsThisBlock;
+            while (arpPhase_ >= subdivBeats) { arpPhase_ -= subdivBeats; ++stepsToFire; }
+        }
 
+        for (int s = 0; s < stepsToFire; ++s)
+        {
             // Cut any still-sounding note at step boundary.
             if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
             {
@@ -786,19 +799,13 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             // 0=Up, 1=Down, 2=Up+Down, 3=Down+Up, 4=Outer-In, 5=Inner-Out, 6=Random
             switch (orderIdx)
             {
-                case 0: // Up
-                    seq[0]=0; seq[1]=1; seq[2]=2; seq[3]=3; seqLen=4; break;
-                case 1: // Down
-                    seq[0]=3; seq[1]=2; seq[2]=1; seq[3]=0; seqLen=4; break;
-                case 2: // Up+Down (no endpoint repeat)
-                    seq[0]=0; seq[1]=1; seq[2]=2; seq[3]=3; seq[4]=2; seq[5]=1; seqLen=6; break;
-                case 3: // Down+Up (no endpoint repeat)
-                    seq[0]=3; seq[1]=2; seq[2]=1; seq[3]=0; seq[4]=1; seq[5]=2; seqLen=6; break;
-                case 4: // Outer-In
-                    seq[0]=0; seq[1]=3; seq[2]=1; seq[3]=2; seqLen=4; break;
-                case 5: // Inner-Out
-                    seq[0]=1; seq[1]=2; seq[2]=0; seq[3]=3; seqLen=4; break;
-                case 6: // Random — shuffle arpRandomOrder_ each new cycle
+                case 0: seq[0]=0; seq[1]=1; seq[2]=2; seq[3]=3; seqLen=4; break;
+                case 1: seq[0]=3; seq[1]=2; seq[2]=1; seq[3]=0; seqLen=4; break;
+                case 2: seq[0]=0; seq[1]=1; seq[2]=2; seq[3]=3; seq[4]=2; seq[5]=1; seqLen=6; break;
+                case 3: seq[0]=3; seq[1]=2; seq[2]=1; seq[3]=0; seq[4]=1; seq[5]=2; seqLen=6; break;
+                case 4: seq[0]=0; seq[1]=3; seq[2]=1; seq[3]=2; seqLen=4; break;
+                case 5: seq[0]=1; seq[1]=2; seq[2]=0; seq[3]=3; seqLen=4; break;
+                case 6:
                 default:
                 {
                     if (arpStep_ == 0)
