@@ -79,6 +79,34 @@ public:
     bool looperIsRecPending()           const { return looper_.isRecordPending() || looper_.isRecPendingNextCycle(); }
     void looperArmWait()                      { looper_.armWait(); }
 
+    // Quantize mode (0=Off 1=Live 2=Post) + subdivision (0=1/4 1=1/8 2=1/16 3=1/32)
+    // Called from PluginEditor onClick handlers and timerCallback.
+    // LooperEngine setters are declared in Plan 10-03 — forward-declare with stub until then.
+    void setQuantizeMode(int mode)
+    {
+        if (auto* p = apvts.getParameter("quantizeMode"))
+            p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(mode)));
+    }
+    void setQuantizeSubdiv(int subdiv)
+    {
+        if (auto* p = apvts.getParameter("quantizeSubdiv"))
+            p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(subdiv)));
+    }
+    int getQuantizeMode() const
+    {
+        auto* v = apvts.getRawParameterValue("quantizeMode");
+        return v ? static_cast<int>(*v) : 0;
+    }
+    int getQuantizeSubdiv() const
+    {
+        auto* v = apvts.getRawParameterValue("quantizeSubdiv");
+        return v ? static_cast<int>(*v) : 1;
+    }
+    // Called from editor Post button click. Wired to LooperEngine in Plan 10-03.
+    void looperApplyQuantize()  { /* looper_.applyQuantize();  — wired in Plan 10-03 */ }
+    void looperRevertQuantize() { /* looper_.revertQuantize(); — wired in Plan 10-03 */ }
+    bool looperQuantizeIsActive() const { return false; /* wired in Plan 10-03 */ }
+
     // Arp armed-but-waiting state — read by UI for blink
     bool isArpWaitingForPlay() const { return arpWaitingForPlay_; }
 
@@ -117,8 +145,7 @@ public:
     std::atomic<int> flashLoopDelete_ { 0 };
     std::atomic<int> flashPanic_      { 0 };
 
-    // MIDI panic — sends all-notes-off on all voice channels (UI button or R3 gamepad)
-    // Always clears midiMuted_ so the UI panic button can recover from an R3-triggered mute.
+    // MIDI panic — sends all-notes-off on all voice channels (UI button)
     void triggerPanic()
     {
         midiMuted_.store(false, std::memory_order_relaxed);
