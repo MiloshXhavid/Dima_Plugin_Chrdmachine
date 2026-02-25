@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 10 of 11 (Trigger Quantization Infrastructure)
-Plan: 2 of 5 — In Progress (10-01 complete)
-Status: Phase 10 in progress — Plan 10-01 complete (snapToGrid TDD)
-Last activity: 2026-02-25 — Plan 10-01 complete (snapToGrid + quantizeSubdivToGridSize declared in LooperEngine.h, implemented in LooperEngine.cpp, TC 12 passes 233 assertions: wrap/tie/near-zero/non-boundary verified)
+Plan: 4 of 5 — In Progress (10-01, 10-02, 10-03 complete)
+Status: Phase 10 in progress — Plan 10-03 complete (LooperEngine quantize backend)
+Last activity: 2026-02-25 — Plan 10-03 complete (shadow copy + applyQuantizeToStore + live snap in recordGate() + processor stubs wired)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
-v1.1 Polish [███░░░░░░░] 20% (4/TBD plans)
+v1.1 Polish [████░░░░░░] 26% (6/TBD plans)
   Phase 08  [██████████]   Patch Verification    Complete (1 plan done)
   Phase 09  [██████████]   MIDI Panic + Mute     Complete (2 plans done)
-  Phase 10  [██░░░░░░░░]   Quantize Infra        In Progress (1/5 plans done)
+  Phase 10  [██████░░░░]   Quantize Infra        In Progress (3/5 plans done)
   Phase 11  [░░░░░░░░░░]   UI Polish + Installer Not started
 ```
 
@@ -55,6 +55,10 @@ Recent decisions affecting v1.1:
 - **snapToGrid declared non-static in LooperEngine.h (10-01)** — required for Catch2 linkage without test accessor or friend pattern; single source of truth, no duplication
 - **Tie-breaking uses (beatPos <= midpoint) ? lower : upper (10-01)** — ties snap to EARLIER grid point; RESEARCH.md used strict less-than (wrong: ties→upper); CONTEXT.md locked decision overrides research example
 - **Pre-existing TC 4/5/6/10/11 failures deferred (10-01)** — hasContent() returns false in 5 tests; confirmed pre-existing before 10-01 changes; investigate before 10-03
+- **scratchDedup_ is a class member not a local array (10-03)** — applyQuantizeToStore() would allocate ~49KB on stack; matches existing scratchNew_/scratchMerged_ pattern; avoids stack overflow on MSVC debug builds
+- **applyQuantizeToStore() skips non-Gate events (10-03)** — Joystick and Filter events are never snapped; only Gate-type events modified to preserve joystick playback continuity
+- **hasOriginals_ and quantizeActive_ reset on deleteLoop() (10-03)** — prevents stale revert state after loop deletion; quantize state always consistent with playbackStore_ content
+- **Post mode auto-re-applies after finaliseRecording() (10-03)** — pendingQuantize_ set to true in finaliseRecording() when quantizeMode_ == 2; new overdubs auto-quantized on next process() call
 
 ### Pending Todos
 
@@ -68,6 +72,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-25 (10-01 complete)
-Stopped at: Completed 10-01-PLAN.md — snapToGrid TDD: TC 12 passes (wrap→0.0, tie→3.0, near-zero→0.0); snapToGrid/quantizeSubdivToGridSize declared in LooperEngine.h and implemented in LooperEngine.cpp
+Last session: 2026-02-25 (10-03 complete)
+Stopped at: Completed 10-03-PLAN.md — LooperEngine quantize backend: shadow copy + applyQuantizeToStore() + live snap in recordGate() + processor stubs wired; TC 12 still passes (22/27 tests pass, 5 pre-existing failures unchanged)
 Resume file: None
