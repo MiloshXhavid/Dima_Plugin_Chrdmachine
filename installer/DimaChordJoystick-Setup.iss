@@ -4,9 +4,10 @@
 
 [Setup]
 AppName=ChordJoystick MK2
-AppVersion=1.2
+AppVersion=1.3
 AppPublisher=Dima Xhavid
 AppPublisherURL=https://gumroad.com
+AppComments=v1.3 features: Section visual grouping (LOOPER / FILTER MOD / GAMEPAD panels), Gamepad controller name display (PS4/PS5/Xbox detection), Trigger quantization (live and post-record snap-to-grid), MIDI Panic (full 16-channel sweep)
 OutputBaseFilename=DimaChordJoystickMK2-Setup
 OutputDir=Output
 DefaultDirName={commoncf64}\VST3\ChordJoystick MK2.vst3
