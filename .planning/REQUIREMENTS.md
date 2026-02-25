@@ -16,9 +16,9 @@
 
 ### PANIC — Improved MIDI Panic
 
-- [ ] **PANIC-01**: Panic sends full MIDI reset sequence: CC64=0, CC120 (All Sound Off), CC123 (All Notes Off) — no CC121 (corrupts downstream VST3 instrument parameters)
-- [ ] **PANIC-02**: Panic sweeps all 16 MIDI channels (not just the 4 configured voice channels) to clear stuck notes regardless of routing
-- [ ] **PANIC-03**: Panic button shows brief flash feedback on press (using existing flashPanic_ counter pattern) — no persistent mute state
+- [x] **PANIC-01**: Panic sends full MIDI reset sequence: CC64=0, CC120 (All Sound Off), CC123 (All Notes Off) — no CC121 (corrupts downstream VST3 instrument parameters)
+- [x] **PANIC-02**: Panic sweeps all 16 MIDI channels (not just the 4 configured voice channels) to clear stuck notes regardless of routing
+- [x] **PANIC-03**: Panic button shows brief flash feedback on press (using existing flashPanic_ counter pattern) — no persistent mute state
 
 ### QUANT — Trigger Quantization
 
@@ -60,9 +60,9 @@
 | PATCH-04 | Phase 08 | Complete |
 | PATCH-05 | Phase 08 | Pending |
 | PATCH-06 | Phase 08 | Pending |
-| PANIC-01 | Phase 09 | Pending |
-| PANIC-02 | Phase 09 | Pending |
-| PANIC-03 | Phase 09 | Pending |
+| PANIC-01 | Phase 09 | Complete |
+| PANIC-02 | Phase 09 | Complete |
+| PANIC-03 | Phase 09 | Complete |
 | QUANT-01 | Phase 10 | Pending |
 | QUANT-02 | Phase 10 | Pending |
 | QUANT-03 | Phase 10 | Pending |
@@ -78,4 +78,4 @@
 
 ---
 *Requirements defined: 2026-02-24*
-*Last updated: 2026-02-24 — traceability populated by roadmapper*
+*Last updated: 2026-02-25 — PANIC-01/02/03 marked complete (09-01 plan executed)*
