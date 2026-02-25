@@ -180,6 +180,12 @@ private:
     // send the matching noteOff and avoid stuck notes.
     std::array<int, 4> looperActivePitch_ {-1, -1, -1, -1};
 
+    // ── Arpeggiator state (audio-thread-only) ─────────────────────────────────
+    double arpPhase_       = 0.0;  // accumulated beats within current subdivision
+    int    arpStep_        = 0;    // current position in active-voice list
+    int    arpActivePitch_ = -1;   // pitch of currently sounding arp note
+    int    arpActiveVoice_ = -1;   // voice channel of currently sounding arp note
+
     // Build ChordEngine::Params from current APVTS + joystick state
     ChordEngine::Params buildChordParams() const;
 

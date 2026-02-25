@@ -54,6 +54,10 @@ namespace ParamID
     static const juce::String looperSubdiv     = "looperSubdiv";
     static const juce::String looperLength     = "looperLength";
 
+    // Arpeggiator
+    static const juce::String arpEnabled       = "arpEnabled";
+    static const juce::String arpSubdiv        = "arpSubdiv";
+
 }
 
 // ─── Parameter layout ─────────────────────────────────────────────────────────
@@ -198,6 +202,11 @@ PluginProcessor::createParameterLayout()
     addChoice(ParamID::looperSubdiv, "Loop Time Signature",
               { "3/4", "4/4", "5/4", "7/8", "9/8", "11/8" }, 1);
     addInt   (ParamID::looperLength, "Loop Length (bars)", 1, 16, 2);
+
+    // ── Arpeggiator ───────────────────────────────────────────────────────────
+    addBool(ParamID::arpEnabled, "Arp Enabled", false);
+    addChoice(ParamID::arpSubdiv, "Arp Subdivision",
+              { "1/4", "1/8T", "1/8", "1/16T", "1/16", "1/32" }, 2);  // default: 1/8
 
     // ── Filter CC live display (read-only from DAW perspective) ──────────────
     // Updated every timer tick from audio-thread atomics so DAW can see stick movement.
@@ -586,6 +595,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     for (int v = 0; v < 4; ++v)
         heldPitch_[v] = freshPitches[v];
 
+    const bool arpOn = (*apvts.getRawParameterValue(ParamID::arpEnabled) > 0.5f);
+
     bool anyNoteOnThisBlock = false;
 
     TriggerSystem::ProcessParams tp;
@@ -608,8 +619,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 : looper_.getPlaybackBeat();
             looper_.recordGate(beatPos, voice, true);
 
-            midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100),
-                          sampleOff);
+            // When arp is on, suppress direct note-ons — arp sequencer handles output.
+            if (!arpOn)
+                midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100),
+                              sampleOff);
         }
         else
         {
@@ -617,7 +630,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 ? ppqPos
                 : looper_.getPlaybackBeat();
             looper_.recordGate(beatPos, voice, false);
-            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
+            // When arp is on, suppress direct note-offs — arp sequencer handles output.
+            if (!arpOn)
+                midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
         }
     };
     tp.onPitchBend = [&](int voice, int bendVal14, int ch0, int sampleOff)
@@ -681,6 +696,77 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     tp.randomFreeTempo = *apvts.getRawParameterValue("randomFreeTempo");
 
     trigger_.processBlock(tp);
+
+    // ── Arpeggiator ───────────────────────────────────────────────────────────
+    // Runs after the trigger system so gate states are up-to-date.
+    // When ARP is ON: cycles through active (gate-open) voices at the selected
+    // subdivision rate, emitting note-on at the start of each step and note-off
+    // at the start of the next step. Direct note output from tp.onNote is
+    // suppressed above so the arp is the sole source of MIDI notes.
+    if (!arpOn)
+    {
+        // ARP just turned off (or was already off) — kill any hanging arp note.
+        if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
+        {
+            const int ch0 = voiceChs[arpActiveVoice_] - 1;
+            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, arpActivePitch_, (uint8_t)0), 0);
+            arpActivePitch_ = -1;
+            arpActiveVoice_ = -1;
+        }
+        arpStep_  = 0;
+        arpPhase_ = 0.0;
+    }
+    else
+    {
+        // Subdivision interval in beats (1 beat = 1 quarter note).
+        // Indices: 0=1/4, 1=1/8T, 2=1/8, 3=1/16T, 4=1/16, 5=1/32
+        static const double kSubdivBeats[] = { 1.0, 1.0/3.0, 0.5, 1.0/6.0, 0.25, 0.125 };
+        const int subdivIdx = juce::jlimit(0, 5,
+            static_cast<int>(*apvts.getRawParameterValue(ParamID::arpSubdiv)));
+        const double subdivBeats = kSubdivBeats[subdivIdx];
+
+        const double beatsThisBlock = lp.bpm * static_cast<double>(blockSize)
+                                      / (sampleRate_ * 60.0);
+        arpPhase_ += beatsThisBlock;
+
+        while (arpPhase_ >= subdivBeats)
+        {
+            arpPhase_ -= subdivBeats;
+
+            // Collect voices whose gates are open.
+            int activeVoices[4];
+            int numActive = 0;
+            for (int v = 0; v < 4; ++v)
+                if (trigger_.isGateOpen(v))
+                    activeVoices[numActive++] = v;
+
+            // Send note-off for the previous step regardless.
+            if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
+            {
+                const int ch0 = voiceChs[arpActiveVoice_] - 1;
+                midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, arpActivePitch_, (uint8_t)0), 0);
+                arpActivePitch_ = -1;
+                arpActiveVoice_ = -1;
+            }
+
+            if (numActive > 0)
+            {
+                // Keep step in bounds in case active count shrank.
+                if (arpStep_ >= numActive) arpStep_ = 0;
+                const int voice = activeVoices[arpStep_];
+                const int pitch = heldPitch_[voice];
+                const int ch0   = voiceChs[voice] - 1;
+                midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100), 0);
+                arpActivePitch_ = pitch;
+                arpActiveVoice_ = voice;
+                arpStep_ = (arpStep_ + 1) % numActive;
+            }
+            else
+            {
+                arpStep_ = 0;
+            }
+        }
+    }
 
     // Joystick-move trigger for "start rec by touch".
     // Note-on path already calls activateRecordingNow() inside tp.onNote.

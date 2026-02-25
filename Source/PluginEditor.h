@@ -234,6 +234,12 @@ private:
     juce::ComboBox    filterYModeBox_;    // Y axis: Resonance / LFO Rate / Mod Wheel
     juce::ComboBox    filterXModeBox_;    // X axis: Cutoff / VCF LFO / Mod Wheel
 
+    // ── Arpeggiator ───────────────────────────────────────────────────────────
+    juce::TextButton arpEnabledBtn_;
+    juce::ComboBox   arpSubdivBox_;
+    juce::Label      arpSubdivLabel_;
+    juce::Rectangle<int> arpBlockBounds_;  // for drawing the panel in paint()
+
     // ── APVTS attachments ─────────────────────────────────────────────────────
     using SliderAtt  = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAtt   = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
@@ -251,6 +257,8 @@ private:
     std::unique_ptr<ComboAtt>  trigSrcAtt_[4];
     std::unique_ptr<ComboAtt>  loopSubdivAtt_;
 
+    std::unique_ptr<ButtonAtt> arpEnabledAtt_;
+    std::unique_ptr<ComboAtt>  arpSubdivAtt_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

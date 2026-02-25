@@ -1209,6 +1209,32 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     filterModHintLabel_.setColour(juce::Label::textColourId, Clr::textDim.brighter(0.3f));
     addAndMakeVisible(filterModHintLabel_);
 
+    // ── Arpeggiator ───────────────────────────────────────────────────────────
+    arpEnabledBtn_.setButtonText("ARP OFF");
+    arpEnabledBtn_.setClickingTogglesState(true);
+    arpEnabledBtn_.setTooltip("Arpeggiator on/off — cycles active voices at selected rate");
+    arpEnabledBtn_.setColour(juce::TextButton::buttonOnColourId,  Clr::gateOn);
+    arpEnabledBtn_.setColour(juce::TextButton::buttonColourId,    Clr::gateOff);
+    arpEnabledBtn_.onClick = [this]
+    {
+        arpEnabledBtn_.setButtonText(arpEnabledBtn_.getToggleState() ? "ARP ON" : "ARP OFF");
+    };
+    addAndMakeVisible(arpEnabledBtn_);
+    arpEnabledAtt_ = std::make_unique<ButtonAtt>(p.apvts, "arpEnabled", arpEnabledBtn_);
+
+    arpSubdivBox_.addItem("1/4",  1);
+    arpSubdivBox_.addItem("1/8T", 2);
+    arpSubdivBox_.addItem("1/8",  3);
+    arpSubdivBox_.addItem("1/16T",4);
+    arpSubdivBox_.addItem("1/16", 5);
+    arpSubdivBox_.addItem("1/32", 6);
+    arpSubdivBox_.setTooltip("Arpeggiator step rate");
+    styleCombo(arpSubdivBox_);
+    addAndMakeVisible(arpSubdivBox_);
+    styleLabel(arpSubdivLabel_, "RATE");
+    addAndMakeVisible(arpSubdivLabel_);
+    arpSubdivAtt_ = std::make_unique<ComboAtt>(p.apvts, "arpSubdiv", arpSubdivBox_);
+
     startTimerHz(30);
 }
 
@@ -1435,6 +1461,11 @@ void PluginEditor::resized()
 
     left.removeFromTop(6);
 
+    // Reserve ARP block at the very bottom of the left column before the looper
+    // consumes the rest. Height: 6 gap + 22 button + 4 gap + 14 label + 22 combo = 68px.
+    constexpr int kArpH = 68;
+    arpBlockBounds_ = left.removeFromBottom(kArpH);
+
     // Looper
     {
         auto section = left;
@@ -1474,6 +1505,16 @@ void PluginEditor::resized()
             loopLengthLabel_.setBounds(ctrlRow.removeFromTop(14));
             loopLengthKnob_.setBounds(ctrlRow.removeFromTop(22));
         }
+    }
+
+    // Arpeggiator block — bottom-left panel
+    {
+        auto r = arpBlockBounds_;
+        r.removeFromTop(6);  // gap from looper
+        arpEnabledBtn_.setBounds(r.removeFromTop(22));
+        r.removeFromTop(4);
+        arpSubdivLabel_.setBounds(r.removeFromTop(14));
+        arpSubdivBox_  .setBounds(r.removeFromTop(22));
     }
 }
 
@@ -1538,6 +1579,20 @@ void PluginEditor::paint(juce::Graphics& g)
     };
     drawFilterGroup(filterCutGroupBounds_, "CUTOFF");
     drawFilterGroup(filterResGroupBounds_, "RESONANCE");
+
+    // Arpeggiator panel border
+    if (!arpBlockBounds_.isEmpty())
+    {
+        const auto fb = arpBlockBounds_.toFloat().reduced(0.0f, 2.0f);
+        g.setColour(Clr::panel.brighter(0.08f));
+        g.fillRoundedRectangle(fb, 5.0f);
+        g.setColour(Clr::accent.brighter(0.25f));
+        g.drawRoundedRectangle(fb, 5.0f, 1.0f);
+        g.setColour(Clr::textDim.brighter(0.3f));
+        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 8.5f, juce::Font::bold));
+        g.drawText("ARPEGGIATOR", (int)fb.getX(), (int)fb.getY() - 12,
+                   (int)fb.getWidth(), 12, juce::Justification::centred);
+    }
 
     // Scale preset panel — aligned to exact left/right edges of the trigger dropdown columns
     if (scalePresetBox_.isVisible() && scaleKeys_.isVisible())
@@ -1688,6 +1743,9 @@ void PluginEditor::timerCallback()
         filterYOffsetKnob_.setEnabled(filterOn);
         filterRecBtn_     .setEnabled(filterOn);
     }
+
+    // Sync ARP button text with toggle state (handles state restore from DAW project)
+    arpEnabledBtn_.setButtonText(arpEnabledBtn_.getToggleState() ? "ARP ON" : "ARP OFF");
 
     // Update REC JOY / REC GATES / SYNC toggle appearances
     loopRecJoyBtn_  .setToggleState(proc_.looperIsRecJoy(),    juce::dontSendNotification);
