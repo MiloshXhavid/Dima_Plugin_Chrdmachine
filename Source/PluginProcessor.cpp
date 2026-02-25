@@ -210,6 +210,9 @@ PluginProcessor::createParameterLayout()
               { "1/4", "1/8T", "1/8", "1/16T", "1/16", "1/32" }, 2);  // default: 1/8
     addChoice(ParamID::arpOrder, "Arp Order",
               { "Up", "Down", "Up+Down", "Down+Up", "Outer-In", "Inner-Out", "Random" }, 0);
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "arpGateTime", "Arp Gate Time",
+        juce::NormalisableRange<float>(5.0f, 100.0f, 1.0f), 75.0f));  // percentage 5-100%
 
     // ── Filter CC live display (read-only from DAW perspective) ──────────────
     // Updated every timer tick from audio-thread atomics so DAW can see stick movement.
@@ -611,6 +614,18 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             // Activate "start rec by touch" before recordGate so the triggering
             // note-on is captured. activateRecordingNow() is a no-op unless armed.
             looper_.activateRecordingNow();
+
+            // Pad priority: choke any active arp note on this voice first.
+            // This lets the live press cut the arp immediately ("instant choke").
+            if (arpOn && arpActiveVoice_ == voice && arpActivePitch_ >= 0)
+            {
+                const int ch0v = voiceChs[voice] - 1;
+                midi.addEvent(juce::MidiMessage::noteOff(ch0v + 1, arpActivePitch_, (uint8_t)0), sampleOff);
+                arpActivePitch_ = -1;
+                arpActiveVoice_ = -1;
+                arpCurrentVoice_.store(-1, std::memory_order_relaxed);
+                arpNoteOffRemaining_ = 0.0;
+            }
         }
 
         const int ch0 = voiceChs[voice] - 1;  // 0-based
@@ -621,11 +636,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 ? ppqPos
                 : looper_.getPlaybackBeat();
             looper_.recordGate(beatPos, voice, true);
-
-            // When arp is on, suppress direct note-ons — arp sequencer handles output.
-            if (!arpOn)
-                midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100),
-                              sampleOff);
+            // Live pad notes always go through regardless of arp state.
+            midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100), sampleOff);
         }
         else
         {
@@ -633,9 +645,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 ? ppqPos
                 : looper_.getPlaybackBeat();
             looper_.recordGate(beatPos, voice, false);
-            // When arp is on, suppress direct note-offs — arp sequencer handles output.
-            if (!arpOn)
-                midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
+            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
         }
     };
     tp.onPitchBend = [&](int voice, int bendVal14, int ch0, int sampleOff)
@@ -701,13 +711,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     trigger_.processBlock(tp);
 
     // ── Arpeggiator ───────────────────────────────────────────────────────────
-    // Runs after the trigger system so gate states are up-to-date.
-    // Cycles through active (gate-open) voices according to the selected pattern
-    // at the selected subdivision rate. Direct note output from tp.onNote is
-    // suppressed above when ARP is ON so the arp is the sole MIDI note source.
+    // Cycles through all 4 voices in the selected pattern regardless of pad
+    // state. Voices with an open pad gate are skipped (pad priority). Gate time
+    // (5-100 % of subdivision) controls how long each arp note rings.
     if (!arpOn)
     {
-        // Kill any hanging arp note when ARP is off or just toggled off.
+        // Kill any hanging arp note when ARP is toggled off.
         if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
         {
             const int ch0 = voiceChs[arpActiveVoice_] - 1;
@@ -715,6 +724,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             arpActivePitch_ = -1;
             arpActiveVoice_ = -1;
         }
+        arpCurrentVoice_.store(-1, std::memory_order_relaxed);
+        arpNoteOffRemaining_ = 0.0;
         arpStep_  = 0;
         arpPhase_ = 0.0;
     }
@@ -730,111 +741,96 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const int orderIdx = juce::jlimit(0, 6,
             static_cast<int>(*apvts.getRawParameterValue(ParamID::arpOrder)));
 
+        const double gateRatio = juce::jlimit(0.05, 1.0,
+            static_cast<double>(apvts.getRawParameterValue("arpGateTime")->load()) / 100.0);
+        const double gateBeats = subdivBeats * gateRatio;
+
         const double beatsThisBlock = lp.bpm * static_cast<double>(blockSize)
                                       / (sampleRate_ * 60.0);
+
+        // Gate-time note-off: fires mid-block when gate expires before next step.
+        if (arpActivePitch_ >= 0 && arpNoteOffRemaining_ > 0.0)
+        {
+            arpNoteOffRemaining_ -= beatsThisBlock;
+            if (arpNoteOffRemaining_ <= 0.0)
+            {
+                const int ch0 = voiceChs[arpActiveVoice_] - 1;
+                midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, arpActivePitch_, (uint8_t)0), 0);
+                arpActivePitch_ = -1;
+                arpActiveVoice_ = -1;
+                arpCurrentVoice_.store(-1, std::memory_order_relaxed);
+                arpNoteOffRemaining_ = 0.0;
+            }
+        }
+
         arpPhase_ += beatsThisBlock;
 
         while (arpPhase_ >= subdivBeats)
         {
             arpPhase_ -= subdivBeats;
 
-            // Collect voices with open gates (always in ascending voice order).
-            int av[4]; int n = 0;
-            for (int v = 0; v < 4; ++v)
-                if (trigger_.isGateOpen(v))
-                    av[n++] = v;
-
-            // Send note-off for the previous step.
+            // Cut any still-sounding note at step boundary.
             if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
             {
                 const int ch0 = voiceChs[arpActiveVoice_] - 1;
                 midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, arpActivePitch_, (uint8_t)0), 0);
                 arpActivePitch_ = -1;
                 arpActiveVoice_ = -1;
+                arpCurrentVoice_.store(-1, std::memory_order_relaxed);
+                arpNoteOffRemaining_ = 0.0;
             }
 
-            if (n == 0) { arpStep_ = 0; continue; }
-
-            // Build step sequence (stack-allocated, max 8 elements).
-            // Each element is an index into av[].
+            // Build fixed-voice step sequence (all 4 voices, stack-allocated max 8).
             int seq[8]; int seqLen = 0;
 
             // 0=Up, 1=Down, 2=Up+Down, 3=Down+Up, 4=Outer-In, 5=Inner-Out, 6=Random
             switch (orderIdx)
             {
-                case 0: // Up — ascending through active voices
-                    for (int i = 0; i < n; ++i) seq[seqLen++] = i;
-                    break;
-
-                case 1: // Down — descending
-                    for (int i = n-1; i >= 0; --i) seq[seqLen++] = i;
-                    break;
-
-                case 2: // Up+Down — ascending then back (no endpoint repeat)
-                    for (int i = 0; i < n; ++i) seq[seqLen++] = i;
-                    for (int i = n-2; i >= 1; --i) seq[seqLen++] = i;
-                    break;
-
-                case 3: // Down+Up — descending then back (no endpoint repeat)
-                    for (int i = n-1; i >= 0; --i) seq[seqLen++] = i;
-                    for (int i = 1; i < n-1; ++i) seq[seqLen++] = i;
-                    break;
-
-                case 4: // Outer-In — take from lowest and highest alternating inward
-                {
-                    int lo = 0, hi = n-1;
-                    while (lo <= hi)
-                    {
-                        seq[seqLen++] = lo++;
-                        if (lo <= hi) seq[seqLen++] = hi--;
-                    }
-                    break;
-                }
-
-                case 5: // Inner-Out — start from middle, step outward
-                {
-                    int mid = n / 2;
-                    seq[seqLen++] = mid;
-                    for (int offset = 1; offset < n; ++offset)
-                    {
-                        const int lo2 = mid - offset;
-                        const int hi2 = mid + offset;
-                        if (lo2 >= 0 && seqLen < 8) seq[seqLen++] = lo2;
-                        if (hi2 < n  && seqLen < 8) seq[seqLen++] = hi2;
-                    }
-                    break;
-                }
-
-                case 6: // Random — Fisher-Yates shuffle using a simple LCG
+                case 0: // Up
+                    seq[0]=0; seq[1]=1; seq[2]=2; seq[3]=3; seqLen=4; break;
+                case 1: // Down
+                    seq[0]=3; seq[1]=2; seq[2]=1; seq[3]=0; seqLen=4; break;
+                case 2: // Up+Down (no endpoint repeat)
+                    seq[0]=0; seq[1]=1; seq[2]=2; seq[3]=3; seq[4]=2; seq[5]=1; seqLen=6; break;
+                case 3: // Down+Up (no endpoint repeat)
+                    seq[0]=3; seq[1]=2; seq[2]=1; seq[3]=0; seq[4]=1; seq[5]=2; seqLen=6; break;
+                case 4: // Outer-In
+                    seq[0]=0; seq[1]=3; seq[2]=1; seq[3]=2; seqLen=4; break;
+                case 5: // Inner-Out
+                    seq[0]=1; seq[1]=2; seq[2]=0; seq[3]=3; seqLen=4; break;
+                case 6: // Random — shuffle arpRandomOrder_ each new cycle
                 default:
                 {
-                    for (int i = 0; i < n; ++i) seq[i] = i;
-                    seqLen = n;
-                    // Shuffle only at the start of a new cycle (arpStep_ == 0).
                     if (arpStep_ == 0)
                     {
-                        for (int i = n-1; i > 0; --i)
+                        for (int i = 3; i > 0; --i)
                         {
-                            arpRandSeed_ = arpRandSeed_ * 1664525u + 1013904223u;  // LCG
-                            const int j  = static_cast<int>((arpRandSeed_ >> 16) % (uint32_t)(i + 1));
-                            std::swap(seq[i], seq[j]);
+                            arpRandSeed_ = arpRandSeed_ * 1664525u + 1013904223u;
+                            const int j = static_cast<int>((arpRandSeed_ >> 16) % (uint32_t)(i + 1));
+                            std::swap(arpRandomOrder_[i], arpRandomOrder_[j]);
                         }
                     }
-                    break;
+                    seq[0]=arpRandomOrder_[0]; seq[1]=arpRandomOrder_[1];
+                    seq[2]=arpRandomOrder_[2]; seq[3]=arpRandomOrder_[3]; seqLen=4; break;
                 }
             }
 
-            if (seqLen == 0) { arpStep_ = 0; continue; }
+            if (seqLen == 0) continue;
             if (arpStep_ >= seqLen) arpStep_ = 0;
 
-            const int avIdx = seq[arpStep_];
-            const int voice = av[avIdx];
+            const int voice = seq[arpStep_];
+            arpStep_ = (arpStep_ + 1) % seqLen;
+
+            // Skip voices where a pad is held (pad has priority).
+            if (trigger_.isGateOpen(voice)) continue;
+
             const int pitch = heldPitch_[voice];
             const int ch0   = voiceChs[voice] - 1;
             midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100), 0);
-            arpActivePitch_ = pitch;
-            arpActiveVoice_ = voice;
-            arpStep_ = (arpStep_ + 1) % seqLen;
+            arpActivePitch_  = pitch;
+            arpActiveVoice_  = voice;
+            arpCurrentVoice_.store(voice, std::memory_order_relaxed);
+            arpNoteOffRemaining_ = gateBeats;
         }
     }
 

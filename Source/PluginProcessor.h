@@ -97,6 +97,15 @@ public:
     void setMidiMuted(bool b) { midiMuted_.store(b, std::memory_order_relaxed); }
     bool isMidiMuted()  const { return midiMuted_.load(std::memory_order_relaxed); }
 
+    // Arp current voice for pad highlight (audio thread writes, UI reads)
+    // -1 = no arp note sounding; 0-3 = voice currently being arped
+    std::atomic<int> arpCurrentVoice_ { -1 };
+    int getArpCurrentVoice() const { return arpCurrentVoice_.load(std::memory_order_relaxed); }
+
+    // Looper voice active: true while the looper has a gate-on note sounding for this voice.
+    // Read by UI for pad highlight (best-effort, display-only).
+    bool isLooperVoiceActive(int v) const noexcept { return looperActivePitch_[v] >= 0; }
+
     // D-pad BPM delta: set from processBlock (audio thread), consumed on message thread
     std::atomic<int> pendingBpmDelta_ { 0 };
 
@@ -181,11 +190,13 @@ private:
     std::array<int, 4> looperActivePitch_ {-1, -1, -1, -1};
 
     // ── Arpeggiator state (audio-thread-only) ─────────────────────────────────
-    double   arpPhase_       = 0.0;  // accumulated beats within current subdivision
-    int      arpStep_        = 0;    // current position in step sequence
-    int      arpActivePitch_ = -1;   // pitch of currently sounding arp note
-    int      arpActiveVoice_ = -1;   // voice of currently sounding arp note
-    uint32_t arpRandSeed_    = 1;    // LCG seed for random order (audio-thread PRNG)
+    double   arpPhase_            = 0.0;      // accumulated beats within subdivision
+    double   arpNoteOffRemaining_ = 0.0;      // beats until gate-time note-off fires
+    int      arpStep_             = 0;        // current position in step sequence
+    int      arpActivePitch_      = -1;       // pitch of currently sounding arp note
+    int      arpActiveVoice_      = -1;       // voice of currently sounding arp note
+    uint32_t arpRandSeed_         = 1;        // LCG seed for random order
+    int      arpRandomOrder_[4]   = {0,1,2,3};// cached random sequence, shuffled each cycle
 
     // Build ChordEngine::Params from current APVTS + joystick state
     ChordEngine::Params buildChordParams() const;

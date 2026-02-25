@@ -240,6 +240,8 @@ private:
     juce::Label      arpSubdivLabel_;
     juce::ComboBox   arpOrderBox_;
     juce::Label      arpOrderLabel_;
+    juce::Slider     arpGateTimeKnob_;
+    juce::Label      arpGateTimeLabel_;
     juce::Rectangle<int> arpBlockBounds_;  // for drawing the panel in paint()
 
     // ── APVTS attachments ─────────────────────────────────────────────────────
@@ -259,9 +261,10 @@ private:
     std::unique_ptr<ComboAtt>  trigSrcAtt_[4];
     std::unique_ptr<ComboAtt>  loopSubdivAtt_;
 
-    std::unique_ptr<ButtonAtt> arpEnabledAtt_;
-    std::unique_ptr<ComboAtt>  arpSubdivAtt_;
-    std::unique_ptr<ComboAtt>  arpOrderAtt_;
+    std::unique_ptr<ButtonAtt>  arpEnabledAtt_;
+    std::unique_ptr<ComboAtt>   arpSubdivAtt_;
+    std::unique_ptr<ComboAtt>   arpOrderAtt_;
+    std::unique_ptr<SliderAtt>  arpGateTimeAtt_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

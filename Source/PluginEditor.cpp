@@ -427,10 +427,20 @@ void TouchPlate::paint(juce::Graphics& g)
         proc_.apvts.getRawParameterValue("triggerSource" + juce::String(voice_))->load());
     const bool isPadMode = (src == 0);  // 0 = TouchPlate
     const bool active    = isPadMode && proc_.isGateOpen(voice_);
+    const bool arpStep   = (proc_.getArpCurrentVoice() == voice_);
+    const bool looperOn  = proc_.isLooperVoiceActive(voice_);
 
-    const juce::Colour fillClr = isPadMode
-        ? (active ? Clr::gateOn : Clr::gateOff)
-        : Clr::gateOff.darker(0.3f);  // dimmed in JOY or RND mode
+    juce::Colour fillClr;
+    if (active)
+        fillClr = Clr::gateOn;                          // live pad held: bright green
+    else if (looperOn)
+        fillClr = Clr::gateOn;                          // looper playback: bright green
+    else if (arpStep)
+        fillClr = juce::Colour(0xFF00C8A8);             // arp step: cyan/teal
+    else if (isPadMode)
+        fillClr = Clr::gateOff;
+    else
+        fillClr = Clr::gateOff.darker(0.3f);            // dimmed in JOY or RND mode
 
     constexpr float padR = 4.0f;
     g.setColour(fillClr);
@@ -440,7 +450,14 @@ void TouchPlate::paint(juce::Graphics& g)
     g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 13.0f, juce::Font::bold));
     g.drawText(label_, getLocalBounds(), juce::Justification::centred);
 
-    g.setColour((active ? Clr::gateOn : Clr::accent).brighter(isPadMode ? 0.35f : 0.0f));
+    juce::Colour borderClr;
+    if (active || looperOn)
+        borderClr = Clr::gateOn.brighter(0.35f);
+    else if (arpStep)
+        borderClr = juce::Colour(0xFF00E8C8);
+    else
+        borderClr = (isPadMode ? Clr::accent : Clr::accent.darker(0.3f));
+    g.setColour(borderClr);
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), padR, 1.5f);
 }
 
@@ -1249,6 +1266,18 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(arpOrderLabel_);
     arpOrderAtt_ = std::make_unique<ComboAtt>(p.apvts, "arpOrder", arpOrderBox_);
 
+    arpGateTimeKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
+    arpGateTimeKnob_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    arpGateTimeKnob_.setRange(5.0, 100.0, 1.0);
+    arpGateTimeKnob_.setColour(juce::Slider::thumbColourId,       Clr::highlight);
+    arpGateTimeKnob_.setColour(juce::Slider::trackColourId,       Clr::accent);
+    arpGateTimeKnob_.setColour(juce::Slider::backgroundColourId,  Clr::gateOff);
+    arpGateTimeKnob_.setTooltip("Arp gate time — how long each note sounds (5-100% of step)");
+    addAndMakeVisible(arpGateTimeKnob_);
+    styleLabel(arpGateTimeLabel_, "GATE%");
+    addAndMakeVisible(arpGateTimeLabel_);
+    arpGateTimeAtt_ = std::make_unique<SliderAtt>(p.apvts, "arpGateTime", arpGateTimeKnob_);
+
     startTimerHz(30);
 }
 
@@ -1522,19 +1551,23 @@ void PluginEditor::resized()
     }
 
     // Arpeggiator block — bottom-left panel
-    // Layout: [ARP ON/OFF button full-width] | [RATE label | ORDER label] | [RATE combo | ORDER combo]
+    // Layout: [ARP ON/OFF button full-width]
+    //         [RATE label | ORDER label | GATE% label]
+    //         [RATE combo | ORDER combo | GATE slider]
     {
         auto r = arpBlockBounds_;
         r.removeFromTop(6);  // gap from looper
         arpEnabledBtn_.setBounds(r.removeFromTop(22));
         r.removeFromTop(4);
-        const int half = r.getWidth() / 2;
+        const int third = r.getWidth() / 3;
         auto labelRow = r.removeFromTop(14);
-        arpSubdivLabel_.setBounds(labelRow.removeFromLeft(half));
-        arpOrderLabel_ .setBounds(labelRow);
+        arpSubdivLabel_.setBounds(labelRow.removeFromLeft(third));
+        arpOrderLabel_ .setBounds(labelRow.removeFromLeft(third));
+        arpGateTimeLabel_.setBounds(labelRow);
         auto comboRow = r.removeFromTop(22);
-        arpSubdivBox_.setBounds(comboRow.removeFromLeft(half).reduced(1, 0));
-        arpOrderBox_ .setBounds(comboRow.reduced(1, 0));
+        arpSubdivBox_    .setBounds(comboRow.removeFromLeft(third).reduced(1, 0));
+        arpOrderBox_     .setBounds(comboRow.removeFromLeft(third).reduced(1, 0));
+        arpGateTimeKnob_ .setBounds(comboRow.reduced(1, 0));
     }
 }
 
