@@ -59,6 +59,10 @@ namespace ParamID
     static const juce::String arpSubdiv        = "arpSubdiv";
     static const juce::String arpOrder         = "arpOrder";
 
+    // Quantize
+    static const juce::String quantizeMode     = "quantizeMode";
+    static const juce::String quantizeSubdiv   = "quantizeSubdiv";
+
 }
 
 // ─── Parameter layout ─────────────────────────────────────────────────────────
@@ -218,6 +222,10 @@ PluginProcessor::createParameterLayout()
     // Updated every timer tick from audio-thread atomics so DAW can see stick movement.
     addFloat("filterCutLive", "Filter Cut CC", 0.0f, 127.0f, 0.0f);
     addFloat("filterResLive", "Filter Res CC", 0.0f, 127.0f, 0.0f);
+
+    // ── Quantize ──────────────────────────────────────────────────────────────
+    addInt(ParamID::quantizeMode,   "Quantize Mode",   0, 2, 0);  // 0=Off, 1=Live, 2=Post (default Off)
+    addInt(ParamID::quantizeSubdiv, "Quantize Subdiv", 0, 3, 1);  // 0=1/4, 1=1/8, 2=1/16, 3=1/32 (default 1/8)
 
     return layout;
 }
