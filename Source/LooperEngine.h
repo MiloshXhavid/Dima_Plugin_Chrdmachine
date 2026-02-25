@@ -204,3 +204,13 @@ private:
 // modern x86/ARM targets. We use float (not double) for playbackBeat_ to ensure
 // lock-free guarantee on 32-bit builds where double atomics may not be lock-free.
 static_assert(sizeof(float) == 4, "float must be 4 bytes for atomic lock-free guarantee");
+
+// ─── Quantize math utilities (declared here for testability) ──────────────────
+// Returns the nearest grid boundary to beatPos within a loop of length loopLen.
+// Ties (beatPos exactly at grid midpoint) snap to the EARLIER grid point.
+// Result is always in [0, loopLen) via std::fmod.
+double snapToGrid(double beatPos, double gridSize, double loopLen) noexcept;
+
+// Converts quantizeSubdiv APVTS index (0..3) to beat-unit grid size.
+// 0=1/4(1.0), 1=1/8(0.5), 2=1/16(0.25), 3=1/32(0.125). Default fallback: 0.5.
+double quantizeSubdivToGridSize(int subdivIdx) noexcept;

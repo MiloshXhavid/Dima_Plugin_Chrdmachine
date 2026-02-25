@@ -4,6 +4,33 @@
 
 // No #include <mutex> — this file contains zero blocking calls.
 
+// ─── Quantize math utilities ─────────────────────────────────────────────────
+// Free functions declared in LooperEngine.h for testability.
+
+double snapToGrid(double beatPos, double gridSize, double loopLen) noexcept
+{
+    if (gridSize <= 0.0 || loopLen <= 0.0) return beatPos;
+    const double lower    = std::floor(beatPos / gridSize) * gridSize;
+    const double upper    = lower + gridSize;
+    const double midpoint = lower + gridSize * 0.5;
+    // Ties snap to the EARLIER grid point: beatPos == midpoint → lower (earlier).
+    // Condition: (beatPos <= midpoint) → lower; (beatPos > midpoint) → upper.
+    const double snapped  = (beatPos <= midpoint) ? lower : upper;
+    return std::fmod(snapped, loopLen);  // mandatory: fmod wraps snapped==loopLen → 0.0
+}
+
+double quantizeSubdivToGridSize(int subdivIdx) noexcept
+{
+    switch (subdivIdx)
+    {
+        case 0: return 1.0;    // 1/4 note
+        case 1: return 0.5;    // 1/8 note
+        case 2: return 0.25;   // 1/16 note
+        case 3: return 0.125;  // 1/32 note
+        default: return 0.5;   // safe fallback: 1/8
+    }
+}
+
 // ─── Configuration helpers ────────────────────────────────────────────────────
 
 double LooperEngine::beatsPerBar() const
