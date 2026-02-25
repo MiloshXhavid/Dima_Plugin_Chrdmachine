@@ -1177,27 +1177,43 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     quantizeSubdivAtt_ = std::make_unique<ComboAtt>(p.apvts, "quantizeSubdiv", quantizeSubdivBox_);
 
     // Gamepad status
-    gamepadStatusLabel_.setText("GAMEPAD: none", juce::dontSendNotification);
+    gamepadStatusLabel_.setText("No controller", juce::dontSendNotification);
     gamepadStatusLabel_.setFont(juce::Font(10.0f));
     gamepadStatusLabel_.setColour(juce::Label::textColourId, Clr::textDim);
     addAndMakeVisible(gamepadStatusLabel_);
 
-    // Update label text on hot-plug events (fires on message thread via callAsync).
-    // Exact strings are locked decisions: "GAMEPAD: connected" / "GAMEPAD: none".
+    // Update gamepad status label with specific controller type on hot-plug events.
+    // Passes controller name string (empty = disconnected) via onConnectionChangeUI.
     // Uses onConnectionChangeUI — the slot reserved for the editor.
     // Do NOT assign to onConnectionChange here — that slot is owned by PluginProcessor
     // (set in PluginProcessor ctor) and fires pendingAllNotesOff_ / pendingCcReset_.
     // Overwriting it would silently break stuck-note protection on controller unplug.
-    p.getGamepad().onConnectionChangeUI = [this](bool connected)
+    p.getGamepad().onConnectionChangeUI = [this](juce::String controllerName)
     {
-        juce::MessageManager::callAsync([this, connected]
+        juce::MessageManager::callAsync([this, controllerName]
         {
-            gamepadStatusLabel_.setText(
-                connected ? "GAMEPAD: connected" : "GAMEPAD: none",
-                juce::dontSendNotification);
-            // Sync toggle button visual state on disconnect (gamepadActive_ stays true,
-            // but the button should reflect that there's no controller).
-            // No state change needed — button stays as-is; label communicates status.
+            if (controllerName.isEmpty())
+            {
+                gamepadStatusLabel_.setText("No controller", juce::dontSendNotification);
+                gamepadStatusLabel_.setColour(juce::Label::textColourId, Clr::textDim);
+            }
+            else
+            {
+                juce::String labelText;
+                if (controllerName.containsIgnoreCase("DualSense"))
+                    labelText = "PS5 Connected";
+                else if (controllerName.containsIgnoreCase("DualShock 4") ||
+                         controllerName.containsIgnoreCase("PS4"))
+                    labelText = "PS4 Connected";
+                else if (controllerName.containsIgnoreCase("Xbox") ||
+                         controllerName.containsIgnoreCase("xinput"))
+                    labelText = "Xbox Connected";
+                else
+                    labelText = "Controller Connected";
+
+                gamepadStatusLabel_.setText(labelText, juce::dontSendNotification);
+                gamepadStatusLabel_.setColour(juce::Label::textColourId, Clr::gateOn);
+            }
         });
     };
 
@@ -1219,9 +1235,31 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     };
     addAndMakeVisible(gamepadActiveBtn_);
 
-    // Sync label to current connection state on editor open.
-    if (p.getGamepad().isConnected())
-        gamepadStatusLabel_.setText("GAMEPAD: connected", juce::dontSendNotification);
+    // Sync label to current connection state on editor open using same name-detection logic.
+    {
+        const juce::String initName = p.getGamepad().getControllerName();
+        if (!initName.isEmpty())
+        {
+            juce::String labelText;
+            if (initName.containsIgnoreCase("DualSense"))
+                labelText = "PS5 Connected";
+            else if (initName.containsIgnoreCase("DualShock 4") ||
+                     initName.containsIgnoreCase("PS4"))
+                labelText = "PS4 Connected";
+            else if (initName.containsIgnoreCase("Xbox") ||
+                     initName.containsIgnoreCase("xinput"))
+                labelText = "Xbox Connected";
+            else
+                labelText = "Controller Connected";
+
+            gamepadStatusLabel_.setText(labelText, juce::dontSendNotification);
+            gamepadStatusLabel_.setColour(juce::Label::textColourId, Clr::gateOn);
+        }
+        else
+        {
+            gamepadStatusLabel_.setText("No controller", juce::dontSendNotification);
+        }
+    }
 
     // Left-joystick filter mod button — default ON.
     // When OFF, no filter CC is sent and the LEFT X / LEFT Y dropdowns are greyed out.
