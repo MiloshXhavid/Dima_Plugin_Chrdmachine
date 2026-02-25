@@ -66,6 +66,10 @@ public:
     void looperSetRecFilter(bool b)  { looper_.setRecFilter(b);  }
     void looperSetSyncToDaw(bool b)  { looper_.setSyncToDaw(b);  }
     bool looperIsCapReached()  const { return looper_.isCapReached(); }
+
+    // Looper playback position for UI progress bar (read by message thread — lock-free float atomic)
+    double getLooperPlaybackBeat()  const { return looper_.getPlaybackBeat();    }
+    double getLooperLengthBeats()   const { return looper_.getLoopLengthBeats(); }
     bool looperIsSyncToDaw()   const { return looper_.isSyncToDaw();  }
     bool looperIsRecJoy()      const { return looper_.isRecJoy();     }
     bool looperIsRecGates()    const { return looper_.isRecGates();   }
