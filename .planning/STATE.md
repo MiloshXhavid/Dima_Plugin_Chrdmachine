@@ -10,16 +10,16 @@ See: .planning/PROJECT.md (updated 2026-02-24)
 ## Current Position
 
 Phase: 10 of 11 (Trigger Quantization Infrastructure)
-Plan: 4 of 5 — In Progress (10-01, 10-02, 10-03 complete)
-Status: Phase 10 in progress — Plan 10-03 complete (LooperEngine quantize backend)
-Last activity: 2026-02-25 — Plan 10-03 complete (shadow copy + applyQuantizeToStore + live snap in recordGate() + processor stubs wired)
+Plan: 5 of 5 — In Progress (10-01, 10-02, 10-03, 10-04 complete)
+Status: Phase 10 in progress — Plan 10-04 complete (quantize UI controls in PluginEditor)
+Last activity: 2026-02-25 — Plan 10-04 complete (Off/Live/Post mode buttons + subdivision ComboBox in Looper section, wired to APVTS and proc backend)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
 v1.1 Polish [████░░░░░░] 26% (6/TBD plans)
   Phase 08  [██████████]   Patch Verification    Complete (1 plan done)
   Phase 09  [██████████]   MIDI Panic + Mute     Complete (2 plans done)
-  Phase 10  [██████░░░░]   Quantize Infra        In Progress (3/5 plans done)
+  Phase 10  [████████░░]   Quantize Infra        In Progress (4/5 plans done)
   Phase 11  [░░░░░░░░░░]   UI Polish + Installer Not started
 ```
 
@@ -59,6 +59,7 @@ Recent decisions affecting v1.1:
 - **applyQuantizeToStore() skips non-Gate events (10-03)** — Joystick and Filter events are never snapped; only Gate-type events modified to preserve joystick playback continuity
 - **hasOriginals_ and quantizeActive_ reset on deleteLoop() (10-03)** — prevents stale revert state after loop deletion; quantize state always consistent with playbackStore_ content
 - **Post mode auto-re-applies after finaliseRecording() (10-03)** — pendingQuantize_ set to true in finaliseRecording() when quantizeMode_ == 2; new overdubs auto-quantized on next process() call
+- **Quantize UI radio group ID=1 (10-04)** — no other radio groups existed in PluginEditor; ID=1 used for Off/Live/Post TextButtons; timerCallback() syncs toggle states + disables all four controls during recording
 
 ### Pending Todos
 
@@ -72,6 +73,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-25 (10-03 complete)
-Stopped at: Completed 10-03-PLAN.md — LooperEngine quantize backend: shadow copy + applyQuantizeToStore() + live snap in recordGate() + processor stubs wired; TC 12 still passes (22/27 tests pass, 5 pre-existing failures unchanged)
+Last session: 2026-02-25 (10-04 complete)
+Stopped at: Completed 10-04-PLAN.md — Quantize UI controls (Off/Live/Post mode buttons + subdivision ComboBox) added to Looper section in PluginEditor; build succeeded; 4/5 plans of phase 10 done
 Resume file: None

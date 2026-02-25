@@ -28,7 +28,7 @@ Full details: `.planning/milestones/v1.0-ROADMAP.md`
 
 - [ ] **Phase 08: Post-v1.0 Patch Verification** - Verify, test, and formally sign off the 6 patches already implemented in code
 - [x] **Phase 09: MIDI Panic and Mute Feedback** - Full 16-channel CC sweep panic (no CC121) and animated MUTED state visual feedback (completed 2026-02-25)
-- [ ] **Phase 10: Trigger Quantization Infrastructure** - LooperEngine quantize backend (pendingQuantize_ deferred pattern, snapToGrid, APVTS param)
+- [ ] **Phase 10: Trigger Quantization Infrastructure** - LooperEngine quantize backend + UI controls (4/5 plans done)
 - [ ] **Phase 11: UI Polish and Installer** - Section visual grouping, looper position bar, gamepad controller name display, installer v1.1 rebuild
 
 ## Phase Details
@@ -78,10 +78,10 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
-- [ ] 10-01-PLAN.md — TDD: snapToGrid pure function + TC 12 wrap edge case test
-- [ ] 10-02-PLAN.md — APVTS params (quantizeMode, quantizeSubdiv) + processor passthrough API
-- [ ] 10-03-PLAN.md — LooperEngine backend: shadow copy, live snap in recordGate(), post-record flag service
-- [ ] 10-04-PLAN.md — UI: Off/Live/Post buttons + subdivision dropdown in Looper section
+- [x] 10-01-PLAN.md — TDD: snapToGrid pure function + TC 12 wrap edge case test — done 2026-02-25
+- [x] 10-02-PLAN.md — APVTS params (quantizeMode, quantizeSubdiv) + processor passthrough API — done 2026-02-25
+- [x] 10-03-PLAN.md — LooperEngine backend: shadow copy, live snap in recordGate(), post-record flag service — done 2026-02-25
+- [x] 10-04-PLAN.md — UI: Off/Live/Post buttons + subdivision dropdown in Looper section — done 2026-02-25
 - [ ] 10-05-PLAN.md — Build verification + human sign-off
 
 ### Phase 11: UI Polish and Installer
@@ -108,7 +108,7 @@ Plans:
 | 07. Distribution & Release | v1.0 | 2/2 | Complete | 2026-02-23 |
 | 08. Post-v1.0 Patch Verification | v1.1 | 1/2 | In progress | - |
 | 09. MIDI Panic and Mute Feedback | v1.1 | 2/2 | Complete | 2026-02-25 |
-| 10. Trigger Quantization Infrastructure | 3/5 | In Progress|  | - |
+| 10. Trigger Quantization Infrastructure | v1.1 | 4/5 | In Progress | - |
 | 11. UI Polish and Installer | v1.1 | 0/TBD | Not started | - |
 
 ---
