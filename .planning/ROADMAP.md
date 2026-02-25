@@ -55,11 +55,15 @@ Plans:
 **Depends on**: Phase 08
 **Requirements**: PANIC-01, PANIC-02, PANIC-03
 **Success Criteria** (what must be TRUE):
-  1. Pressing Panic emits exactly 48 events (16 channels × 3 CCs: CC64=0, CC120, CC123) — verifiable with a MIDI monitor; zero CC121 events appear
+  1. Pressing Panic emits exactly 48 events (16 channels x 3 CCs: CC64=0, CC120, CC123) — verifiable with a MIDI monitor; zero CC121 events appear
   2. After Panic, all notes are silenced on all 16 MIDI channels including channels not assigned to any voice; plugin continues generating MIDI normally on the next trigger
   3. Panic button briefly flashes on press (using existing flashPanic_ counter pattern) and returns to normal state — no persistent toggle or output-blocking state remains
   4. The flash animation reuses the existing 30 Hz editor timer — grep for startTimerHz in PluginEditor.cpp returns exactly 1 result
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Expand processor panic sweep to all 16 channels + add PANIC! button to editor with flash feedback
+- [ ] 09-02-PLAN.md — Build plugin and human verification of 48-event sweep, button visibility, flash, and MIDI resume
 
 ### Phase 10: Trigger Quantization Infrastructure
 **Goal**: Recorded gate events can be snapped to a user-selected subdivision grid both during recording (live) and after recording (post-record), without data races on the audio thread
@@ -96,7 +100,7 @@ Plans:
 | 06. SDL2 Gamepad Integration | v1.0 | 4/4 | Complete | 2026-02-23 |
 | 07. Distribution & Release | v1.0 | 2/2 | Complete | 2026-02-23 |
 | 08. Post-v1.0 Patch Verification | v1.1 | 1/2 | In progress | - |
-| 09. MIDI Panic and Mute Feedback | v1.1 | 0/TBD | Not started | - |
+| 09. MIDI Panic and Mute Feedback | v1.1 | 0/2 | Not started | - |
 | 10. Trigger Quantization Infrastructure | v1.1 | 0/TBD | Not started | - |
 | 11. UI Polish and Installer | v1.1 | 0/TBD | Not started | - |
 
