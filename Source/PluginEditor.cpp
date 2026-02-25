@@ -1091,7 +1091,20 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     loopRecWaitBtn_.setClickingTogglesState(true);
     loopRecWaitBtn_.setTriggeredOnMouseDown(true);
     styleButton(loopRecWaitBtn_);
-    loopRecWaitBtn_.onClick = [this] { proc_.looperArmWait(); };
+    loopRecWaitBtn_.onClick = [this]
+    {
+        proc_.looperArmWait();
+        // When arming (not cancelling): auto-enable REC GATES if no content flags
+        // are currently active, so the first touch actually captures something.
+        if (proc_.looperIsRecWaitArmed()
+            && !proc_.looperIsRecGates()
+            && !proc_.looperIsRecJoy()
+            && !proc_.looperIsRecFilter())
+        {
+            proc_.looperSetRecGates(true);
+            loopRecGatesBtn_.setToggleState(true, juce::dontSendNotification);
+        }
+    };
     addAndMakeVisible(loopRecWaitBtn_);
 
     bpmDisplayLabel_.setText("120.0 BPM", juce::dontSendNotification);
