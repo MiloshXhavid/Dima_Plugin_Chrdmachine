@@ -1665,6 +1665,10 @@ void PluginEditor::resized()
 
         section.removeFromTop(4);
 
+        // Looper position bar — 10px strip between mode buttons and subdiv/length controls
+        looperPositionBarBounds_ = section.removeFromTop(10);
+        section.removeFromTop(4);  // 4px gap after bar before subdiv row
+
         // Subdiv + length: narrow combo for time sig, slider for bars
         {
             auto ctrlRow = section.removeFromTop(46);
@@ -1826,6 +1830,32 @@ void PluginEditor::paint(juce::Graphics& g)
     drawSectionPanel(filterModPanelBounds_, "FILTER MOD");
     drawSectionPanel(gamepadPanelBounds_,   "GAMEPAD");
 
+    // ── Looper position bar ───────────────────────────────────────────────────
+    if (!looperPositionBarBounds_.isEmpty())
+    {
+        const auto barB = looperPositionBarBounds_.toFloat();
+
+        // Background track
+        g.setColour(Clr::gateOff);
+        g.fillRoundedRectangle(barB, 2.0f);
+
+        // Filled sweep — only when looper is playing or recording
+        if (proc_.looperIsPlaying() || proc_.looperIsRecording())
+        {
+            const double len  = proc_.getLooperLengthBeats();
+            const double beat = proc_.getLooperPlaybackBeat();
+            if (len > 0.0)
+            {
+                const float fraction = juce::jlimit(0.0f, 1.0f, static_cast<float>(beat / len));
+                if (fraction > 0.0f)
+                {
+                    g.setColour(Clr::gateOn);
+                    g.fillRoundedRectangle(barB.withWidth(barB.getWidth() * fraction), 2.0f);
+                }
+            }
+        }
+    }
+
     // Scale preset panel — aligned to exact left/right edges of the trigger dropdown columns
     if (scalePresetBox_.isVisible() && scaleKeys_.isVisible())
     {
@@ -1932,6 +1962,11 @@ void PluginEditor::paint(juce::Graphics& g)
 
 void PluginEditor::timerCallback()
 {
+    // Partial repaint for looper position bar (driven by this 30 Hz timer)
+    // Only call repaint() if the bar area is valid — avoids repainting the full editor.
+    if (!looperPositionBarBounds_.isEmpty())
+        repaint(looperPositionBarBounds_);
+
     // Refresh gates, joystick position, looper buttons
     padRoot_.repaint(); padThird_.repaint(); padFifth_.repaint(); padTension_.repaint();
     padAll_.repaint();
