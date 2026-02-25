@@ -58,11 +58,11 @@ None.
 ### Blockers/Concerns
 
 - Phase 10 quantize implementation requires Catch2 tests for snapToGrid wrap edge case BEFORE integrating into LooperEngine — do not skip
-- Phase 10 QUANTIZE button must be disabled while looper is playing or recording (pendingQuantize_ invariant)
+- Phase 10 QUANTIZE button disabled only while **recording** (enabled during playback — user can preview toggle mid-loop; SC3 updated from discussion)
 - Phase 11 progress bar must NOT use juce::ProgressBar — runs its own internal timer; use custom component repainted from editor timerCallback
 
 ## Session Continuity
 
-Last session: 2026-02-24
-Stopped at: Plan 08-01 complete — PATCH-01 + PATCH-04 source fixes committed (860f5f4, bb44e47)
+Last session: 2026-02-25
+Stopped at: Phase 10 context gathered (10-CONTEXT.md written) — ready for /gsd:plan-phase 10 once Phase 09 completes
 Resume file: None
