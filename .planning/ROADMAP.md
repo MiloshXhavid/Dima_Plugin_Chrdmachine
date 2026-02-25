@@ -72,10 +72,17 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. With live quantize ON, gate events recorded at arbitrary times within a 1/8-note window land exactly on the nearest 1/8-note boundary — verifiable by inspecting recorded beat positions
   2. Pressing the QUANTIZE button while the looper is stopped re-snaps all existing loop events to the selected subdivision — verifiable by playing back a quantized loop and hearing rhythmically tight events
-  3. The QUANTIZE button is disabled (greyed out) while the looper is playing or recording — verifiable in the plugin UI
+  3. The QUANTIZE button is disabled (greyed out) while the looper is recording — verifiable in the plugin UI (enabled during playback per SC3 update from discussion)
   4. A gate event recorded near the loop end (beatPosition = loopLen - 0.001) and quantized to a 1-beat grid is stored as beatPosition 0.0 and fires exactly once per loop cycle — verifiable via Catch2 test
   5. The quantize subdivision selector offers 1/4, 1/8, 1/16, and 1/32 note options and operates independently from per-voice random gate subdivision
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — TDD: snapToGrid pure function + TC 12 wrap edge case test
+- [ ] 10-02-PLAN.md — APVTS params (quantizeMode, quantizeSubdiv) + processor passthrough API
+- [ ] 10-03-PLAN.md — LooperEngine backend: shadow copy, live snap in recordGate(), post-record flag service
+- [ ] 10-04-PLAN.md — UI: Off/Live/Post buttons + subdivision dropdown in Looper section
+- [ ] 10-05-PLAN.md — Build verification + human sign-off
 
 ### Phase 11: UI Polish and Installer
 **Goal**: The plugin UI is visually organized with clear section groupings, the looper shows current playback position, the gamepad status shows the actual controller type, and the v1.1 installer is ready for distribution
@@ -100,8 +107,8 @@ Plans:
 | 06. SDL2 Gamepad Integration | v1.0 | 4/4 | Complete | 2026-02-23 |
 | 07. Distribution & Release | v1.0 | 2/2 | Complete | 2026-02-23 |
 | 08. Post-v1.0 Patch Verification | v1.1 | 1/2 | In progress | - |
-| 09. MIDI Panic and Mute Feedback | 2/2 | Complete    | 2026-02-25 | - |
-| 10. Trigger Quantization Infrastructure | v1.1 | 0/TBD | Not started | - |
+| 09. MIDI Panic and Mute Feedback | v1.1 | 2/2 | Complete | 2026-02-25 |
+| 10. Trigger Quantization Infrastructure | v1.1 | 0/5 | Not started | - |
 | 11. UI Polish and Installer | v1.1 | 0/TBD | Not started | - |
 
 ---
