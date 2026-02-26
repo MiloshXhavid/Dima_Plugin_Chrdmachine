@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.4 Distribution — Phase 16 in progress (Plan 01 complete, smoke test approved)
+**Current focus:** v1.4 SHIPPED — GitHub release v1.4 live at MiloshXhavid/Dima_Plugin_Chrdmachine
 
 ## Current Position
 
 Phase: 16 of 16 (Distribution)
-Plan: 2 of 2 (Plan 01 complete — smoke test approved; Plan 02 next)
-Status: In Progress
-Last activity: 2026-02-26 — Phase 16 Plan 01 complete (installer v1.4, smoke test approved — LFO, OPTION indicator, PC routing all verified)
+Plan: 2 of 2 (Both plans complete — Phase 16 DONE)
+Status: Complete
+Last activity: 2026-02-26 — Phase 16 Plan 02 complete (GitHub release v1.4 published, desktop backup created — all DIST requirements satisfied)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -26,8 +26,8 @@ v1.4 LFO    [██████████] Complete — Phase 14 done
   Phase 14  [██████████]   LFO UI + Beat Clock   Complete (3/3 plans done)
 v1.5 Preset [██████████] Complete — Phase 15 done
   Phase 15  [██████████]   Gamepad Preset Ctrl   Complete (2/2 plans done)
-v1.4 Dist   [█████░░░░░] In Progress
-  Phase 16  [█████░░░░░]   Distribution          In Progress (1/2 plans complete)
+v1.4 Dist   [██████████] SHIPPED 2026-02-26
+  Phase 16  [██████████]   Distribution          Complete (2/2 plans done)
 ```
 
 ## Accumulated Context
@@ -66,6 +66,10 @@ Recent decisions affecting v1.4 distribution:
 - Phase 16-01: All four .iss locations updated (Source, DestDir, UninstallDelete, DefaultDirName) to prevent stale-bundle packaging
 - Phase 16-01: AppVersion bumped to 1.4; AppComments updated with LFO/beat-clock/preset-control feature summary
 - Phase 16-01: Smoke test gate passed — user confirmed LFO modulation audible, OPTION indicator visible, Program Change observed in DAW
+- Phase 16-02: Release asset filename uses 'Dimea' (5 chars) prefix per CONTEXT.md locked decision — original installer remains 'Dima' (4 chars)
+- Phase 16-02: Release notes written as stand-alone for v1.4 — no 'previously in v1.3' section per CONTEXT.md
+- Phase 16-02: Source archive created from v1.4 tag using git archive --format=zip --prefix=ChordJoystick-v1.4/
+- Phase 16-02: v1.4 tag force-pushed to plugin remote at 008ccff (16-01 smoke-test commit, includes all phase 12-15 docs)
 
 Recent decisions affecting v1.5:
 - Phase 15-01: SDL_CONTROLLER_BUTTON_GUIDE maps to Option/PS/Guide on all controller types (DualSense, DS4, Xbox) — correct SDL2 constant for the intended button
@@ -88,5 +92,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 16-01 — installer v1.4 built and smoke-tested; ready for 16-02 (GitHub release)
-Next step: Execute Plan 16-02 — tag v1.4, upload installer to GitHub release, write release notes, publish Gumroad listing
+Stopped at: Completed 16-02 — GitHub release v1.4 published, desktop backup created. Phase 16 complete. ALL PLANS DONE.
+Next step: v1.4 is fully shipped. Consider /gsd:new-milestone for next version.

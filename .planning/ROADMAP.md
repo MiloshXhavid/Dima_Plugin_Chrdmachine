@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 MVP** — Phases 01-07 (shipped 2026-02-23)
 - ✅ **v1.3 Polish & Quantization** — Phases 09-11 (shipped 2026-02-25)
-- 🚧 **v1.4 LFO + Clock** — Phases 12-16 (in progress)
+- ✅ **v1.4 LFO + Clock** — Phases 12-16 (shipped 2026-02-26)
 
 ## Phases
 
@@ -34,7 +34,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 </details>
 
-### 🚧 v1.4 LFO + Clock (In Progress)
+### ✅ v1.4 LFO + Clock (SHIPPED 2026-02-26)
 
 **Milestone Goal:** Add dual per-axis LFO modulation to the joystick with a beat clock indicator, then ship a clean GitHub release.
 
@@ -42,7 +42,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 - [x] **Phase 13: processBlock Integration and APVTS** — Wire LfoEngine into the processor: 16 APVTS params, process() call in processBlock, LFO output applied as additive offset in buildChordParams(), phase reset on DAW start/stop (completed 2026-02-26)
 - [x] **Phase 14: LFO UI and Beat Clock** — Full LFO panel left of joystick + beat clock dot on Free BPM knob face, all controls attached to APVTS (completed 2026-02-26)
 - [x] **Phase 15: Gamepad Preset Control** — Option button toggles preset-scroll mode; D-pad Up/Down send MIDI Program Change; UI shows OPTION indicator (completed 2026-02-26)
-- [ ] **Phase 16: Distribution** — GitHub v1.4 release with installer binary + release notes; desktop backup
+- [x] **Phase 16: Distribution** — GitHub v1.4 release with installer binary + release notes; desktop backup (completed 2026-02-26)
 
 ## Phase Details
 
@@ -113,7 +113,7 @@ Plans:
 **Plans**: 2 plans
 Plans:
 - [x] 16-01-PLAN.md — Update .iss for v1.4, rebuild installer, smoke test checkpoint (completed 2026-02-26)
-- [ ] 16-02-PLAN.md — Retag v1.4 to HEAD, create GitHub release, desktop backup
+- [x] 16-02-PLAN.md — Retag v1.4 to HEAD, create GitHub release, desktop backup (completed 2026-02-26)
 
 ## Progress
 
@@ -127,9 +127,9 @@ Plans:
 | 13. processBlock Integration + APVTS | v1.4 | Complete    | 2026-02-26 | 2026-02-26 |
 | 14. LFO UI + Beat Clock | v1.4 | 3/3 | Complete | 2026-02-26 |
 | 15. Gamepad Preset Control | v1.5 | Complete    | 2026-02-26 | 2026-02-26 |
-| 16. Distribution | v1.4 | 1/2 | In Progress | - |
+| 16. Distribution | v1.4 | 2/2 | ✅ Shipped | 2026-02-26 |
 
 ---
 *v1.0 shipped 2026-02-23 — 7 phases, 17 plans*
 *v1.3 shipped 2026-02-25 — 3 phases, 11 plans, 47 files changed*
-*v1.4 roadmap created 2026-02-26 — 5 phases, 21 requirements*
+*v1.4 shipped 2026-02-26 — 5 phases, 9 plans, GitHub release at MiloshXhavid/Dima_Plugin_Chrdmachine/releases/tag/v1.4*
