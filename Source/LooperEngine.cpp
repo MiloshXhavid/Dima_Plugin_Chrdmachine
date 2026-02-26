@@ -69,6 +69,22 @@ void LooperEngine::setLoopLengthBars(int bars)
 void LooperEngine::startStop()
 {
     const bool wasPlaying = playing_.load();
+
+    // DAW sync mode: PLAY button can stop the looper but never starts it
+    // (DAW transport controls start). When stopped, press is a no-op — the
+    // button blinks in the UI to show "armed, waiting for DAW play".
+    if (syncToDaw_.load())
+    {
+        if (wasPlaying)
+        {
+            playing_.store(false);
+            recPendingNextCycle_.store(false);
+            recording_.store(false);
+            finaliseRecording();
+        }
+        return;
+    }
+
     if (!wasPlaying)
     {
         playing_.store(true);
@@ -646,10 +662,9 @@ LooperEngine::BlockOutput LooperEngine::process(const ProcessParams& p)
             }
             if (dawActive && !prevDawPlaying_)
             {
-                // DAW just started → restart if has content or REC was armed while DAW was stopped
-                if (playbackCount_.load(std::memory_order_relaxed) > 0
-                    || recordPending_.load(std::memory_order_relaxed))
-                    playing_.store(true, std::memory_order_relaxed);
+                // DAW just started → always start looper when sync is on.
+                // REC armed state (recordPending_) will activate at the next valid clock.
+                playing_.store(true, std::memory_order_relaxed);
             }
             prevDawPlaying_ = dawActive;
         }

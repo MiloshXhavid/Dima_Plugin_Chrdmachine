@@ -559,8 +559,16 @@ ScaleKeyboard::~ScaleKeyboard()
         apvts_.removeParameterListener("scaleNote" + juce::String(i), this);
 }
 
-void ScaleKeyboard::parameterChanged(const juce::String& /*paramID*/, float /*newValue*/)
+void ScaleKeyboard::parameterChanged(const juce::String& paramID, float /*newValue*/)
 {
+    // Selecting a preset overrides any previous custom scale editing.
+    if (paramID == "scalePreset")
+    {
+        if (apvts_.getRawParameterValue("useCustomScale")->load() > 0.5f)
+            if (auto* p = dynamic_cast<juce::AudioParameterBool*>(
+                    apvts_.getParameter("useCustomScale")))
+                *p = false;
+    }
     updateScaleMask();
     // Parameter listeners fire on a background thread — repaint must be on
     // the message thread.
@@ -1648,8 +1656,8 @@ void PluginEditor::resized()
 
         section.removeFromTop(4);
 
-        // Looper position bar — 10px strip between mode buttons and subdiv/length controls
-        looperPositionBarBounds_ = section.removeFromTop(10);
+        // Looper position bar — 4px strip between mode buttons and subdiv/length controls
+        looperPositionBarBounds_ = section.removeFromTop(4);
         section.removeFromTop(4);  // 4px gap after bar before subdiv row
 
         // Subdiv + length: narrow combo for time sig, slider for bars
@@ -1958,11 +1966,14 @@ void PluginEditor::timerCallback()
     padAll_.repaint();
     joystickPad_.repaint();
 
-    // PLAY button: blinks while "start rec by touch" is armed, or while ARP is armed
-    // waiting for looper PLAY press (only when DAW sync is OFF).
-    // Solid when playing, off when stopped.
+    // PLAY button: blinks when armed — three cases:
+    //   1. DAW sync on + not playing  → blink to show "waiting for DAW play"
+    //   2. "start rec by touch" armed → blink
+    //   3. ARP armed for looper (DAW sync OFF only) → blink
+    // Solid when playing, off when stopped (non-sync).
+    const bool syncArmed      = proc_.looperIsSyncToDaw() && !proc_.looperIsPlaying();
     const bool arpArmedForLooper = proc_.isArpWaitingForPlay() && !proc_.looperIsSyncToDaw();
-    if (proc_.looperIsRecWaitArmed() || arpArmedForLooper)
+    if (syncArmed || proc_.looperIsRecWaitArmed() || arpArmedForLooper)
     {
         const bool on = ((++playWaitBlinkCounter_) / 5) % 2 == 0;  // ~3 blinks/sec at 30 Hz
         loopPlayBtn_.setToggleState(on, juce::dontSendNotification);
