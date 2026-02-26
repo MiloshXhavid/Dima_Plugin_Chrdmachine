@@ -4,6 +4,7 @@
 #include "TriggerSystem.h"
 #include "LooperEngine.h"
 #include "GamepadInput.h"
+#include "LfoEngine.h"
 #include <atomic>
 #include <array>
 
@@ -171,6 +172,12 @@ private:
     TriggerSystem trigger_;
     LooperEngine  looper_;
     GamepadInput  gamepad_;
+    LfoEngine     lfoX_;          // X-axis LFO (modulates fifth/tension voices)
+    LfoEngine     lfoY_;          // Y-axis LFO (modulates root/third voices)
+
+    // LFO disable ramp state (audio-thread only)
+    float lfoXRampOut_ = 0.0f;   // current ramped LFO X contribution
+    float lfoYRampOut_ = 0.0f;   // current ramped LFO Y contribution
 
     double sampleRate_ = 44100.0;
     std::atomic<float> effectiveBpm_ { 120.0f };

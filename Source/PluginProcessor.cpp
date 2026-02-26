@@ -63,6 +63,24 @@ namespace ParamID
     static const juce::String quantizeMode     = "quantizeMode";
     static const juce::String quantizeSubdiv   = "quantizeSubdiv";
 
+    // LFO
+    static const juce::String lfoXEnabled    = "lfoXEnabled";
+    static const juce::String lfoYEnabled    = "lfoYEnabled";
+    static const juce::String lfoXWaveform   = "lfoXWaveform";
+    static const juce::String lfoYWaveform   = "lfoYWaveform";
+    static const juce::String lfoXRate       = "lfoXRate";
+    static const juce::String lfoYRate       = "lfoYRate";
+    static const juce::String lfoXLevel      = "lfoXLevel";
+    static const juce::String lfoYLevel      = "lfoYLevel";
+    static const juce::String lfoXPhase      = "lfoXPhase";
+    static const juce::String lfoYPhase      = "lfoYPhase";
+    static const juce::String lfoXDistortion = "lfoXDistortion";
+    static const juce::String lfoYDistortion = "lfoYDistortion";
+    static const juce::String lfoXSync       = "lfoXSync";
+    static const juce::String lfoYSync       = "lfoYSync";
+    static const juce::String lfoXSubdiv     = "lfoXSubdiv";
+    static const juce::String lfoYSubdiv     = "lfoYSubdiv";
+
 }
 
 // ─── Parameter layout ─────────────────────────────────────────────────────────
@@ -226,6 +244,41 @@ PluginProcessor::createParameterLayout()
     // ── Quantize ──────────────────────────────────────────────────────────────
     addInt(ParamID::quantizeMode,   "Quantize Mode",   0, 2, 0);  // 0=Off, 1=Live, 2=Post (default Off)
     addInt(ParamID::quantizeSubdiv, "Quantize Subdiv", 0, 3, 1);  // 0=1/4, 1=1/8, 2=1/16, 3=1/32 (default 1/8)
+
+    // ── LFO ───────────────────────────────────────────────────────────────────
+    addBool(ParamID::lfoXEnabled, "LFO X Enabled", false);
+    addBool(ParamID::lfoYEnabled, "LFO Y Enabled", false);
+    {
+        juce::StringArray waveforms { "Sine", "Triangle", "Saw Up", "Saw Down",
+                                      "Square", "S&H", "Random" };
+        addChoice(ParamID::lfoXWaveform, "LFO X Waveform", waveforms, 0);
+        addChoice(ParamID::lfoYWaveform, "LFO Y Waveform", waveforms, 0);
+    }
+    // Rate: log-scale NormalisableRange so slider midpoint ≈ 1 Hz.
+    // Skew factor computed as: log(0.5) / log((midpoint - start) / (end - start))
+    //   = log(0.5) / log((1.0 - 0.01) / (20.0 - 0.01)) ≈ 0.2306
+    // This means at normalized position 0.5 the displayed value is ~1 Hz.
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParamID::lfoXRate, "LFO X Rate",
+        juce::NormalisableRange<float>(0.01f, 20.0f, 0.0f, 0.2306f),
+        1.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        ParamID::lfoYRate, "LFO Y Rate",
+        juce::NormalisableRange<float>(0.01f, 20.0f, 0.0f, 0.2306f),
+        1.0f));
+    addFloat(ParamID::lfoXLevel,      "LFO X Level",      0.0f, 2.0f, 0.0f);
+    addFloat(ParamID::lfoYLevel,      "LFO Y Level",      0.0f, 2.0f, 0.0f);
+    addFloat(ParamID::lfoXPhase,      "LFO X Phase",      0.0f, 360.0f, 0.0f);
+    addFloat(ParamID::lfoYPhase,      "LFO Y Phase",      0.0f, 360.0f, 0.0f);
+    addFloat(ParamID::lfoXDistortion, "LFO X Distortion", 0.0f, 1.0f, 0.0f);
+    addFloat(ParamID::lfoYDistortion, "LFO Y Distortion", 0.0f, 1.0f, 0.0f);
+    addBool (ParamID::lfoXSync,       "LFO X Sync",       false);
+    addBool (ParamID::lfoYSync,       "LFO Y Sync",       false);
+    {
+        juce::StringArray subdivs { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
+        addChoice(ParamID::lfoXSubdiv, "LFO X Subdivision", subdivs, 2);  // default: 1/4
+        addChoice(ParamID::lfoYSubdiv, "LFO Y Subdivision", subdivs, 2);  // default: 1/4
+    }
 
     return layout;
 }
