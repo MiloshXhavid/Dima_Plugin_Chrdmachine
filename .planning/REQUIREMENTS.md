@@ -38,7 +38,7 @@
 
 ### Distribution
 
-- [ ] **DIST-01**: GitHub v1.4 release created with built installer binary and release notes
+- [x] **DIST-01**: GitHub v1.4 release created with built installer binary and release notes
 - [ ] **DIST-02**: Full plugin copy backed up to Desktop/Dima_plug-in
 
 ## Future Requirements (v2+)
@@ -85,7 +85,7 @@
 | CTRL-01 | Phase 15 | Complete |
 | CTRL-02 | Phase 15 | Complete |
 | CTRL-03 | Phase 15 | Complete |
-| DIST-01 | Phase 15 | Pending |
+| DIST-01 | Phase 15 | Complete |
 | DIST-02 | Phase 15 | Pending |
 
 **Coverage:**
