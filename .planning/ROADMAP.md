@@ -112,7 +112,7 @@ Plans:
   2. A copy of the built plugin and installer is present at `Desktop/Dima_Plug-in/v1.4/` — confirmed by directory listing
 **Plans**: 2 plans
 Plans:
-- [ ] 16-01-PLAN.md — Update .iss for v1.4, rebuild installer, smoke test checkpoint
+- [x] 16-01-PLAN.md — Update .iss for v1.4, rebuild installer, smoke test checkpoint (completed 2026-02-26)
 - [ ] 16-02-PLAN.md — Retag v1.4 to HEAD, create GitHub release, desktop backup
 
 ## Progress
@@ -127,7 +127,7 @@ Plans:
 | 13. processBlock Integration + APVTS | v1.4 | Complete    | 2026-02-26 | 2026-02-26 |
 | 14. LFO UI + Beat Clock | v1.4 | 3/3 | Complete | 2026-02-26 |
 | 15. Gamepad Preset Control | v1.5 | Complete    | 2026-02-26 | 2026-02-26 |
-| 16. Distribution | 1/2 | In Progress|  | - |
+| 16. Distribution | v1.4 | 1/2 | In Progress | - |
 
 ---
 *v1.0 shipped 2026-02-23 — 7 phases, 17 plans*

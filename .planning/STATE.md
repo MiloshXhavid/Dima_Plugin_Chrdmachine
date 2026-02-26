@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.4 Distribution — Phase 16 in progress (installer built, awaiting smoke test)
+**Current focus:** v1.4 Distribution — Phase 16 in progress (Plan 01 complete, smoke test approved)
 
 ## Current Position
 
 Phase: 16 of 16 (Distribution)
-Plan: 1 of 2 (Plan 01 in progress — Task 1 complete, Task 2 checkpoint awaiting human smoke test)
+Plan: 2 of 2 (Plan 01 complete — smoke test approved; Plan 02 next)
 Status: In Progress
-Last activity: 2026-02-26 — Phase 16 Plan 01 Task 1 complete (.iss updated to v1.4, fresh installer compiled)
+Last activity: 2026-02-26 — Phase 16 Plan 01 complete (installer v1.4, smoke test approved — LFO, OPTION indicator, PC routing all verified)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -26,8 +26,8 @@ v1.4 LFO    [██████████] Complete — Phase 14 done
   Phase 14  [██████████]   LFO UI + Beat Clock   Complete (3/3 plans done)
 v1.5 Preset [██████████] Complete — Phase 15 done
   Phase 15  [██████████]   Gamepad Preset Ctrl   Complete (2/2 plans done)
-v1.4 Dist   [█░░░░░░░░░] In Progress
-  Phase 16  [█░░░░░░░░░]   Distribution          In Progress (1/2 plans — checkpoint)
+v1.4 Dist   [█████░░░░░] In Progress
+  Phase 16  [█████░░░░░]   Distribution          In Progress (1/2 plans complete)
 ```
 
 ## Accumulated Context
@@ -65,6 +65,7 @@ Recent decisions affecting v1.4 distribution:
 - Phase 16-01: .iss bundle name updated from ChordJoystick MK2.vst3 to DIMEA CHORD JOYSTICK MK2.vst3 — the build output name from CMakeLists PRODUCT_NAME
 - Phase 16-01: All four .iss locations updated (Source, DestDir, UninstallDelete, DefaultDirName) to prevent stale-bundle packaging
 - Phase 16-01: AppVersion bumped to 1.4; AppComments updated with LFO/beat-clock/preset-control feature summary
+- Phase 16-01: Smoke test gate passed — user confirmed LFO modulation audible, OPTION indicator visible, Program Change observed in DAW
 
 Recent decisions affecting v1.5:
 - Phase 15-01: SDL_CONTROLLER_BUTTON_GUIDE maps to Option/PS/Guide on all controller types (DualSense, DS4, Xbox) — correct SDL2 constant for the intended button
@@ -87,5 +88,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Checkpoint — 16-01 Task 2 (smoke test) — installer/Output/DimaChordJoystickMK2-Setup.exe ready at 14:11; needs DAW smoke test
-Next step: Install fresh binary, verify LFO + OPTION indicator in DAW, then type "approved" to resume 16-01 Task 2 checkpoint
+Stopped at: Completed 16-01 — installer v1.4 built and smoke-tested; ready for 16-02 (GitHub release)
+Next step: Execute Plan 16-02 — tag v1.4, upload installer to GitHub release, write release notes, publish Gumroad listing
