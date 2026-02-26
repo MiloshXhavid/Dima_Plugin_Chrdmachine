@@ -255,6 +255,11 @@ private:
     bool     arpWaitingForPlay_   = false;    // armed but waiting for DAW play press to launch
     bool     prevArpOn_           = false;    // previous block's arp-enabled state
 
+    // ── Preset-scroll mode: MIDI Program Change counter ───────────────────────
+    // Audio-thread-only. Tracks current program number for absolute PC messages.
+    // Starts at 0 on plugin load. Not persisted in saved state.
+    int programCounter_ = 0;
+
     // Build ChordEngine::Params from current APVTS + joystick state
     ChordEngine::Params buildChordParams() const;
 

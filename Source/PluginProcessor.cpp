@@ -476,9 +476,31 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         if (gamepad_.consumeRightStickTrigger())
             triggerPanic();   // R3 -> MIDI panic (same as UI panicBtn_)
 
-        // D-pad: BPM and looper recording toggles
-        if (gamepad_.consumeDpadUp())    pendingBpmDelta_.fetch_add(1,  std::memory_order_relaxed);
-        if (gamepad_.consumeDpadDown())  pendingBpmDelta_.fetch_add(-1, std::memory_order_relaxed);
+        // D-pad Up/Down: BPM delta (normal) or PC message (preset-scroll mode)
+        // In preset-scroll mode: consumePcDelta() returns the delta (GamepadInput fires on button-up).
+        // In normal mode: consumeDpadUp/Down fire on button-down (unchanged).
+        if (gamepad_.isPresetScrollActive())
+        {
+            const int pcDelta = gamepad_.consumePcDelta();
+            if (pcDelta != 0)
+            {
+                const int newProgram = juce::jlimit(0, 127, programCounter_ + pcDelta);
+                if (newProgram != programCounter_)  // boundary clamp: skip send if already at limit
+                {
+                    programCounter_ = newProgram;
+                    const int fCh = static_cast<int>(
+                        apvts.getRawParameterValue(ParamID::filterMidiCh)->load());  // 1-based
+                    midi.addEvent(
+                        juce::MidiMessage::programChange(fCh, programCounter_),
+                        0);  // sample offset 0 within the block
+                }
+            }
+        }
+        else
+        {
+            if (gamepad_.consumeDpadUp())    pendingBpmDelta_.fetch_add(1,  std::memory_order_relaxed);
+            if (gamepad_.consumeDpadDown())  pendingBpmDelta_.fetch_add(-1, std::memory_order_relaxed);
+        }
         if (gamepad_.consumeDpadLeft())  looperSetRecGates(!looperIsRecGates());
         if (gamepad_.consumeDpadRight()) looperSetRecJoy(!looperIsRecJoy());
     }
@@ -587,22 +609,28 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             yTarget = lfoY_.process(yp);
         }
 
-        // ~10 ms linear ramp toward target — prevents hard snap when LFO is disabled mid-phrase.
-        // At 512 samples / 44100 Hz one block ≈ 11.6 ms; coefficient moves output fully to
-        // target in approximately one block at typical sizes (within the 10 ms spec).
-        const float rampCoeff = static_cast<float>(blockSize) /
-                                std::max(1.0f, static_cast<float>(sampleRate_ * 0.01));
+        // Ramp toward target — smooths the disable transition so LFO fades out rather
+        // than snapping hard to 0.  Coefficient is clamped to 1.0 so the filter is
+        // always stable: coeff > 1 causes the IIR to overshoot and oscillate every block,
+        // which is exactly the "cursor jumping" artefact the user reported.
+        // At coeff = 1.0 (large buffers) the ramp collapses to a direct assignment —
+        // the cursor tracks the LFO output exactly, one block of latency.
+        const float rampCoeff = juce::jmin(1.0f,
+                                    static_cast<float>(blockSize) /
+                                    std::max(1.0f, static_cast<float>(sampleRate_ * 0.01)));
         lfoXRampOut_ += (xTarget - lfoXRampOut_) * rampCoeff;
         lfoYRampOut_ += (yTarget - lfoYRampOut_) * rampCoeff;
+
+        // Store the UNCLIPPED modulated position for cursor display so the dot can
+        // show the full LFO swing even when the joystick is near ±1.
+        // (JoystickPad::paint() applies its own dotR-aware bounds clamp.)
+        modulatedJoyX_.store(chordP.joystickX + lfoXRampOut_, std::memory_order_relaxed);
+        modulatedJoyY_.store(chordP.joystickY + lfoYRampOut_, std::memory_order_relaxed);
 
         chordP.joystickX = std::clamp(chordP.joystickX + lfoXRampOut_, -1.0f, 1.0f);
         chordP.joystickY = std::clamp(chordP.joystickY + lfoYRampOut_, -1.0f, 1.0f);
     }
     // ─────────────────────────────────── end LFO ──────────────────────────────
-
-    // ── Expose LFO-modulated joystick position for JoystickPad visual tracking ──
-    modulatedJoyX_.store(chordP.joystickX, std::memory_order_relaxed);
-    modulatedJoyY_.store(chordP.joystickY, std::memory_order_relaxed);
 
     // ── Beat clock detection — fires beatOccurred_ once per beat ──────────────
     {
