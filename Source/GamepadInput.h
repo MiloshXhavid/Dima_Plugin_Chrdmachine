@@ -60,6 +60,13 @@ public:
     bool consumeDpadRight() { return dpadRightTrig_.exchange(false); }
     bool consumeRightStickTrigger() { return rightStickTrig_.exchange(false); }
 
+    // Preset-scroll mode state — read by PluginProcessor / PluginEditor
+    bool isPresetScrollActive() const { return presetScrollActive_; }
+
+    // Consume a pending Program Change delta (+1 or -1).
+    // Returns 0 if nothing pending. Processor reads this instead of pendingBpmDelta_ when in preset-scroll mode.
+    int consumePcDelta() { return pendingPcDelta_.exchange(0, std::memory_order_relaxed); }
+
     // Whether a gamepad is connected
     bool isConnected() const { return controller_ != nullptr; }
 
@@ -142,6 +149,14 @@ private:
     ButtonState btnDpadLeft_;
     ButtonState btnDpadRight_;
     ButtonState btnRightStick_;
+
+    // Preset-scroll mode — toggled by Option/Guide button
+    bool presetScrollActive_ = false;  // not persisted; starts false on plugin load
+    bool optionFrameFired_   = false;  // one-frame lockout: true in the frame Option toggles
+    ButtonState btnOption_;            // debounce state for SDL_CONTROLLER_BUTTON_GUIDE
+
+    // Pending PC delta — set by timerCallback when presetScrollActive_; consumed by processor
+    std::atomic<int> pendingPcDelta_ { 0 };
 
     bool sdlInitialised_    = false;  // guard: SdlContext::release() only if acquire() succeeded
 };

@@ -179,24 +179,51 @@ void GamepadInput::timerCallback()
         if (debounce(curRec, btnRecord_)    && btnRecord_.prev)    looperRecord_.store(true);
     }
 
-    // ── D-pad: BPM and looper recording toggles ──────────────────────────────
+    // ── R3 (right stick click) → MIDI panic ──────────────────────────────────
+    {
+        const bool cur = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0;
+        if (debounce(cur, btnRightStick_) && btnRightStick_.prev)
+            rightStickTrig_.store(true);
+    }
+
+    // ── Option (Guide) button → preset-scroll mode toggle ────────────────────
+    optionFrameFired_ = false;
+    {
+        const bool cur = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_GUIDE) != 0;
+        if (debounce(cur, btnOption_) && btnOption_.prev)  // rising edge = button down
+        {
+            presetScrollActive_ = !presetScrollActive_;
+            optionFrameFired_   = true;  // lockout D-pad for this frame
+        }
+    }
+
+    // ── D-pad: BPM delta (normal mode) or PC delta (preset-scroll mode) ──────
+    if (!optionFrameFired_)
     {
         const bool curUp    = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_DPAD_UP)    != 0;
         const bool curDown  = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_DPAD_DOWN)  != 0;
         const bool curLeft  = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_DPAD_LEFT)  != 0;
         const bool curRight = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_DPAD_RIGHT) != 0;
 
-        if (debounce(curUp,    btnDpadUp_)    && btnDpadUp_.prev)    dpadUpTrig_.store(true);
-        if (debounce(curDown,  btnDpadDown_)  && btnDpadDown_.prev)  dpadDownTrig_.store(true);
-        if (debounce(curLeft,  btnDpadLeft_)  && btnDpadLeft_.prev)  dpadLeftTrig_.store(true);
-        if (debounce(curRight, btnDpadRight_) && btnDpadRight_.prev) dpadRightTrig_.store(true);
-    }
-
-    // ── R3 (right stick click) → MIDI panic ──────────────────────────────────
-    {
-        const bool cur = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_RIGHTSTICK) != 0;
-        if (debounce(cur, btnRightStick_) && btnRightStick_.prev)
-            rightStickTrig_.store(true);
+        if (presetScrollActive_)
+        {
+            // Fire on falling edge (button-up): exactly one PC per physical press
+            if (debounce(curUp,   btnDpadUp_)   && !btnDpadUp_.prev)
+                pendingPcDelta_.fetch_add(1,  std::memory_order_relaxed);
+            if (debounce(curDown, btnDpadDown_) && !btnDpadDown_.prev)
+                pendingPcDelta_.fetch_add(-1, std::memory_order_relaxed);
+            // Left/Right keep their existing behaviour (looper rec toggles) — still rising-edge
+            if (debounce(curLeft,  btnDpadLeft_)  && btnDpadLeft_.prev)  dpadLeftTrig_.store(true);
+            if (debounce(curRight, btnDpadRight_) && btnDpadRight_.prev) dpadRightTrig_.store(true);
+        }
+        else
+        {
+            // Normal mode: unchanged rising-edge BPM delta triggers
+            if (debounce(curUp,    btnDpadUp_)    && btnDpadUp_.prev)    dpadUpTrig_.store(true);
+            if (debounce(curDown,  btnDpadDown_)  && btnDpadDown_.prev)  dpadDownTrig_.store(true);
+            if (debounce(curLeft,  btnDpadLeft_)  && btnDpadLeft_.prev)  dpadLeftTrig_.store(true);
+            if (debounce(curRight, btnDpadRight_) && btnDpadRight_.prev) dpadRightTrig_.store(true);
+        }
     }
 }
 
