@@ -123,7 +123,7 @@ Plans:
 | 12. LFO Engine Core | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 13. processBlock Integration + APVTS | v1.4 | Complete    | 2026-02-26 | 2026-02-26 |
 | 14. LFO UI + Beat Clock | v1.4 | 3/3 | Complete | 2026-02-26 |
-| 15. Gamepad Preset Control | v1.5 | 2/2 | Complete | 2026-02-26 |
+| 15. Gamepad Preset Control | v1.5 | Complete    | 2026-02-26 | 2026-02-26 |
 | 16. Distribution | v1.4 | 0/? | Not started | - |
 
 ---

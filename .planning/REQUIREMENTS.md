@@ -34,7 +34,7 @@
 
 - [x] **CTRL-01**: Option button on gamepad toggles "preset scroll" mode; plugin UI shows a visible indicator when mode is active
 - [x] **CTRL-02**: In preset scroll mode, the BPM up/down gamepad controls instead send MIDI Program Change +1 / −1 on a configurable MIDI channel
-- [x] **CTRL-03**: Plugin UI displays the current MIDI program number while preset scroll mode is active
+- [x] **CTRL-03**: Plugin UI shows an active-mode indicator ("OPTION") in the gamepad status area when preset-scroll mode is active (program number display deferred per user decision in 15-CONTEXT.md)
 
 ### Distribution
 
