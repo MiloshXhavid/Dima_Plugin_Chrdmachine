@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.4 LFO + Clock — Phase 14 Plan 02 complete
+**Current focus:** v1.4 LFO + Clock — Phase 14 complete (all 3 plans done)
 
 ## Current Position
 
 Phase: 14 of 15 (LFO UI + Beat Clock)
-Plan: 2 of 3 (Plan 02 complete)
+Plan: 3 of 3 (Plan 03 complete — phase DONE)
 Status: In progress
-Last activity: 2026-02-26 — Phase 14 Plan 02 complete (1120px editor, LFO X/Y panels with full APVTS attachments, sync-toggle Rate swap, beat pulse dot)
+Last activity: 2026-02-26 — Phase 14 Plan 03 complete (7-issue layout overhaul: beat dot on BPM knob, wider LFO panels, axis range knobs under LFO columns, FREE BPM in looper, arp to right column)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -20,10 +20,10 @@ v1.3 Polish [██████████] SHIPPED 2026-02-25
   Phase 09  [██████████]   MIDI Panic            Complete (2/2 plans)
   Phase 10  [██████████]   Trigger Quantization  Complete (5/5 plans)
   Phase 11  [██████████]   UI Polish + Installer Complete (4/4 plans)
-v1.4 LFO    [████████░░] ~60% — Phase 14 in progress
+v1.4 LFO    [██████████] Complete — Phase 14 done
   Phase 12  [██████████]   LFO Engine Core       Complete (2/2 plans done)
   Phase 13  [██████████]   processBlock + APVTS  Complete (1/1 plans done)
-  Phase 14  [██████░░░░]   LFO UI + Beat Clock   In progress (2/3 plans done)
+  Phase 14  [██████████]   LFO UI + Beat Clock   Complete (3/3 plans done)
   Phase 15  [░░░░░░░░░░]   Distribution          Not started
   Phase 16  [░░░░░░░░░░]   Gamepad Preset Ctrl   Not started
 ```
@@ -54,6 +54,10 @@ Recent decisions affecting v1.4:
 - Phase 14-02: SliderParameterAttachment swap on Sync toggle (reset + recreate) — preserves APVTS value traceability vs setRange() alone
 - Phase 14-02: Hidden ToggleButton pattern for LED — zero-alpha button carries ButtonAttachment; mouseDown routes LED hit-area clicks to it
 - Phase 14-02: beatPulse_ drawn adjacent to bpmDisplayLabel_.getRight() in paint() — avoids modifying the label widget
+- Phase 14-03: Beat dot moved to center overlay on randomFreeTempoKnob_ face — more intuitive than text-adjacent dot
+- Phase 14-03: LFO panels widened 130→170px, slider label offset 30→34px — ensures label legibility
+- Phase 14-03: Footer redesigned as full-width 54px strip — eliminates column height mismatch overlap
+- Phase 14-03: FREE BPM knob relocated to looper section; arp block relocated to right column below pads
 
 ### Pending Todos
 
@@ -66,5 +70,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 14-02-PLAN.md (1120px editor, LFO X/Y panels, sync toggle, beat pulse dot — commits c33fc7a + 6968771)
-Next step: Phase 14 Plan 03 (JoystickPad LFO tracking dot via modulatedJoyX_/Y_, human verify)
+Stopped at: Completed 14-03-PLAN.md (7-issue layout overhaul — commits 6fe9d5e + e0cbb58)
+Next step: Phase 15 (Distribution)

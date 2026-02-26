@@ -40,7 +40,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 
 - [x] **Phase 12: LFO Engine Core** — Isolated LFO DSP class (LfoEngine.h/cpp): all 7 waveforms, dual-axis phase accumulators, LCG RNG, distortion, beat detection, audio-thread safety (completed 2026-02-26)
 - [x] **Phase 13: processBlock Integration and APVTS** — Wire LfoEngine into the processor: 16 APVTS params, process() call in processBlock, LFO output applied as additive offset in buildChordParams(), phase reset on DAW start/stop (completed 2026-02-26)
-- [ ] **Phase 14: LFO UI and Beat Clock** — Full LFO panel left of joystick + beat clock dot near Free BPM knob, all controls attached to APVTS
+- [x] **Phase 14: LFO UI and Beat Clock** — Full LFO panel left of joystick + beat clock dot on Free BPM knob face, all controls attached to APVTS (completed 2026-02-26)
 - [ ] **Phase 15: Gamepad Preset Control** — Option button toggles preset-scroll mode; BPM±1 controls send MIDI Program Change; UI shows active mode + current program number
 - [ ] **Phase 16: Distribution** — GitHub v1.4 release with installer binary + release notes; desktop backup
 
@@ -88,7 +88,7 @@ Plans:
 Plans:
 - [x] 14-01-PLAN.md — PluginProcessor.h/cpp: beatOccurred_, modulatedJoyX_/Y_ atomics + processBlock beat detection and modulated position stores (completed 2026-02-26)
 - [x] 14-02-PLAN.md — PluginEditor.h/cpp: 1120px layout, LFO X/Y panel columns, all controls + APVTS attachments, Sync toggle Rate swap (completed 2026-02-26)
-- [ ] 14-03-PLAN.md — PluginEditor.cpp: JoystickPad LFO tracking dot via modulatedJoyX_/Y_, human verify
+- [x] 14-03-PLAN.md — PluginEditor.cpp: JoystickPad LFO tracking dot via modulatedJoyX_/Y_ + 7-issue layout overhaul (completed 2026-02-26)
 
 ### Phase 15: Gamepad Preset Control
 **Goal**: The Option button on the PS/Xbox controller switches the BPM±1 controls into MIDI Program Change mode, with clear UI feedback showing the active mode and current program number
@@ -119,7 +119,7 @@ Plans:
 | 11. UI Polish + Installer | v1.3 | 4/4 | ✅ Shipped | 2026-02-25 |
 | 12. LFO Engine Core | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 13. processBlock Integration + APVTS | v1.4 | Complete    | 2026-02-26 | 2026-02-26 |
-| 14. LFO UI + Beat Clock | v1.4 | 2/3 | In Progress | - |
+| 14. LFO UI + Beat Clock | v1.4 | 3/3 | Complete | 2026-02-26 |
 | 15. Gamepad Preset Control | v1.4 | 0/? | Not started | - |
 | 16. Distribution | v1.4 | 0/? | Not started | - |
 
