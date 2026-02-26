@@ -350,8 +350,20 @@ void JoystickPad::paint(juce::Graphics& g)
     g.drawEllipse(circleRect, 1.5f);
 
     // Cursor dot + crosshair ticks
-    const float cx = (proc_.joystickX.load() + 1.0f) * 0.5f * b.getWidth()  + b.getX();
-    const float cy = (1.0f - (proc_.joystickY.load() + 1.0f) * 0.5f) * b.getHeight() + b.getY();
+    // Use LFO-modulated position when either LFO is active (enabled + level > 0)
+    const bool lfoXActive = *proc_.apvts.getRawParameterValue("lfoXEnabled") > 0.5f
+                         && *proc_.apvts.getRawParameterValue("lfoXLevel")   > 0.0f;
+    const bool lfoYActive = *proc_.apvts.getRawParameterValue("lfoYEnabled") > 0.5f
+                         && *proc_.apvts.getRawParameterValue("lfoYLevel")   > 0.0f;
+    const float displayX = (lfoXActive || lfoYActive)
+        ? proc_.modulatedJoyX_.load(std::memory_order_relaxed)
+        : proc_.joystickX.load(std::memory_order_relaxed);
+    const float displayY = (lfoXActive || lfoYActive)
+        ? proc_.modulatedJoyY_.load(std::memory_order_relaxed)
+        : proc_.joystickY.load(std::memory_order_relaxed);
+
+    const float cx = (displayX + 1.0f) * 0.5f * b.getWidth()  + b.getX();
+    const float cy = (1.0f - (displayY + 1.0f) * 0.5f) * b.getHeight() + b.getY();
 
     constexpr float dotR = 7.0f;
     constexpr float tickLen = 5.0f;
@@ -2234,12 +2246,17 @@ void PluginEditor::paint(juce::Graphics& g)
     }
 
     // ── Beat pulse dot — drawn adjacent to BPM label ──────────────────────────
-    if (bpmDisplayLabel_.isVisible() && beatPulse_ > 0.0f)
+    if (bpmDisplayLabel_.isVisible())
     {
         const auto& lb = bpmDisplayLabel_.getBounds();
         const float dotX = (float)(lb.getRight() + 3);
         const float dotY = (float)(lb.getCentreY()) - 4.0f;
-        g.setColour(Clr::accent.withAlpha(beatPulse_));
+        // Dim grey at beat=0, bright cyan at beat=1.0
+        const juce::Colour offClr = Clr::gateOff;
+        const juce::Colour onClr  = juce::Colour(0xFF00E5FF);  // bright cyan
+        const juce::Colour dotClr = offClr.interpolatedWith(onClr, beatPulse_)
+                                          .withAlpha(0.3f + 0.7f * beatPulse_);
+        g.setColour(dotClr);
         g.fillEllipse(dotX, dotY, 8.0f, 8.0f);
     }
 
