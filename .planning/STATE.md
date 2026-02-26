@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.4 LFO + Clock — Phase 14 Plan 01 complete
+**Current focus:** v1.4 LFO + Clock — Phase 14 Plan 02 complete
 
 ## Current Position
 
 Phase: 14 of 15 (LFO UI + Beat Clock)
-Plan: 1 of 3 (Plan 01 complete)
+Plan: 2 of 3 (Plan 02 complete)
 Status: In progress
-Last activity: 2026-02-26 — Phase 14 Plan 01 complete (beatOccurred_, modulatedJoyX_/Y_ atomics + beat floor-crossing detection in processBlock)
+Last activity: 2026-02-26 — Phase 14 Plan 02 complete (1120px editor, LFO X/Y panels with full APVTS attachments, sync-toggle Rate swap, beat pulse dot)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -23,7 +23,7 @@ v1.3 Polish [██████████] SHIPPED 2026-02-25
 v1.4 LFO    [████████░░] ~60% — Phase 14 in progress
   Phase 12  [██████████]   LFO Engine Core       Complete (2/2 plans done)
   Phase 13  [██████████]   processBlock + APVTS  Complete (1/1 plans done)
-  Phase 14  [███░░░░░░░]   LFO UI + Beat Clock   In progress (1/3 plans done)
+  Phase 14  [██████░░░░]   LFO UI + Beat Clock   In progress (2/3 plans done)
   Phase 15  [░░░░░░░░░░]   Distribution          Not started
   Phase 16  [░░░░░░░░░░]   Gamepad Preset Ctrl   Not started
 ```
@@ -50,6 +50,10 @@ Recent decisions affecting v1.4:
 - Phase 14-01: beatOccurred_ is a sticky bool (audio writes true, UI timer reads + clears) — simpler than a counter for 30 Hz polling
 - Phase 14-01: prevBeatCount_ promoted from static local to private member — static locals cannot be reset on transport events
 - Phase 14-01: effectiveBpm_ reused for free-tempo beat detection — avoids duplicate APVTS read
+- Phase 14-02: Left column fixed at kLeftColW=448 — previous colW/2-4 would have over-widened at 1120px
+- Phase 14-02: SliderParameterAttachment swap on Sync toggle (reset + recreate) — preserves APVTS value traceability vs setRange() alone
+- Phase 14-02: Hidden ToggleButton pattern for LED — zero-alpha button carries ButtonAttachment; mouseDown routes LED hit-area clicks to it
+- Phase 14-02: beatPulse_ drawn adjacent to bpmDisplayLabel_.getRight() in paint() — avoids modifying the label widget
 
 ### Pending Todos
 
@@ -57,10 +61,10 @@ None.
 
 ### Blockers/Concerns
 
-- LFO UI layout decision needed before Phase 14 planning: where do two LFO panels fit in the space-constrained editor? Side panel vs collapsible vs tab. Decide at plan-phase 14 time.
+None.
 
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 14-01-PLAN.md (beatOccurred_/modulatedJoyX_/Y_ atomics + beat detection, commits b2dc1b1 + c262098)
-Next step: Phase 14 Plan 02 (PluginEditor timerCallback + beat pulse dot + JoystickPad LFO tracking)
+Stopped at: Completed 14-02-PLAN.md (1120px editor, LFO X/Y panels, sync toggle, beat pulse dot — commits c33fc7a + 6968771)
+Next step: Phase 14 Plan 03 (JoystickPad LFO tracking dot via modulatedJoyX_/Y_, human verify)

@@ -17,7 +17,7 @@
 - [x] **LFO-08**: User can sync LFO to tempo via a single Sync button — syncs to Free BPM; when DAW sync is also active, follows DAW BPM
 - [x] **LFO-09**: LFO X output modulates joystick X axis as additive offset (output clamped to -1..1)
 - [x] **LFO-10**: LFO Y output modulates joystick Y axis as additive offset (output clamped to -1..1)
-- [ ] **LFO-11**: LFO section is positioned to the left of the joystick pad; joystick shifted right to accommodate
+- [x] **LFO-11**: LFO section is positioned to the left of the joystick pad; joystick shifted right to accommodate
 
 ### Beat Clock
 
@@ -76,7 +76,7 @@
 | LFO-08 | Phase 13 | Complete |
 | LFO-09 | Phase 13 | Complete |
 | LFO-10 | Phase 13 | Complete |
-| LFO-11 | Phase 14 | Pending |
+| LFO-11 | Phase 14 | Complete |
 | CLK-01 | Phase 14 | Complete |
 | CLK-02 | Phase 14 | Complete |
 | PERF-01 | Phase 12 | Complete |

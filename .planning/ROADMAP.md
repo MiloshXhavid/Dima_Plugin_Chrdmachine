@@ -86,9 +86,9 @@ Plans:
   4. Toggling Sync on an LFO panel switches the Rate control label and behavior between Hz display and subdivision steps — no UI glitch or layout shift
 **Plans**: 3 plans
 Plans:
-- [ ] 14-01-PLAN.md — PluginProcessor.h/cpp: beatOccurred_, modulatedJoyX_/Y_ atomics + processBlock beat detection and modulated position stores
-- [ ] 14-02-PLAN.md — PluginEditor.h/cpp: 1120px layout, LFO X/Y panel columns, all controls + APVTS attachments, Sync toggle Rate swap
-- [ ] 14-03-PLAN.md — PluginEditor.cpp: beat clock dot in paint/timerCallback, JoystickPad LFO tracking, human verify
+- [x] 14-01-PLAN.md — PluginProcessor.h/cpp: beatOccurred_, modulatedJoyX_/Y_ atomics + processBlock beat detection and modulated position stores (completed 2026-02-26)
+- [x] 14-02-PLAN.md — PluginEditor.h/cpp: 1120px layout, LFO X/Y panel columns, all controls + APVTS attachments, Sync toggle Rate swap (completed 2026-02-26)
+- [ ] 14-03-PLAN.md — PluginEditor.cpp: JoystickPad LFO tracking dot via modulatedJoyX_/Y_, human verify
 
 ### Phase 15: Gamepad Preset Control
 **Goal**: The Option button on the PS/Xbox controller switches the BPM±1 controls into MIDI Program Change mode, with clear UI feedback showing the active mode and current program number
@@ -119,7 +119,7 @@ Plans:
 | 11. UI Polish + Installer | v1.3 | 4/4 | ✅ Shipped | 2026-02-25 |
 | 12. LFO Engine Core | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 13. processBlock Integration + APVTS | v1.4 | Complete    | 2026-02-26 | 2026-02-26 |
-| 14. LFO UI + Beat Clock | 1/3 | In Progress|  | - |
+| 14. LFO UI + Beat Clock | v1.4 | 2/3 | In Progress | - |
 | 15. Gamepad Preset Control | v1.4 | 0/? | Not started | - |
 | 16. Distribution | v1.4 | 0/? | Not started | - |
 
