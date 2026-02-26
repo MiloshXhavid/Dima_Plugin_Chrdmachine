@@ -56,7 +56,10 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
   3. LFO phase in sync mode is derived from ppqPos (DAW playing) or a sample counter (free mode) — no free-accumulating phase drift on transport stop/start
   4. S&H and Random waveforms use the project's existing LCG pattern (`seed * 1664525u + 1013904223u`), never `std::rand()` — no CRT mutex acquisition on the audio thread
   5. LFO output is computed as a local float value; no write-back to shared `joystickX`/`joystickY` atomics occurs anywhere in LfoEngine
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 12-01-PLAN.md — LfoEngine DSP class: all 7 waveforms, LCG, sync/free modes, S&H boundary detection
+- [ ] 12-02-PLAN.md — Catch2 tests and CMakeLists update: build test target, prove all success criteria
 
 ### Phase 13: processBlock Integration and APVTS
 **Goal**: The LFO modulates joystick X and Y axes during every processBlock call, with all parameters automatable by the DAW host and presets load without breaking v1.3 state
@@ -108,7 +111,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 | 09. MIDI Panic | v1.3 | 2/2 | ✅ Shipped | 2026-02-25 |
 | 10. Trigger Quantization | v1.3 | 5/5 | ✅ Shipped | 2026-02-25 |
 | 11. UI Polish + Installer | v1.3 | 4/4 | ✅ Shipped | 2026-02-25 |
-| 12. LFO Engine Core | v1.4 | 0/? | Not started | - |
+| 12. LFO Engine Core | v1.4 | 0/2 | Planned | - |
 | 13. processBlock Integration + APVTS | v1.4 | 0/? | Not started | - |
 | 14. LFO UI + Beat Clock | v1.4 | 0/? | Not started | - |
 | 15. Distribution | v1.4 | 0/? | Not started | - |
