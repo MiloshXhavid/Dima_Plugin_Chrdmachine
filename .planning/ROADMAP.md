@@ -119,7 +119,7 @@ Plans:
 | 11. UI Polish + Installer | v1.3 | 4/4 | ✅ Shipped | 2026-02-25 |
 | 12. LFO Engine Core | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 13. processBlock Integration + APVTS | v1.4 | Complete    | 2026-02-26 | 2026-02-26 |
-| 14. LFO UI + Beat Clock | v1.4 | 0/3 | Not started | - |
+| 14. LFO UI + Beat Clock | 1/3 | In Progress|  | - |
 | 15. Gamepad Preset Control | v1.4 | 0/? | Not started | - |
 | 16. Distribution | v1.4 | 0/? | Not started | - |
 

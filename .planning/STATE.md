@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.4 LFO + Clock — Phase 13 Plan 01 complete
+**Current focus:** v1.4 LFO + Clock — Phase 14 Plan 01 complete
 
 ## Current Position
 
-Phase: 13 of 15 (processBlock + APVTS integration)
-Plan: 1 of 1 (Plan 01 complete)
+Phase: 14 of 15 (LFO UI + Beat Clock)
+Plan: 1 of 3 (Plan 01 complete)
 Status: In progress
-Last activity: 2026-02-26 — Phase 13 Plan 01 complete (LfoEngine wired into processBlock, 16 APVTS params, 15/15 LfoEngine tests pass)
+Last activity: 2026-02-26 — Phase 14 Plan 01 complete (beatOccurred_, modulatedJoyX_/Y_ atomics + beat floor-crossing detection in processBlock)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -20,10 +20,10 @@ v1.3 Polish [██████████] SHIPPED 2026-02-25
   Phase 09  [██████████]   MIDI Panic            Complete (2/2 plans)
   Phase 10  [██████████]   Trigger Quantization  Complete (5/5 plans)
   Phase 11  [██████████]   UI Polish + Installer Complete (4/4 plans)
-v1.4 LFO    [██████░░░░] ~40% — Phase 13 complete
+v1.4 LFO    [████████░░] ~60% — Phase 14 in progress
   Phase 12  [██████████]   LFO Engine Core       Complete (2/2 plans done)
   Phase 13  [██████████]   processBlock + APVTS  Complete (1/1 plans done)
-  Phase 14  [░░░░░░░░░░]   LFO UI + Beat Clock   Not started
+  Phase 14  [███░░░░░░░]   LFO UI + Beat Clock   In progress (1/3 plans done)
   Phase 15  [░░░░░░░░░░]   Distribution          Not started
   Phase 16  [░░░░░░░░░░]   Gamepad Preset Ctrl   Not started
 ```
@@ -47,6 +47,9 @@ Recent decisions affecting v1.4:
 - Phase 13: chordP declared non-const so LFO can write additive offset to joystickX/Y before pitch compute
 - Phase 13: Skew factor 0.2306f hard-coded for log-scale rate range [0.01,20] Hz midpoint=1Hz — JUCE 8.0.4 lacks getSkewFactorFromMidPoint()
 - Phase 13: Joystick-source voice retriggering with LFO active is intentional — post-LFO chordP drives TriggerSystem deltaX/deltaY
+- Phase 14-01: beatOccurred_ is a sticky bool (audio writes true, UI timer reads + clears) — simpler than a counter for 30 Hz polling
+- Phase 14-01: prevBeatCount_ promoted from static local to private member — static locals cannot be reset on transport events
+- Phase 14-01: effectiveBpm_ reused for free-tempo beat detection — avoids duplicate APVTS read
 
 ### Pending Todos
 
@@ -59,5 +62,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 13-01-PLAN.md (LfoEngine wired into processBlock, 16 APVTS params, commits 1867574 + 56f0108)
-Next step: Phase 14 (LFO UI + Beat Clock)
+Stopped at: Completed 14-01-PLAN.md (beatOccurred_/modulatedJoyX_/Y_ atomics + beat detection, commits b2dc1b1 + c262098)
+Next step: Phase 14 Plan 02 (PluginEditor timerCallback + beat pulse dot + JoystickPad LFO tracking)

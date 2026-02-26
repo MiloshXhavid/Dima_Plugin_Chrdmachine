@@ -21,8 +21,8 @@
 
 ### Beat Clock
 
-- [ ] **CLK-01**: A flashing dot next to the Free BPM knob pulses once per beat (internal free tempo)
-- [ ] **CLK-02**: Beat dot follows DAW clock (pulses on DAW beat) when DAW sync is active
+- [x] **CLK-01**: A flashing dot next to the Free BPM knob pulses once per beat (internal free tempo)
+- [x] **CLK-02**: Beat dot follows DAW clock (pulses on DAW beat) when DAW sync is active
 
 ### Performance & Stability
 
@@ -77,8 +77,8 @@
 | LFO-09 | Phase 13 | Complete |
 | LFO-10 | Phase 13 | Complete |
 | LFO-11 | Phase 14 | Pending |
-| CLK-01 | Phase 14 | Pending |
-| CLK-02 | Phase 14 | Pending |
+| CLK-01 | Phase 14 | Complete |
+| CLK-02 | Phase 14 | Complete |
 | PERF-01 | Phase 12 | Complete |
 | PERF-02 | Phase 12 | Complete |
 | PERF-03 | Phase 12 | Complete |
