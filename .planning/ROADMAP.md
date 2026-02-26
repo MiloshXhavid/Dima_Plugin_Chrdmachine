@@ -39,7 +39,7 @@ Full details: `.planning/milestones/v1.3-ROADMAP.md`
 **Milestone Goal:** Add dual per-axis LFO modulation to the joystick with a beat clock indicator, then ship a clean GitHub release.
 
 - [x] **Phase 12: LFO Engine Core** — Isolated LFO DSP class (LfoEngine.h/cpp): all 7 waveforms, dual-axis phase accumulators, LCG RNG, distortion, beat detection, audio-thread safety (completed 2026-02-26)
-- [ ] **Phase 13: processBlock Integration and APVTS** — Wire LfoEngine into the processor: 14 APVTS params, process() call in processBlock, output applied in buildChordParams(), phase reset on DAW start
+- [ ] **Phase 13: processBlock Integration and APVTS** — Wire LfoEngine into the processor: 16 APVTS params, process() call in processBlock, LFO output applied as additive offset in buildChordParams(), phase reset on DAW start/stop
 - [ ] **Phase 14: LFO UI and Beat Clock** — Full LFO panel left of joystick + beat clock dot near Free BPM knob, all controls attached to APVTS
 - [ ] **Phase 15: Gamepad Preset Control** — Option button toggles preset-scroll mode; BPM±1 controls send MIDI Program Change; UI shows active mode + current program number
 - [ ] **Phase 16: Distribution** — GitHub v1.4 release with installer binary + release notes; desktop backup
@@ -70,8 +70,10 @@ Plans:
   2. Setting LFO enabled to Off stops modulation immediately without any note hanging or stuck output
   3. With DAW sync active and Sync ON, LFO phase locks to DAW beat — restarting transport resets LFO to phase 0
   4. Loading a v1.3 preset produces all existing parameters at their saved values and all new LFO parameters at safe defaults (enabled=false, level=0) — no parameter ID collisions
-  5. All 14 new LFO parameters appear in the DAW automation lane and respond to automation playback
-**Plans**: TBD
+  5. All 16 new LFO parameters appear in the DAW automation lane and respond to automation playback
+**Plans**: 1 plan
+Plans:
+- [ ] 13-01-PLAN.md — PluginProcessor.h/cpp: 16 APVTS params, lfoX_/lfoY_ members, processBlock LFO injection with ramp, prepareToPlay + transport resets
 
 ### Phase 14: LFO UI and Beat Clock
 **Goal**: The player can control both LFOs and see beat timing through the plugin UI without opening the DAW
@@ -112,7 +114,7 @@ Plans:
 | 10. Trigger Quantization | v1.3 | 5/5 | ✅ Shipped | 2026-02-25 |
 | 11. UI Polish + Installer | v1.3 | 4/4 | ✅ Shipped | 2026-02-25 |
 | 12. LFO Engine Core | 2/2 | Complete    | 2026-02-26 | - |
-| 13. processBlock Integration + APVTS | v1.4 | 0/? | Not started | - |
+| 13. processBlock Integration + APVTS | v1.4 | 0/1 | Planned | - |
 | 14. LFO UI + Beat Clock | v1.4 | 0/? | Not started | - |
 | 15. Gamepad Preset Control | v1.4 | 0/? | Not started | - |
 | 16. Distribution | v1.4 | 0/? | Not started | - |
