@@ -1630,53 +1630,113 @@ void PluginEditor::mouseDown(const juce::MouseEvent& e)
 void PluginEditor::resized()
 {
     auto area = getLocalBounds().reduced(8);
-    area.removeFromTop(28);   // header bar
-    area.removeFromBottom(60); // footer instructions
-    const int rowH   = area.getHeight();
+    area.removeFromTop(28);    // header bar
+    area.removeFromBottom(54); // footer instructions (now 54px to reduce overlap risk)
+    const int rowH = area.getHeight();
 
-    // Fixed left column width (448px = same as at 920px window width)
+    // Fixed left column width
     constexpr int kLeftColW = 448;
     auto left = area.removeFromLeft(kLeftColW);
     area.removeFromLeft(8);  // gap between left column and LFO panels
 
-    // LFO X panel column (130px)
-    auto lfoXCol = area.removeFromLeft(130);
+    // LFO X panel column (170px — wider for readability)
+    auto lfoXCol = area.removeFromLeft(170);
     area.removeFromLeft(4);
 
-    // LFO Y panel column (130px)
-    auto lfoYCol = area.removeFromLeft(130);
+    // LFO Y panel column (170px)
+    auto lfoYCol = area.removeFromLeft(170);
     area.removeFromLeft(4);
 
-    // Remaining right area (joystick + knobs + pads)
+    // Remaining right area (joystick + pads + arp + gamepad/filter controls)
     auto right = area;
 
-    dividerX_ = lfoXCol.getX();  // stays at ~464px from window left
+    dividerX_ = lfoXCol.getX();  // used in paint() for vertical divider
 
     // ── RIGHT COLUMN ──────────────────────────────────────────────────────────
 
     // Joystick pad — square, centered horizontally in the right column
-    const int padSize = juce::jmin(right.getWidth(), 300);
+    const int padSize = juce::jmin(right.getWidth(), 290);
     {
         auto padRow = right.removeFromTop(padSize);
         const int padX = padRow.getX() + (padRow.getWidth() - padSize) / 2;
         joystickPad_.setBounds(padX, padRow.getY(), padSize, padSize);
     }
 
-    right.removeFromTop(36);
+    right.removeFromTop(6);
 
-    // Knob row: X Range | Y Range | CUTOFF group | RESONANCE group
-    // Each filter group splits 40% (Atten, small) + 60% (Base, main).
+    // Touchplates + hold buttons (HOLD overlaid on top 18px of each pad)
+    {
+        auto row = right.removeFromTop(70);
+        const int pw = (row.getWidth() - 9) / 4;
+        juce::Component* pads[4] = { &padRoot_, &padThird_, &padFifth_, &padTension_ };
+        for (int v = 0; v < 4; ++v)
+        {
+            auto b = row.removeFromLeft(pw);
+            pads[v]->setBounds(b);
+            padHoldBtn_[v].setBounds(b.removeFromTop(18).reduced(2, 2));
+            if (v < 3) row.removeFromLeft(3);
+        }
+    }
+
+    right.removeFromTop(3);
+
+    // Global ALL pad (wide bar spanning the full width of the individual pads)
+    {
+        auto row = right.removeFromTop(32);
+        padAll_.setBounds(row);
+    }
+
+    right.removeFromTop(4);
+
+    // Arpeggiator block — in the middle column, below the pads
+    // Layout: [ARP ON/OFF button full-width]
+    //         [RATE label | ORDER label | GATE% label]
+    //         [RATE combo | ORDER combo | GATE slider]
+    {
+        constexpr int kArpH = 74;
+        auto r = right.removeFromTop(kArpH);
+        arpBlockBounds_ = r;
+        r.removeFromTop(4);
+        arpEnabledBtn_.setBounds(r.removeFromTop(22));
+        r.removeFromTop(4);
+        const int third = r.getWidth() / 3;
+        auto labelRow = r.removeFromTop(14);
+        arpSubdivLabel_.setBounds(labelRow.removeFromLeft(third));
+        arpOrderLabel_ .setBounds(labelRow.removeFromLeft(third));
+        arpGateTimeLabel_.setBounds(labelRow);
+        auto comboRow = r.removeFromTop(22);
+        arpSubdivBox_    .setBounds(comboRow.removeFromLeft(third).reduced(1, 0));
+        arpOrderBox_     .setBounds(comboRow.removeFromLeft(third).reduced(1, 0));
+        arpGateTimeKnob_ .setBounds(comboRow.reduced(1, 0));
+    }
+
+    right.removeFromTop(6);
+
+    // Gamepad status row: [GAMEPAD ON/OFF] [FILTER MOD ON/OFF] [REC FILTER] [PANIC]
+    {
+        auto row = right.removeFromTop(20);
+        gamepadActiveBtn_.setBounds(row.removeFromLeft(90));
+        row.removeFromLeft(4);
+        filterModBtn_.setBounds(row.removeFromLeft(90));
+        row.removeFromLeft(4);
+        filterRecBtn_.setBounds(row.removeFromLeft(58));
+        row.removeFromLeft(4);
+        panicBtn_.setBounds(row.removeFromRight(60));
+        row.removeFromRight(4);
+        gamepadStatusLabel_.setBounds(row);
+    }
+
+    // Left-stick axis mode combos
+    right.removeFromTop(12);
+    filterYModeBox_.setBounds(right.removeFromTop(22));
+    right.removeFromTop(10);
+    filterXModeBox_.setBounds(right.removeFromTop(22));
+
+    // CUTOFF / RESONANCE filter knob groups
+    right.removeFromTop(8);
     {
         auto row = right.removeFromTop(90);
-        const int colW = (row.getWidth() - 9) / 4;  // 4 equal columns, 3 gaps × 3px
-
-        // X Range
-        { auto col = row.removeFromLeft(colW); row.removeFromLeft(3);
-          joyXAttenLabel_.setBounds(col.removeFromTop(14)); joyXAttenKnob_.setBounds(col); }
-
-        // Y Range
-        { auto col = row.removeFromLeft(colW); row.removeFromLeft(3);
-          joyYAttenLabel_.setBounds(col.removeFromTop(14)); joyYAttenKnob_.setBounds(col); }
+        const int colW = (row.getWidth() - 3) / 2;
 
         // CUTOFF group: Atten (left 40%) | Base (right 60%)
         {
@@ -1701,64 +1761,13 @@ void PluginEditor::resized()
         }
     }
 
-    right.removeFromTop(4);
-
-    // Touchplates + hold buttons (HOLD overlaid on top 18px of each pad)
-    {
-        auto row = right.removeFromTop(70);
-        const int pw = (row.getWidth() - 9) / 4;
-        juce::Component* pads[4] = { &padRoot_, &padThird_, &padFifth_, &padTension_ };
-        for (int v = 0; v < 4; ++v)
-        {
-            auto b = row.removeFromLeft(pw);
-            pads[v]->setBounds(b);
-            padHoldBtn_[v].setBounds(b.removeFromTop(18).reduced(2, 2));
-            if (v < 3) row.removeFromLeft(3);
-        }
-    }
-
-    right.removeFromTop(3);
-
-    // Global ALL pad (wide bar spanning the full width of the individual pads)
-    {
-        auto row = right.removeFromTop(36);
-        padAll_.setBounds(row);
-    }
-
-    right.removeFromTop(6);
-
-    // Gamepad status row: [GAMEPAD ON/OFF] [FILTER MOD ON/OFF] [status label]
-    {
-        auto row = right.removeFromTop(20);
-        gamepadActiveBtn_.setBounds(row.removeFromLeft(90));
-        row.removeFromLeft(4);
-        filterModBtn_.setBounds(row.removeFromLeft(90));
-        row.removeFromLeft(4);
-        filterRecBtn_.setBounds(row.removeFromLeft(58));
-        row.removeFromLeft(4);
-        panicBtn_.setBounds(row.removeFromRight(60));  // right-aligned, 60px wide
-        row.removeFromRight(4);                         // 4px gap between label and button
-        gamepadStatusLabel_.setBounds(row);             // remainder to status label
-    }
-
-    // GAMEPAD panel bounds not used — right column panels removed (label conflicts)
-
-    // Left-stick axis mode combos — grouped under the FILTER MOD button
-    // (greyed out when FILTER MOD is OFF)
+    // Joystick gate time + threshold sliders
     right.removeFromTop(12);
-    filterYModeBox_.setBounds(right.removeFromTop(22));
-    right.removeFromTop(12);
-    filterXModeBox_.setBounds(right.removeFromTop(22));
-
-    // Joystick gate time + threshold sliders (labels drawn via drawAbove in paint())
-    right.removeFromTop(14);
     gateTimeSlider_  .setBounds(right.removeFromTop(18));
     right.removeFromTop(10);
     thresholdSlider_ .setBounds(right.removeFromTop(18));
 
-    // FILTER MOD panel bounds not used — right column panels removed (label conflicts)
-
-    // Filter Mod hint is now drawn directly in paint() aligned with the left footer rows.
+    // Filter Mod hint is drawn directly in paint()
     filterModHintLabel_.setBounds(0, 0, 0, 0);
 
     // ── LEFT COLUMN ───────────────────────────────────────────────────────────
@@ -1840,31 +1849,20 @@ void PluginEditor::resized()
 
         left.removeFromTop(14);
 
-        // Random controls row — [DENS] | [GATE] | [RND SYNC (round)] | [FREE BPM knob]
+        // Random controls row — [DENS] | [GATE] | [RND SYNC (round)] (3 cols only)
+        // FREE BPM knob has moved to the looper section
         {
             auto rndRow = left.removeFromTop(60);
             randomDensityKnob_ .setBounds(rndRow.removeFromLeft(cw));
             randomGateTimeKnob_.setBounds(rndRow.removeFromLeft(cw));
-            randomSyncButton_  .setBounds(rndRow.removeFromLeft(cw));  // round button, 3rd col
-            randomFreeTempoKnob_.setBounds(rndRow);                    // FREE BPM, 4th col
-        }
-
-        // BPM display: under FREE BPM knob (4th column)
-        {
-            auto bpmRow = left.removeFromTop(16);
-            bpmRow.removeFromLeft(cw * 3);          // skip DENS + GATE + SYNC columns
-            bpmDisplayLabel_.setBounds(bpmRow);
+            randomSyncButton_  .setBounds(rndRow.removeFromLeft(cw));
+            // 4th col intentionally left empty — FREE BPM is now in looper section
         }
     }
 
     left.removeFromTop(6);
 
-    // Reserve ARP block at the very bottom of the left column before the looper
-    // consumes the rest. Height: 6 gap + 22 button + 4 gap + 14 label + 22 combo = 68px.
-    constexpr int kArpH = 68;
-    arpBlockBounds_ = left.removeFromBottom(kArpH);
-
-    // Looper
+    // Looper — uses all remaining left column space
     {
         auto section = left;
 
@@ -1890,14 +1888,14 @@ void PluginEditor::resized()
 
         section.removeFromTop(4);
 
-        // Looper position bar — 4px strip between mode buttons and subdiv/length controls
+        // Looper position bar — 4px strip
         looperPositionBarBounds_ = section.removeFromTop(4);
-        section.removeFromTop(4);  // 4px gap after bar before subdiv row
+        section.removeFromTop(4);
 
         // Subdiv + length: narrow combo for time sig, slider for bars
         {
             auto ctrlRow = section.removeFromTop(46);
-            const int subdivW = 58;  // enough for "11/8" + arrow
+            const int subdivW = 58;
 
             auto col1 = ctrlRow.removeFromLeft(subdivW);
             loopSubdivLabel_.setBounds(col1.removeFromTop(14));
@@ -1914,7 +1912,7 @@ void PluginEditor::resized()
         {
             auto qRow = section.removeFromTop(20);
             constexpr int qBtnW = 32;
-            constexpr int qDropW = 58;  // widened from 48 — "1/32" was truncated at 48px
+            constexpr int qDropW = 58;
             constexpr int qGap = 2;
 
             quantizeOffBtn_ .setBounds(qRow.removeFromLeft(qBtnW)); qRow.removeFromLeft(qGap);
@@ -1923,139 +1921,159 @@ void PluginEditor::resized()
             quantizeSubdivBox_.setBounds(qRow.removeFromLeft(qDropW));
         }
 
-        // Looper panel bounds — computed from actual control bounds after layout
+        section.removeFromTop(6);
+
+        // FREE BPM row: [RND SYNC (round)] | [FREE BPM knob] | [BPM display label]
+        // Now lives inside the looper section to keep it near the BPM context
+        {
+            auto bpmRow = section.removeFromTop(60);
+            const int colW4 = bpmRow.getWidth() / 4;
+            // Place free tempo knob in col 0-1
+            randomFreeTempoKnob_.setBounds(bpmRow.removeFromLeft(colW4 * 2));
+            // BPM display label in col 2-3
+            {
+                auto bpmLabelArea = bpmRow;
+                bpmDisplayLabel_.setBounds(bpmLabelArea.removeFromTop(16).removeFromLeft(colW4 * 2 - 4));
+            }
+        }
+
+        // Looper panel bounds — expanded to include the FREE BPM row
         looperPanelBounds_ = loopPlayBtn_.getBounds()
-            .getUnion(quantizeSubdivBox_.getBounds())
+            .getUnion(randomFreeTempoKnob_.getBounds())
             .withX(left.getX())
             .withWidth(left.getWidth())
             .expanded(0, 4);
     }
 
-    // Arpeggiator block — bottom-left panel
-    // Layout: [ARP ON/OFF button full-width]
-    //         [RATE label | ORDER label | GATE% label]
-    //         [RATE combo | ORDER combo | GATE slider]
-    {
-        auto r = arpBlockBounds_;
-        r.removeFromTop(6);  // gap from looper
-        arpEnabledBtn_.setBounds(r.removeFromTop(22));
-        r.removeFromTop(4);
-        const int third = r.getWidth() / 3;
-        auto labelRow = r.removeFromTop(14);
-        arpSubdivLabel_.setBounds(labelRow.removeFromLeft(third));
-        arpOrderLabel_ .setBounds(labelRow.removeFromLeft(third));
-        arpGateTimeLabel_.setBounds(labelRow);
-        auto comboRow = r.removeFromTop(22);
-        arpSubdivBox_    .setBounds(comboRow.removeFromLeft(third).reduced(1, 0));
-        arpOrderBox_     .setBounds(comboRow.removeFromLeft(third).reduced(1, 0));
-        arpGateTimeKnob_ .setBounds(comboRow.reduced(1, 0));
-    }
-
     // ── LFO X panel layout ─────────────────────────────────────────────────────
+    // Panels use the full column height (same as joystick pad column = rowH)
+    // X Range knob placed below the LFO X panel
     {
-        // Start from top of lfoXCol (aligned with the joystick area)
+        // Compute LFO panel height: leave 94px at bottom for X Range knob + label
+        constexpr int kRangeKnobH = 90;  // label 14 + knob 76
         auto col = lfoXCol;
-        col.removeFromTop(14);  // clear header area
+
+        // LFO panel takes the top portion
+        auto lfoArea = col.removeFromTop(col.getHeight() - kRangeKnobH - 4);
+        auto rangeArea = col;
+        rangeArea.removeFromTop(4);
+
+        // X Range knob below the LFO X panel
+        joyXAttenLabel_.setBounds(rangeArea.removeFromTop(14));
+        joyXAttenKnob_.setBounds(rangeArea);
+
+        // Layout LFO controls inside lfoArea
+        lfoArea.removeFromTop(14);  // clear header area
 
         // Row 1: Shape ComboBox (full width)
-        lfoXShapeBox_.setBounds(col.removeFromTop(22));
-        col.removeFromTop(4);
+        lfoXShapeBox_.setBounds(lfoArea.removeFromTop(22));
+        lfoArea.removeFromTop(4);
 
-        // Row 2: Rate slider (left 30px = label space in paint())
+        // Row 2: Rate slider (left 34px = label space)
         {
-            auto row = col.removeFromTop(18);
-            row.removeFromLeft(30);
+            auto row = lfoArea.removeFromTop(18);
+            row.removeFromLeft(34);
             lfoXRateSlider_.setBounds(row);
         }
-        col.removeFromTop(4);
+        lfoArea.removeFromTop(4);
 
         // Row 3: Phase slider
         {
-            auto row = col.removeFromTop(18);
-            row.removeFromLeft(30);
+            auto row = lfoArea.removeFromTop(18);
+            row.removeFromLeft(34);
             lfoXPhaseSlider_.setBounds(row);
         }
-        col.removeFromTop(4);
+        lfoArea.removeFromTop(4);
 
         // Row 4: Level slider
         {
-            auto row = col.removeFromTop(18);
-            row.removeFromLeft(30);
+            auto row = lfoArea.removeFromTop(18);
+            row.removeFromLeft(34);
             lfoXLevelSlider_.setBounds(row);
         }
-        col.removeFromTop(4);
+        lfoArea.removeFromTop(4);
 
         // Row 5: Distortion slider
         {
-            auto row = col.removeFromTop(18);
-            row.removeFromLeft(30);
+            auto row = lfoArea.removeFromTop(18);
+            row.removeFromLeft(34);
             lfoXDistSlider_.setBounds(row);
         }
-        col.removeFromTop(4);
+        lfoArea.removeFromTop(6);
 
         // Row 6: SYNC button (full width)
-        lfoXSyncBtn_.setBounds(col.removeFromTop(22));
+        lfoXSyncBtn_.setBounds(lfoArea.removeFromTop(24));
 
-        // Panel bounds: wraps from ShapeBox top to SyncBtn bottom, full column width + padding
+        // Panel bounds: from ShapeBox top to SyncBtn bottom, full column width
         lfoXPanelBounds_ = lfoXShapeBox_.getBounds()
                               .getUnion(lfoXSyncBtn_.getBounds())
                               .withX(lfoXCol.getX())
                               .withWidth(lfoXCol.getWidth())
                               .expanded(0, 10);
 
-        // LED bounds: top-right of panel header (8px circle + hit area 12x12)
+        // LED bounds: top-right of panel header
         lfoXLedBounds_ = juce::Rectangle<int>(
             lfoXPanelBounds_.getRight() - 18,
             lfoXPanelBounds_.getY() + 1,
             12, 12);
 
-        // Hidden button: placed over LED for accessibility
         lfoXEnabledHiddenBtn_.setBounds(lfoXLedBounds_);
     }
 
     // ── LFO Y panel layout ─────────────────────────────────────────────────────
+    // Y Range knob placed below the LFO Y panel
     {
+        constexpr int kRangeKnobH = 90;
         auto col = lfoYCol;
-        col.removeFromTop(14);  // clear header area
 
-        // Row 1: Shape ComboBox (full width)
-        lfoYShapeBox_.setBounds(col.removeFromTop(22));
-        col.removeFromTop(4);
+        auto lfoArea = col.removeFromTop(col.getHeight() - kRangeKnobH - 4);
+        auto rangeArea = col;
+        rangeArea.removeFromTop(4);
+
+        // Y Range knob below the LFO Y panel
+        joyYAttenLabel_.setBounds(rangeArea.removeFromTop(14));
+        joyYAttenKnob_.setBounds(rangeArea);
+
+        lfoArea.removeFromTop(14);
+
+        // Row 1: Shape ComboBox
+        lfoYShapeBox_.setBounds(lfoArea.removeFromTop(22));
+        lfoArea.removeFromTop(4);
 
         // Row 2: Rate slider
         {
-            auto row = col.removeFromTop(18);
-            row.removeFromLeft(30);
+            auto row = lfoArea.removeFromTop(18);
+            row.removeFromLeft(34);
             lfoYRateSlider_.setBounds(row);
         }
-        col.removeFromTop(4);
+        lfoArea.removeFromTop(4);
 
         // Row 3: Phase slider
         {
-            auto row = col.removeFromTop(18);
-            row.removeFromLeft(30);
+            auto row = lfoArea.removeFromTop(18);
+            row.removeFromLeft(34);
             lfoYPhaseSlider_.setBounds(row);
         }
-        col.removeFromTop(4);
+        lfoArea.removeFromTop(4);
 
         // Row 4: Level slider
         {
-            auto row = col.removeFromTop(18);
-            row.removeFromLeft(30);
+            auto row = lfoArea.removeFromTop(18);
+            row.removeFromLeft(34);
             lfoYLevelSlider_.setBounds(row);
         }
-        col.removeFromTop(4);
+        lfoArea.removeFromTop(4);
 
         // Row 5: Distortion slider
         {
-            auto row = col.removeFromTop(18);
-            row.removeFromLeft(30);
+            auto row = lfoArea.removeFromTop(18);
+            row.removeFromLeft(34);
             lfoYDistSlider_.setBounds(row);
         }
-        col.removeFromTop(4);
+        lfoArea.removeFromTop(6);
 
-        // Row 6: SYNC button (full width)
-        lfoYSyncBtn_.setBounds(col.removeFromTop(22));
+        // Row 6: SYNC button
+        lfoYSyncBtn_.setBounds(lfoArea.removeFromTop(24));
 
         // Panel bounds
         lfoYPanelBounds_ = lfoYShapeBox_.getBounds()
@@ -2220,13 +2238,14 @@ void PluginEditor::paint(juce::Graphics& g)
     drawLfoPanel(lfoYPanelBounds_, "LFO Y", lfoYEnabled);
 
     // LFO slider row labels (Rate, Phase, Level, Dist)
+    // 34px left offset matches resized() which removes 34px for label space
     auto drawSliderLabel = [&](juce::Rectangle<int> sliderBounds, const juce::String& text)
     {
-        g.setFont(juce::Font(9.0f));
-        g.setColour(Clr::textDim);
+        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 9.5f, juce::Font::plain));
+        g.setColour(Clr::textDim.brighter(0.2f));
         g.drawText(text,
-                   sliderBounds.getX() - 30, sliderBounds.getY(),
-                   28, sliderBounds.getHeight(),
+                   sliderBounds.getX() - 34, sliderBounds.getY(),
+                   32, sliderBounds.getHeight(),
                    juce::Justification::right);
     };
 
@@ -2245,19 +2264,20 @@ void PluginEditor::paint(juce::Graphics& g)
         drawSliderLabel(lfoYDistSlider_.getBounds(),  "Dst");
     }
 
-    // ── Beat pulse dot — drawn adjacent to BPM label ──────────────────────────
-    if (bpmDisplayLabel_.isVisible())
+    // ── Beat pulse dot — drawn centered on the FREE BPM knob face ───────────
+    // Overlaid on the knob so the beat is visually associated with tempo control.
+    if (randomFreeTempoKnob_.isVisible() && !randomFreeTempoKnob_.getBounds().isEmpty())
     {
-        const auto& lb = bpmDisplayLabel_.getBounds();
-        const float dotX = (float)(lb.getRight() + 3);
-        const float dotY = (float)(lb.getCentreY()) - 4.0f;
-        // Dim grey at beat=0, bright cyan at beat=1.0
-        const juce::Colour offClr = Clr::gateOff;
+        const auto kb = randomFreeTempoKnob_.getBounds();
+        const float kCx = (float)kb.getCentreX();
+        const float kCy = (float)kb.getCentreY();
+        // Dim grey at beatPulse_=0, bright cyan at 1.0
+        const juce::Colour offClr = Clr::gateOff.brighter(0.15f);
         const juce::Colour onClr  = juce::Colour(0xFF00E5FF);  // bright cyan
         const juce::Colour dotClr = offClr.interpolatedWith(onClr, beatPulse_)
-                                          .withAlpha(0.3f + 0.7f * beatPulse_);
+                                          .withAlpha(0.35f + 0.65f * beatPulse_);
         g.setColour(dotClr);
-        g.fillEllipse(dotX, dotY, 8.0f, 8.0f);
+        g.fillEllipse(kCx - 4.0f, kCy - 4.0f, 8.0f, 8.0f);
     }
 
     // ── Looper position bar ───────────────────────────────────────────────────
@@ -2329,60 +2349,62 @@ void PluginEditor::paint(juce::Graphics& g)
                    juce::Justification::left);
     }
 
-    // ── Footer: how-to-use instructions (left column only) ───────────────────
+    // ── Footer: how-to-use instructions ──────────────────────────────────────
+    // Footer occupies the bottom 54px of the window, spanning the full width.
+    // Drawn below the 54px reserved in resized() to avoid any control overlap.
     {
-        // Constrain to left column — same right edge as the column divider
-        const int footerRight = joystickPad_.isVisible() ? (joystickPad_.getX() - 4) : getWidth();
-        auto footer = juce::Rectangle<int>(0, getHeight() - 60, footerRight, 60).reduced(8, 0);
+        const int footerY = getHeight() - 54;
+        const int footerW = getWidth() - 16;
+        auto footer = juce::Rectangle<int>(8, footerY, footerW, 54);
 
         // Separator line
         g.setColour(Clr::accent.withAlpha(0.5f));
         g.drawLine((float)footer.getX(), (float)footer.getY() + 1.0f,
                    (float)footer.getRight(), (float)footer.getY() + 1.0f, 1.0f);
 
-        footer.removeFromTop(5);
+        footer.removeFromTop(6);
 
         g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 9.5f, juce::Font::plain));
         g.setColour(Clr::textDim.withAlpha(0.8f));
 
-        // 3 rows × 2 columns — each column is half the footer width so long text fits
-        auto drawRow = [&](const juce::String& left, const juce::String& right)
+        // 3 rows of instructions — 2-column layout for left half
+        // Right half shows filter mod hints side by side
+        const int halfW = footer.getWidth() / 2;
+
+        // Left half: quick-start steps
         {
-            auto row = footer.removeFromTop(14);
-            const int w = row.getWidth() / 2;
-            g.drawFittedText(left,  row.getX(),     row.getY(), w, row.getHeight(),
-                             juce::Justification::centredLeft, 1, 0.75f);
-            g.drawFittedText(right, row.getX() + w, row.getY(), w, row.getHeight(),
-                             juce::Justification::centredLeft, 1, 0.75f);
-            footer.removeFromTop(3);
-        };
+            auto leftFooter = footer.withWidth(halfW);
+            auto drawRow = [&](const juce::String& col1, const juce::String& col2)
+            {
+                auto row = leftFooter.removeFromTop(14);
+                const int w = row.getWidth() / 2;
+                g.drawFittedText(col1, row.getX(),     row.getY(), w, row.getHeight(),
+                                 juce::Justification::centredLeft, 1, 0.75f);
+                g.drawFittedText(col2, row.getX() + w, row.getY(), w, row.getHeight(),
+                                 juce::Justification::centredLeft, 1, 0.75f);
+                leftFooter.removeFromTop(3);
+            };
+            drawRow("1. Plugin in MIDI Track",                            "2. Synth in separate Track");
+            drawRow("3. Set MIDI In of Synth Track to Plugin MIDI Track", "4. Arm Rec on Synth Track");
+            drawRow("5. Set Synth Env. Sustain high",                     "6. Have fun!");
+        }
 
-        drawRow("1. Plugin in MIDI Track",                              "2. Synth in separate Track");
-        drawRow("3. Set MIDI In of Synth Track to Plugin MIDI Track",   "4. Arm Rec on Synth Track");
-        drawRow("5. Set Synth Env. Sustain high",                       "6. Have fun!");
-    }
-
-    // ── Footer: filter mod hint (right column, aligned with left footer rows) ───
-    // Drawn here so the first line shares the same Y as "1. Plugin in MIDI Track",
-    // and subsequent lines share the same 14px-row + 3px-gap spacing.
-    if (joystickPad_.isVisible())
-    {
-        const int rx = dividerX_ + 8;
-        const int rw = getWidth() - rx - 8;
-        int ry = getHeight() - 55;  // identical to first left-footer row Y
-
-        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 9.5f, juce::Font::plain));
+        // Right half: filter mod hint
         g.setColour(Clr::textDim.brighter(0.3f));
-
-        const juce::String hintRows[] = {
-            "Left stick sends filter CC to your synth.",
-            "Filter Mod enables it. REC FILTER records into looper.",
-            "Turn OFF for live filter control during playback."
-        };
-        for (const auto& line : hintRows)
         {
-            g.drawFittedText(line, rx, ry, rw, 14, juce::Justification::centredLeft, 1, 0.75f);
-            ry += 17;  // 14px row + 3px gap — matches left footer spacing exactly
+            auto rightFooter = footer.withX(footer.getX() + halfW).withWidth(halfW);
+            const juce::String hintRows[] = {
+                "Left stick sends filter CC to your synth.",
+                "Filter Mod enables it. REC FILTER records into looper.",
+                "Turn OFF for live filter control during playback."
+            };
+            for (const auto& line : hintRows)
+            {
+                auto row = rightFooter.removeFromTop(14);
+                g.drawFittedText(line, row.getX(), row.getY(), row.getWidth(), row.getHeight(),
+                                 juce::Justification::centredLeft, 1, 0.75f);
+                rightFooter.removeFromTop(3);
+            }
         }
     }
 
@@ -2625,13 +2647,9 @@ void PluginEditor::timerCallback()
     else if (beatPulse_ > 0.0f)
         beatPulse_ = juce::jmax(0.0f, beatPulse_ - 0.11f);
 
-    // Repaint BPM label area to update beat dot
-    if (!bpmDisplayLabel_.getBounds().isEmpty())
-    {
-        auto dotArea = bpmDisplayLabel_.getBounds().withLeft(
-            bpmDisplayLabel_.getRight()).withWidth(14).expanded(2, 2);
-        repaint(dotArea);
-    }
+    // Repaint FREE BPM knob area to update the centered beat dot overlay
+    if (!randomFreeTempoKnob_.getBounds().isEmpty())
+        repaint(randomFreeTempoKnob_.getBounds().expanded(2, 2));
 
     // Repaint LFO panel LED areas (enabled state may change)
     if (!lfoXPanelBounds_.isEmpty()) repaint(lfoXPanelBounds_.removeFromTop(16));
