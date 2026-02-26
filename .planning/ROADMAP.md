@@ -91,14 +91,17 @@ Plans:
 - [x] 14-03-PLAN.md — PluginEditor.cpp: JoystickPad LFO tracking dot via modulatedJoyX_/Y_ + 7-issue layout overhaul (completed 2026-02-26)
 
 ### Phase 15: Gamepad Preset Control
-**Goal**: The Option button on the PS/Xbox controller switches the BPM±1 controls into MIDI Program Change mode, with clear UI feedback showing the active mode and current program number
+**Goal**: The Option button on the PS/Xbox controller switches the BPM±1 controls into MIDI Program Change mode, with a subtle "OPTION" indicator in the gamepad status area of the plugin UI
 **Depends on**: Phase 14 (UI framework in place)
 **Requirements**: CTRL-01, CTRL-02, CTRL-03
 **Success Criteria** (what must be TRUE):
   1. Pressing the Option button activates preset-scroll mode and a visible indicator appears in the plugin UI; pressing again deactivates it
   2. In preset-scroll mode, the gamepad controls that normally increment/decrement BPM instead send MIDI Program Change +1 / −1 on the configured MIDI channel — verified in DAW MIDI monitor
-  3. The plugin UI displays the current program number (0–127) while preset-scroll mode is active; number updates on each Program Change sent
-**Plans**: TBD
+  3. The plugin UI shows an "OPTION" suffix on the gamepad status label in highlight color when preset-scroll mode is active
+**Plans**: 2 plans
+Plans:
+- [ ] 15-01-PLAN.md — GamepadInput.h/cpp: Option/Guide button toggle, presetScrollActive_, consumePcDelta(), one-frame lockout
+- [ ] 15-02-PLAN.md — PluginProcessor.h/cpp: program counter + PC message routing; PluginEditor.cpp: OPTION indicator in gamepadStatusLabel_
 
 ### Phase 16: Distribution
 **Goal**: v1.4 is publicly released on GitHub and backed up locally
@@ -120,7 +123,7 @@ Plans:
 | 12. LFO Engine Core | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 13. processBlock Integration + APVTS | v1.4 | Complete    | 2026-02-26 | 2026-02-26 |
 | 14. LFO UI + Beat Clock | v1.4 | 3/3 | Complete | 2026-02-26 |
-| 15. Gamepad Preset Control | v1.4 | 0/? | Not started | - |
+| 15. Gamepad Preset Control | v1.4 | 0/2 | Not started | - |
 | 16. Distribution | v1.4 | 0/? | Not started | - |
 
 ---
