@@ -100,7 +100,7 @@ Plans:
   3. The plugin UI shows an "OPTION" suffix on the gamepad status label in highlight color when preset-scroll mode is active
 **Plans**: 2 plans
 Plans:
-- [ ] 15-01-PLAN.md — GamepadInput.h/cpp: Option/Guide button toggle, presetScrollActive_, consumePcDelta(), one-frame lockout
+- [x] 15-01-PLAN.md — GamepadInput.h/cpp: Option/Guide button toggle, presetScrollActive_, consumePcDelta(), one-frame lockout (completed 2026-02-26)
 - [ ] 15-02-PLAN.md — PluginProcessor.h/cpp: program counter + PC message routing; PluginEditor.cpp: OPTION indicator in gamepadStatusLabel_
 
 ### Phase 16: Distribution
@@ -123,7 +123,7 @@ Plans:
 | 12. LFO Engine Core | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 13. processBlock Integration + APVTS | v1.4 | Complete    | 2026-02-26 | 2026-02-26 |
 | 14. LFO UI + Beat Clock | v1.4 | 3/3 | Complete | 2026-02-26 |
-| 15. Gamepad Preset Control | v1.4 | 0/2 | Not started | - |
+| 15. Gamepad Preset Control | v1.4 | 1/2 | In progress | - |
 | 16. Distribution | v1.4 | 0/? | Not started | - |
 
 ---

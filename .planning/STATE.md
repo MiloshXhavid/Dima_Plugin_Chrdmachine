@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-26)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.4 LFO + Clock — Phase 14 complete (all 3 plans done)
+**Current focus:** v1.5 Gamepad Preset Control — Phase 15 in progress
 
 ## Current Position
 
-Phase: 14 of 15 (LFO UI + Beat Clock)
-Plan: 3 of 3 (Plan 03 complete — phase DONE)
+Phase: 15 of 15 (Gamepad Preset Control)
+Plan: 1 of 2 (Plan 01 complete — GamepadInput SDL layer done)
 Status: In progress
-Last activity: 2026-02-26 — Phase 14 Plan 03 complete (7-issue layout overhaul: beat dot on BPM knob, wider LFO panels, axis range knobs under LFO columns, FREE BPM in looper, arp to right column)
+Last activity: 2026-02-26 — Phase 15 Plan 01 complete (Option/Guide button preset-scroll toggle + D-pad PC delta in GamepadInput)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -24,8 +24,8 @@ v1.4 LFO    [██████████] Complete — Phase 14 done
   Phase 12  [██████████]   LFO Engine Core       Complete (2/2 plans done)
   Phase 13  [██████████]   processBlock + APVTS  Complete (1/1 plans done)
   Phase 14  [██████████]   LFO UI + Beat Clock   Complete (3/3 plans done)
-  Phase 15  [░░░░░░░░░░]   Distribution          Not started
-  Phase 16  [░░░░░░░░░░]   Gamepad Preset Ctrl   Not started
+v1.5 Preset [█░░░░░░░░░]   In progress
+  Phase 15  [█░░░░░░░░░]   Gamepad Preset Ctrl   In progress (1/2 plans done)
 ```
 
 ## Accumulated Context
@@ -59,6 +59,12 @@ Recent decisions affecting v1.4:
 - Phase 14-03: Footer redesigned as full-width 54px strip — eliminates column height mismatch overlap
 - Phase 14-03: FREE BPM knob relocated to looper section; arp block relocated to right column below pads
 
+Recent decisions affecting v1.5:
+- Phase 15-01: SDL_CONTROLLER_BUTTON_GUIDE maps to Option/PS/Guide on all controller types (DualSense, DS4, Xbox) — correct SDL2 constant for the intended button
+- Phase 15-01: D-pad Up/Down PC delta fires on falling edge (button-up) — rising-edge would fire immediately on press before user has released, causing doubled PCs
+- Phase 15-01: One-frame lockout (optionFrameFired_) prevents D-pad Up/Down from registering BPM delta in the same 16ms frame Option fires
+- Phase 15-01: D-pad Left/Right always rising-edge regardless of preset-scroll mode — looper toggle semantics are mode-independent
+
 ### Pending Todos
 
 None.
@@ -70,5 +76,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-26
-Stopped at: Completed 14-03-PLAN.md (7-issue layout overhaul — commits 6fe9d5e + e0cbb58)
-Next step: Phase 15 (Distribution)
+Stopped at: Completed 15-01-PLAN.md (Option/Guide button preset-scroll toggle + D-pad PC delta in GamepadInput — commit 179e273)
+Next step: Phase 15 Plan 02 (PluginProcessor consumes consumePcDelta() to send Program Change MIDI)
