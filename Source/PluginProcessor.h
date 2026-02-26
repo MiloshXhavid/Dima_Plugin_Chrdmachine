@@ -163,6 +163,11 @@ public:
     std::atomic<float> filterCutDisplay_ { 0.f };
     std::atomic<float> filterResDisplay_ { 0.f };
 
+    // Beat-clock cross-thread signals — audio thread writes, UI timer reads
+    std::atomic<bool>  beatOccurred_  { false };
+    std::atomic<float> modulatedJoyX_ { 0.0f  };
+    std::atomic<float> modulatedJoyY_ { -1.0f };
+
     // ── APVTS ─────────────────────────────────────────────────────────────────
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
@@ -186,6 +191,14 @@ private:
     // Initialised to match joystickX/joystickY defaults so the first delta is 0.
     float prevJoyX_ = 0.0f;
     float prevJoyY_ = -1.0f;
+
+    // Free-tempo sample counter: incremented every processBlock, reset on transport events.
+    // Used for beat detection when DAW is not playing.
+    int64_t sampleCounter_ = 0;
+
+    // Beat detection state — previous beat count for floor-crossing detection.
+    // Promoted from static local so it can be reset on transport stop/start events.
+    double prevBeatCount_ = -1.0;
 
     // ── Gamepad per-instance active flag ─────────────────────────────────────
     // Written by PluginEditor toggle button (message thread).
