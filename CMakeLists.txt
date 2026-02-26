@@ -51,9 +51,11 @@ if(BUILD_TESTS)
         Source/ScaleQuantizer.cpp
         Source/ChordEngine.cpp
         Source/LooperEngine.cpp
+        Source/LfoEngine.cpp
         Tests/ScaleQuantizerTests.cpp
         Tests/ChordEngineTests.cpp
         Tests/LooperEngineTests.cpp
+        Tests/LfoEngineTests.cpp
     )
 
     set_target_properties(ChordJoystickTests PROPERTIES
@@ -103,10 +105,10 @@ juce_add_binary_data(ChordJoystickFonts
 )
 
 juce_add_plugin(ChordJoystick
-    PRODUCT_NAME            "ChordJoystick MK2"
+    PRODUCT_NAME            "Dima_Chord_Joy_MK2"
     FORMATS                 VST3
     PLUGIN_MANUFACTURER_CODE "MxCJ"
-    PLUGIN_CODE             "CJM2"
+    PLUGIN_CODE             "DCJM"
     VST3_CATEGORIES         "Fx" "MIDI"
     IS_SYNTH                FALSE
     NEEDS_MIDI_INPUT        TRUE
@@ -127,6 +129,7 @@ target_sources(ChordJoystick PRIVATE
     Source/ChordEngine.cpp
     Source/TriggerSystem.cpp
     Source/LooperEngine.cpp
+    Source/LfoEngine.cpp
     Source/GamepadInput.cpp
     Source/SdlContext.cpp
 )
