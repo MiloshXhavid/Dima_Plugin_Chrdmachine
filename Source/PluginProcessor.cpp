@@ -317,6 +317,8 @@ void PluginProcessor::prepareToPlay(double sr, int /*blockSize*/)
     sampleRate_ = sr;
     lfoX_.reset();
     lfoY_.reset();
+    sampleCounter_ = 0;
+    prevBeatCount_ = -1.0;
 }
 
 void PluginProcessor::releaseResources()
@@ -598,6 +600,37 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     }
     // ─────────────────────────────────── end LFO ──────────────────────────────
 
+    // ── Expose LFO-modulated joystick position for JoystickPad visual tracking ──
+    modulatedJoyX_.store(chordP.joystickX, std::memory_order_relaxed);
+    modulatedJoyY_.store(chordP.joystickY, std::memory_order_relaxed);
+
+    // ── Beat clock detection — fires beatOccurred_ once per beat ──────────────
+    {
+        double currentBeatCount;
+        if (isDawPlaying && ppqPos >= 0.0)
+        {
+            // DAW playing: use ppqPos which the host advances by BPM * blockSize / (60 * sr)
+            currentBeatCount = ppqPos;
+        }
+        else
+        {
+            // Free tempo: derive beat count from sample counter
+            const float bpm = effectiveBpm_.load(std::memory_order_relaxed);
+            currentBeatCount = (static_cast<double>(bpm) / 60.0)
+                             * static_cast<double>(sampleCounter_) / sampleRate_;
+        }
+
+        if (prevBeatCount_ >= 0.0
+            && std::floor(currentBeatCount) > std::floor(prevBeatCount_))
+        {
+            beatOccurred_.store(true, std::memory_order_relaxed);
+        }
+        prevBeatCount_ = currentBeatCount;
+
+        // Advance free-tempo sample counter (also consumed by free-tempo beat path above)
+        sampleCounter_ += blockSize;
+    }
+
     // ── Compute & sample-hold pitches ─────────────────────────────────────────
     // We only recompute on trigger events.  The trigger callback does this.
     // Pre-compute all 4 pitches once so the callback can use them.
@@ -631,6 +664,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             lfoY_.reset();
             lfoXRampOut_ = 0.0f;
             lfoYRampOut_ = 0.0f;
+            sampleCounter_ = 0;
+            prevBeatCount_ = -1.0;
         }
     }
 
@@ -640,6 +675,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         lfoY_.reset();
         lfoXRampOut_ = 0.0f;
         lfoYRampOut_ = 0.0f;
+        sampleCounter_ = 0;
+        prevBeatCount_ = -1.0;
     }
 
     // Detect looper start/stop — send note-offs for any hanging looper notes on stop.
