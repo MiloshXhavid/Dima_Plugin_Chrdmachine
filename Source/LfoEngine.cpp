@@ -1,4 +1,5 @@
 #include "LfoEngine.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
