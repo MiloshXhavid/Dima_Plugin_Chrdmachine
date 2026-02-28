@@ -60,12 +60,17 @@ public:
     bool consumeDpadRight() { return dpadRightTrig_.exchange(false); }
     bool consumeRightStickTrigger() { return rightStickTrig_.exchange(false); }
 
-    // Preset-scroll mode state — read by PluginProcessor / PluginEditor
-    bool isPresetScrollActive() const { return presetScrollActive_; }
+    // Option mode: 0=off (BPM/looper), 1=octaves (green), 2=transpose+intervals (red)
+    int  getOptionMode()       const { return optionMode_.load(std::memory_order_relaxed); }
+    bool isPresetScrollActive() const { return getOptionMode() != 0; }  // legacy compat
 
-    // Consume a pending Program Change delta (+1 or -1).
-    // Returns 0 if nothing pending. Processor reads this instead of pendingBpmDelta_ when in preset-scroll mode.
-    int consumePcDelta() { return pendingPcDelta_.exchange(0, std::memory_order_relaxed); }
+    // Consume a pending D-pad delta in option mode (modes 1 or 2). 0=up 1=down 2=left 3=right.
+    // Returns +1 (single press), -1 (fast double-click within kDpadDoubleClickMs), or 0 (nothing).
+    int consumeOptionDpadDelta(int dir)
+    {
+        if (dir < 0 || dir >= 4) return 0;
+        return pendingOptionDpadDelta_[dir].exchange(0, std::memory_order_relaxed);
+    }
 
     // Whether a gamepad is connected
     bool isConnected() const { return controller_ != nullptr; }
@@ -150,13 +155,18 @@ private:
     ButtonState btnDpadRight_;
     ButtonState btnRightStick_;
 
-    // Preset-scroll mode — toggled by Option/Guide button
-    bool presetScrollActive_ = false;  // not persisted; starts false on plugin load
-    bool optionFrameFired_   = false;  // one-frame lockout: true in the frame Option toggles
-    ButtonState btnOption_;            // debounce state for SDL_CONTROLLER_BUTTON_GUIDE
+    // Option mode — cycles 0→1→2→0 on each Option button press
+    std::atomic<int> optionMode_ { 0 };  // 0=off  1=octaves(green)  2=transpose+intervals(red)
+    bool optionFrameFired_   = false;    // one-frame lockout: true in the frame Option toggles
+    ButtonState btnOption_;              // debounce state for SDL_CONTROLLER_BUTTON_START
 
-    // Pending PC delta — set by timerCallback when presetScrollActive_; consumed by processor
-    std::atomic<int> pendingPcDelta_ { 0 };
+    // ── Option-mode D-pad delta signals ──────────────────────────────────────
+    // Set on rising edge in mode 1 or 2; consumed by PluginProcessor each block.
+    // +1 = single press, -1 = fast double-click (second press within kDpadDoubleClickMs ms).
+    static constexpr uint32_t kDpadDoubleClickMs = 300;
+    std::atomic<int>  pendingOptionDpadDelta_[4] {};
+    uint32_t          optDpadLastPressMs_[4] = {};
 
     bool sdlInitialised_    = false;  // guard: SdlContext::release() only if acquire() succeeded
+    bool pendingReopenTick_ = false;  // deferred BT open: set on SDL_CONTROLLERDEVICEADDED, consumed after event loop
 };
