@@ -134,6 +134,9 @@ public:
     void setMidiMuted(bool b) { midiMuted_.store(b, std::memory_order_relaxed); }
     bool isMidiMuted()  const { return midiMuted_.load(std::memory_order_relaxed); }
 
+    // Pitches for chord-name display: snapshotted on TouchPlate/Random triggers only.
+    std::array<int,4> getCurrentPitches() const { return displayPitches_; }
+
     // Arp current voice for pad highlight (audio thread writes, UI reads)
     // -1 = no arp note sounding; 0-3 = voice currently being arped
     std::atomic<int> arpCurrentVoice_ { -1 };
@@ -236,13 +239,42 @@ private:
     std::atomic<bool> pendingCcReset_     { false };
     std::atomic<bool> pendingPanic_       { false };
 
-    // Held (sample-and-hold) pitches for each voice
+    // Held (sample-and-hold) pitches for each voice — updated every processBlock.
     std::array<int, 4> heldPitch_ {60, 64, 67, 70};
+
+    // Display pitches — snapshotted on trigger (pad/random/gamepad button) OR when
+    // any chord-shaping parameter changes (transpose, intervals, octaves, scale).
+    // Read by the UI timer for the chord-name label.
+    std::array<int, 4> displayPitches_ {60, 64, 67, 70};
+
+    // Hash of chord-shaping APVTS params — changes here update the display even
+    // without a trigger.  Joystick & LFO are intentionally excluded.
+    int64_t lastChordParamHash_ = -1;
 
     // Pitch that was actually sent in the last looper gate-on per voice.
     // gateOff MUST use this pitch (not heldPitch_, which may have changed) to
     // send the matching noteOff and avoid stuck notes.
     std::array<int, 4> looperActivePitch_ {-1, -1, -1, -1};
+
+    // ── Single-Channel Routing state (audio-thread-only) ─────────────────────
+    // Reference counter: noteCount_[ch-1][pitch] = number of voices holding
+    // a note-on on that (channel, pitch) pair. noteOn emits only when count
+    // goes from 0→1; noteOff emits only when count goes to 0.
+    int noteCount_[16][128] = {};
+
+    // Channel used at note-on time per voice — used for matching note-off even
+    // if the channel setting changes mid-hold.
+    int sentChannel_[4]     = {1, 2, 3, 4};
+
+    // Channel used at looper gate-on time per voice — used for looper gate-off.
+    int looperActiveCh_[4]  = {1, 2, 3, 4};
+
+    // Channel used at arp note-on time — used for all arp note-offs.
+    int arpActiveCh_        = 1;
+
+    // Previous-block values for mode/target change detection (flush trigger).
+    int prevSingleChanMode_   = 0;
+    int prevSingleChanTarget_ = 1;
 
     // ── Arpeggiator state (audio-thread-only) ─────────────────────────────────
     double   arpPhase_            = 0.0;      // accumulated beats within subdivision
@@ -255,10 +287,35 @@ private:
     bool     arpWaitingForPlay_   = false;    // armed but waiting for DAW play press to launch
     bool     prevArpOn_           = false;    // previous block's arp-enabled state
 
-    // ── Preset-scroll mode: MIDI Program Change counter ───────────────────────
-    // Audio-thread-only. Tracks current program number for absolute PC messages.
-    // Starts at 0 on plugin load. Not persisted in saved state.
-    int programCounter_ = 0;
+    // ── Option-mode D-pad parameter control ───────────────────────────────────
+    // Mode 1 (octaves):            up=rootOct  down=3rdOct  left=tenOct  right=5thOct
+    // Mode 2 (transpose+intervals): up=transpose down=3rdInt left=tenInt  right=5thInt
+    // Step an int APVTS param by delta, wrapping within [minVal..maxVal].
+    static void stepWrappingParam(juce::AudioProcessorValueTreeState& apvts,
+                                  const juce::String& id, int minVal, int maxVal, int delta)
+    {
+        auto* p = apvts.getParameter(id);
+        auto* v = apvts.getRawParameterValue(id);
+        if (!p || !v) return;
+        const int range = maxVal - minVal + 1;
+        const int cur   = static_cast<int>(v->load()) - minVal;  // 0-based
+        const int next  = ((cur + delta) % range + range) % range;
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(next + minVal)));
+    }
+    // Step an int APVTS param by delta, clamping at [minVal..maxVal] (no wrap).
+    static void stepClampingParam(juce::AudioProcessorValueTreeState& apvts,
+                                  const juce::String& id, int minVal, int maxVal, int delta)
+    {
+        auto* p = apvts.getParameter(id);
+        auto* v = apvts.getRawParameterValue(id);
+        if (!p || !v) return;
+        const int cur  = static_cast<int>(v->load());
+        const int next = juce::jlimit(minVal, maxVal, cur + delta);
+        p->setValueNotifyingHost(p->convertTo0to1(static_cast<float>(next)));
+    }
+
+    // Reset all noteCount_ entries to zero — call at every allNotesOff flush site.
+    void resetNoteCount() noexcept;
 
     // Build ChordEngine::Params from current APVTS + joystick state
     ChordEngine::Params buildChordParams() const;

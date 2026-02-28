@@ -50,6 +50,10 @@ namespace ParamID
     static const juce::String voiceCh2         = "voiceCh2";
     static const juce::String voiceCh3         = "voiceCh3";
 
+    // Single-Channel Routing
+    static constexpr const char* singleChanMode   = "singleChanMode";
+    static constexpr const char* singleChanTarget = "singleChanTarget";
+
     // Looper
     static const juce::String looperSubdiv     = "looperSubdiv";
     static const juce::String looperLength     = "looperLength";
@@ -220,6 +224,11 @@ PluginProcessor::createParameterLayout()
     addInt(ParamID::voiceCh1, "Third MIDI Channel",   1, 16, 2);
     addInt(ParamID::voiceCh2, "Fifth MIDI Channel",   1, 16, 3);
     addInt(ParamID::voiceCh3, "Tension MIDI Channel", 1, 16, 4);
+    {
+        juce::StringArray routingModes { "Multi-Channel", "Single Channel" };
+        addChoice("singleChanMode",   "Routing Mode",          routingModes, 0);
+        addInt   ("singleChanTarget", "Single Channel Target",  1, 16, 1);
+    }
 
     // ── Looper ────────────────────────────────────────────────────────────────
     addChoice(ParamID::looperSubdiv, "Loop Time Signature",
@@ -266,8 +275,8 @@ PluginProcessor::createParameterLayout()
         ParamID::lfoYRate, "LFO Y Rate",
         juce::NormalisableRange<float>(0.01f, 20.0f, 0.0f, 0.2306f),
         1.0f));
-    addFloat(ParamID::lfoXLevel,      "LFO X Level",      0.0f, 2.0f, 0.0f);
-    addFloat(ParamID::lfoYLevel,      "LFO Y Level",      0.0f, 2.0f, 0.0f);
+    addFloat(ParamID::lfoXLevel,      "LFO X Level",      0.0f, 1.0f, 0.0f);
+    addFloat(ParamID::lfoYLevel,      "LFO Y Level",      0.0f, 1.0f, 0.0f);
     addFloat(ParamID::lfoXPhase,      "LFO X Phase",      0.0f, 360.0f, 0.0f);
     addFloat(ParamID::lfoYPhase,      "LFO Y Phase",      0.0f, 360.0f, 0.0f);
     addFloat(ParamID::lfoXDistortion, "LFO X Distortion", 0.0f, 1.0f, 0.0f);
@@ -334,18 +343,18 @@ void PluginProcessor::processBlockBypassed(juce::AudioBuffer<float>& audio,
     audio.clear();
     midi.clear();
 
-    static const juce::String chIDs[4] = {
-        "voiceCh0", "voiceCh1", "voiceCh2", "voiceCh3" };
-
     for (int v = 0; v < 4; ++v)
     {
-        const int ch = (int)apvts.getRawParameterValue(chIDs[v])->load();  // 1-based
+        // Use sentChannel_ snapshot so note-off matches the channel used at note-on.
+        // Fall back to effectiveChannel logic if sentChannel_ was never set (default 1-4).
+        const int ch = sentChannel_[v];
 
         const int pitch = trigger_.getActivePitch(v);
         if (pitch >= 0)
             midi.addEvent(juce::MidiMessage::noteOff(ch, pitch, (uint8_t)0), 0);
     }
     trigger_.resetAllGates();
+    resetNoteCount();
 }
 
 bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -406,6 +415,13 @@ ChordEngine::Params PluginProcessor::buildChordParams() const
             apvts.getRawParameterValue("scaleNote" + juce::String(i))->load() > 0.5f;
 
     return p;
+}
+
+// ─── resetNoteCount ───────────────────────────────────────────────────────────
+
+void PluginProcessor::resetNoteCount() noexcept
+{
+    std::fill(&noteCount_[0][0], &noteCount_[0][0] + 16 * 128, 0);
 }
 
 // ─── processBlock ─────────────────────────────────────────────────────────────
@@ -476,33 +492,34 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         if (gamepad_.consumeRightStickTrigger())
             triggerPanic();   // R3 -> MIDI panic (same as UI panicBtn_)
 
-        // D-pad Up/Down: BPM delta (normal) or PC message (preset-scroll mode)
-        // In preset-scroll mode: consumePcDelta() returns the delta (GamepadInput fires on button-up).
-        // In normal mode: consumeDpadUp/Down fire on button-down (unchanged).
-        if (gamepad_.isPresetScrollActive())
+        // D-pad: mode 0=BPM/looper, mode 1=octaves (green), mode 2=transpose+intervals (red)
+        const int optMode = gamepad_.getOptionMode();
+        if (optMode == 1)
         {
-            const int pcDelta = gamepad_.consumePcDelta();
-            if (pcDelta != 0)
-            {
-                const int newProgram = juce::jlimit(0, 127, programCounter_ + pcDelta);
-                if (newProgram != programCounter_)  // boundary clamp: skip send if already at limit
-                {
-                    programCounter_ = newProgram;
-                    const int fCh = static_cast<int>(
-                        apvts.getRawParameterValue(ParamID::filterMidiCh)->load());  // 1-based
-                    midi.addEvent(
-                        juce::MidiMessage::programChange(fCh, programCounter_),
-                        0);  // sample offset 0 within the block
-                }
-            }
+            // Mode 1 — octaves: up=rootOct  down=3rdOct  left=tenOct  right=5thOct
+            // Clamp (not wrap) so hitting the limit is silent, not a jump.
+            // Range matches the APVTS declaration (0..12 absolute MIDI octave).
+            { const int d = gamepad_.consumeOptionDpadDelta(0); if (d) stepClampingParam(apvts, "rootOctave",    0, 12, d); }
+            { const int d = gamepad_.consumeOptionDpadDelta(1); if (d) stepClampingParam(apvts, "thirdOctave",   0, 12, d); }
+            { const int d = gamepad_.consumeOptionDpadDelta(2); if (d) stepClampingParam(apvts, "tensionOctave", 0, 12, d); }
+            { const int d = gamepad_.consumeOptionDpadDelta(3); if (d) stepClampingParam(apvts, "fifthOctave",   0, 12, d); }
+        }
+        else if (optMode == 2)
+        {
+            // Mode 2 — transpose+intervals: up=transpose  down=3rdInt  left=tenInt  right=5thInt
+            { const int d = gamepad_.consumeOptionDpadDelta(0); if (d) stepWrappingParam(apvts, "globalTranspose",   0, 11, d); }
+            { const int d = gamepad_.consumeOptionDpadDelta(1); if (d) stepWrappingParam(apvts, "thirdInterval",     0, 12, d); }
+            { const int d = gamepad_.consumeOptionDpadDelta(2); if (d) stepWrappingParam(apvts, "tensionInterval",   0, 12, d); }
+            { const int d = gamepad_.consumeOptionDpadDelta(3); if (d) stepWrappingParam(apvts, "fifthInterval",     0, 12, d); }
         }
         else
         {
+            // Mode 0 — normal: up/down=BPM, left/right=looper rec state
             if (gamepad_.consumeDpadUp())    pendingBpmDelta_.fetch_add(1,  std::memory_order_relaxed);
             if (gamepad_.consumeDpadDown())  pendingBpmDelta_.fetch_add(-1, std::memory_order_relaxed);
+            if (gamepad_.consumeDpadLeft())  looperSetRecGates(!looperIsRecGates());
+            if (gamepad_.consumeDpadRight()) looperSetRecJoy(!looperIsRecJoy());
         }
-        if (gamepad_.consumeDpadLeft())  looperSetRecGates(!looperIsRecGates());
-        if (gamepad_.consumeDpadRight()) looperSetRecJoy(!looperIsRecJoy());
     }
     else
     {
@@ -675,6 +692,17 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         (int)apvts.getRawParameterValue(ParamID::voiceCh3)->load(),
     };
 
+    const bool singleMode   = (*apvts.getRawParameterValue("singleChanMode") > 0.5f);
+    const int  singleTarget = (int)*apvts.getRawParameterValue("singleChanTarget");
+
+    auto effectiveChannel = [&](int v) -> int {
+        return singleMode ? singleTarget : voiceChs[v];
+    };
+    auto effectiveFilterChannel = [&]() -> int {
+        return singleMode ? singleTarget
+                          : (int)apvts.getRawParameterValue("filterMidiCh")->load();
+    };
+
     // Detect DAW stop/start — covers both SYNC-on (loopOut.dawStopped) and SYNC-off cases.
     // Sends all-notes-off and resets TriggerSystem gate state so notes don't hang.
     // dawJustStarted is used later by the arp arm logic.
@@ -685,9 +713,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         prevIsDawPlaying_ = isDawPlaying;
         if (justStopped)
         {
-            for (int v = 0; v < 4; ++v)
-                midi.addEvent(juce::MidiMessage::allNotesOff(voiceChs[v]), 0);
+            for (int ch = 1; ch <= 16; ++ch)
+                midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
             trigger_.resetAllGates();
+            resetNoteCount();
             lfoX_.reset();
             lfoY_.reset();
             lfoXRampOut_ = 0.0f;
@@ -720,10 +749,16 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             {
                 if (looperActivePitch_[v] >= 0)
                 {
-                    midi.addEvent(juce::MidiMessage::noteOff(voiceChs[v], looperActivePitch_[v], (uint8_t)0), 0);
+                    const int ch = looperActiveCh_[v];
+                    if (noteCount_[ch - 1][looperActivePitch_[v]] > 0 &&
+                        --noteCount_[ch - 1][looperActivePitch_[v]] == 0)
+                        midi.addEvent(juce::MidiMessage::noteOff(ch, looperActivePitch_[v], (uint8_t)0), 0);
+                    else
+                        noteCount_[ch - 1][looperActivePitch_[v]] = 0;
                     looperActivePitch_[v] = -1;
                 }
             }
+            resetNoteCount();
         }
         looperJustStarted = !prevLooperWasPlaying_ && looperNowPlaying;
         prevLooperWasPlaying_ = looperNowPlaying;
@@ -736,10 +771,16 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         {
             if (looperActivePitch_[v] >= 0)
             {
-                midi.addEvent(juce::MidiMessage::noteOff(voiceChs[v], looperActivePitch_[v], (uint8_t)0), 0);
+                const int ch = looperActiveCh_[v];
+                if (noteCount_[ch - 1][looperActivePitch_[v]] > 0 &&
+                    --noteCount_[ch - 1][looperActivePitch_[v]] == 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(ch, looperActivePitch_[v], (uint8_t)0), 0);
+                else
+                    noteCount_[ch - 1][looperActivePitch_[v]] = 0;
                 looperActivePitch_[v] = -1;
             }
         }
+        resetNoteCount();
     }
 
     // ── MIDI Panic / Mute ─────────────────────────────────────────────────────
@@ -756,9 +797,35 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         }
         trigger_.resetAllGates();
         looperActivePitch_.fill(-1);
+        resetNoteCount();
         prevCcCut_.store(-1, std::memory_order_relaxed);
         prevCcRes_.store(-1, std::memory_order_relaxed);
         flashPanic_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // ── Single-Channel mode/target change detection ───────────────────────────
+    // Flush runs BEFORE the mute guard so allNotesOff always reaches the synth.
+    {
+        const bool modeChanged   = (singleMode ? 1 : 0) != prevSingleChanMode_;
+        const bool targetChanged = singleMode && (singleTarget != prevSingleChanTarget_);
+
+        if (modeChanged)
+        {
+            for (int ch = 1; ch <= 16; ++ch)
+                midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
+            trigger_.resetAllGates();
+            looperActivePitch_.fill(-1);
+            resetNoteCount();
+            prevSingleChanMode_   = singleMode ? 1 : 0;
+            prevSingleChanTarget_ = singleTarget;
+        }
+        else if (targetChanged)
+        {
+            midi.addEvent(juce::MidiMessage::allNotesOff(prevSingleChanTarget_), 0);
+            std::fill(std::begin(noteCount_[prevSingleChanTarget_ - 1]),
+                      std::end  (noteCount_[prevSingleChanTarget_ - 1]), 0);
+            prevSingleChanTarget_ = singleTarget;
+        }
     }
 
     // When muted: allNotesOff is already in the buffer above; block all further MIDI output.
@@ -770,17 +837,25 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     // because TriggerSystem is not informed of looper events — it only sees live pad state.
     for (int v = 0; v < 4; ++v)
     {
-        const int ch0 = voiceChs[v] - 1;  // 0-based for MIDI message
         if (loopOut.gateOn[v])
         {
-            // Snapshot the pitch at gate-on so gateOff uses the same note number
-            // even if heldPitch_[v] changes before the gate closes.
+            // Snapshot the pitch and channel at gate-on so gateOff uses the same values
+            // even if heldPitch_[v] or the channel setting changes before the gate closes.
             looperActivePitch_[v] = heldPitch_[v];
-            midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, looperActivePitch_[v], (uint8_t)100), 0);
+            const int ch = effectiveChannel(v);
+            looperActiveCh_[v] = ch;
+            sentChannel_[v]    = ch;  // also snapshot sentChannel_ for consistency
+            if (noteCount_[ch - 1][looperActivePitch_[v]]++ == 0)
+                midi.addEvent(juce::MidiMessage::noteOn(ch, looperActivePitch_[v], (uint8_t)100), 0);
         }
         if (loopOut.gateOff[v] && looperActivePitch_[v] >= 0)
         {
-            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, looperActivePitch_[v], (uint8_t)0), 0);
+            const int ch = looperActiveCh_[v];
+            if (noteCount_[ch - 1][looperActivePitch_[v]] > 0 &&
+                --noteCount_[ch - 1][looperActivePitch_[v]] == 0)
+                midi.addEvent(juce::MidiMessage::noteOff(ch, looperActivePitch_[v], (uint8_t)0), 0);
+            else
+                noteCount_[ch - 1][looperActivePitch_[v]] = 0;
             looperActivePitch_[v] = -1;
         }
     }
@@ -798,6 +873,39 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     for (int v = 0; v < 4; ++v)
         heldPitch_[v] = freshPitches[v];
 
+    // Refresh display whenever a chord-shaping parameter changes (transpose,
+    // intervals, octaves, scale) — without needing a trigger event.
+    // Joystick position and LFO are intentionally excluded from the hash so
+    // moving the joystick or the LFO sweeping does not update the label.
+    {
+        const int gt = (int)apvts.getRawParameterValue(ParamID::globalTranspose)->load();
+        const int i1 = (int)apvts.getRawParameterValue(ParamID::thirdInterval)->load();
+        const int i2 = (int)apvts.getRawParameterValue(ParamID::fifthInterval)->load();
+        const int i3 = (int)apvts.getRawParameterValue(ParamID::tensionInterval)->load();
+        const int o0 = (int)apvts.getRawParameterValue(ParamID::rootOctave)->load();
+        const int o1 = (int)apvts.getRawParameterValue(ParamID::thirdOctave)->load();
+        const int o2 = (int)apvts.getRawParameterValue(ParamID::fifthOctave)->load();
+        const int o3 = (int)apvts.getRawParameterValue(ParamID::tensionOctave)->load();
+        const int sp = (int)apvts.getRawParameterValue(ParamID::scalePreset)->load();
+        const int uc = (int)apvts.getRawParameterValue(ParamID::useCustomScale)->load();
+        int64_t hash =   ((int64_t)gt)
+                       | ((int64_t)i1 << 4)  | ((int64_t)i2 << 8)  | ((int64_t)i3 << 12)
+                       | ((int64_t)o0 << 16) | ((int64_t)o1 << 20) | ((int64_t)o2 << 24) | ((int64_t)o3 << 28)
+                       | ((int64_t)sp << 32) | ((int64_t)uc << 37);
+        if (uc)
+        {
+            int noteBits = 0;
+            for (int i = 0; i < 12; ++i)
+                noteBits |= ((int)apvts.getRawParameterValue("scaleNote" + juce::String(i))->load() << i);
+            hash |= ((int64_t)noteBits << 38);
+        }
+        if (hash != lastChordParamHash_)
+        {
+            lastChordParamHash_ = hash;
+            displayPitches_ = heldPitch_;
+        }
+    }
+
     const bool arpOn = (*apvts.getRawParameterValue(ParamID::arpEnabled) > 0.5f);
 
     bool anyNoteOnThisBlock = false;
@@ -808,6 +916,14 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         if (isOn)
         {
             anyNoteOnThisBlock = true;
+
+            // Snapshot the chord for the display label on deliberate triggers
+            // (touchplate, gamepad button, random gate) but NOT on continuous
+            // joystick-position changes — those would cause the label to track
+            // the joystick rest position rather than the last played chord.
+            if (src[voice] != TriggerSource::Joystick)
+                displayPitches_ = heldPitch_;
+
             // Activate "start rec by touch" before recordGate so the triggering
             // note-on is captured. activateRecordingNow() is a no-op unless armed.
             looper_.activateRecordingNow();
@@ -816,8 +932,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             // This lets the live press cut the arp immediately ("instant choke").
             if (arpOn && arpActiveVoice_ == voice && arpActivePitch_ >= 0)
             {
-                const int ch0v = voiceChs[voice] - 1;
-                midi.addEvent(juce::MidiMessage::noteOff(ch0v + 1, arpActivePitch_, (uint8_t)0), sampleOff);
+                const int chArp = arpActiveCh_;
+                if (noteCount_[chArp - 1][arpActivePitch_] > 0 &&
+                    --noteCount_[chArp - 1][arpActivePitch_] == 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(chArp, arpActivePitch_, (uint8_t)0), sampleOff);
+                else
+                    noteCount_[chArp - 1][arpActivePitch_] = 0;
                 arpActivePitch_ = -1;
                 arpActiveVoice_ = -1;
                 arpCurrentVoice_.store(-1, std::memory_order_relaxed);
@@ -825,7 +945,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             }
         }
 
-        const int ch0 = voiceChs[voice] - 1;  // 0-based
         if (isOn)
         {
             // Record gate event in looper (using JUCE 8 ppqPos variable)
@@ -833,8 +952,11 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 ? ppqPos
                 : looper_.getPlaybackBeat();
             looper_.recordGate(beatPos, voice, true);
-            // Live pad notes always go through regardless of arp state.
-            midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100), sampleOff);
+            // Live pad notes go through effectiveChannel with noteCount dedup.
+            const int ch = effectiveChannel(voice);
+            sentChannel_[voice] = ch;
+            if (noteCount_[ch - 1][pitch]++ == 0)
+                midi.addEvent(juce::MidiMessage::noteOn(ch, pitch, (uint8_t)100), sampleOff);
         }
         else
         {
@@ -842,7 +964,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 ? ppqPos
                 : looper_.getPlaybackBeat();
             looper_.recordGate(beatPos, voice, false);
-            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, pitch, (uint8_t)0), sampleOff);
+            // Note-off uses the channel snapshot captured at note-on time.
+            const int ch = sentChannel_[voice];
+            if (noteCount_[ch - 1][pitch] > 0 && --noteCount_[ch - 1][pitch] == 0)
+                midi.addEvent(juce::MidiMessage::noteOff(ch, pitch, (uint8_t)0), sampleOff);
+            else
+                noteCount_[ch - 1][pitch] = 0;  // clamp (defensive)
         }
     };
     tp.onPitchBend = [&](int voice, int bendVal14, int ch0, int sampleOff)
@@ -944,8 +1071,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         // Kill any hanging arp note when ARP is off or DAW stops.
         if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
         {
-            const int ch0 = voiceChs[arpActiveVoice_] - 1;
-            midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, arpActivePitch_, (uint8_t)0), 0);
+            const int ch = arpActiveCh_;
+            if (noteCount_[ch - 1][arpActivePitch_] > 0 &&
+                --noteCount_[ch - 1][arpActivePitch_] == 0)
+                midi.addEvent(juce::MidiMessage::noteOff(ch, arpActivePitch_, (uint8_t)0), 0);
+            else
+                noteCount_[ch - 1][arpActivePitch_] = 0;
             arpActivePitch_ = -1;
             arpActiveVoice_ = -1;
         }
@@ -979,8 +1110,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             arpNoteOffRemaining_ -= beatsThisBlock;
             if (arpNoteOffRemaining_ <= 0.0)
             {
-                const int ch0 = voiceChs[arpActiveVoice_] - 1;
-                midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, arpActivePitch_, (uint8_t)0), 0);
+                const int ch = arpActiveCh_;
+                if (noteCount_[ch - 1][arpActivePitch_] > 0 &&
+                    --noteCount_[ch - 1][arpActivePitch_] == 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(ch, arpActivePitch_, (uint8_t)0), 0);
+                else
+                    noteCount_[ch - 1][arpActivePitch_] = 0;
                 arpActivePitch_ = -1;
                 arpActiveVoice_ = -1;
                 arpCurrentVoice_.store(-1, std::memory_order_relaxed);
@@ -1022,8 +1157,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             // Cut any still-sounding note at step boundary.
             if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
             {
-                const int ch0 = voiceChs[arpActiveVoice_] - 1;
-                midi.addEvent(juce::MidiMessage::noteOff(ch0 + 1, arpActivePitch_, (uint8_t)0), 0);
+                const int ch = arpActiveCh_;
+                if (noteCount_[ch - 1][arpActivePitch_] > 0 &&
+                    --noteCount_[ch - 1][arpActivePitch_] == 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(ch, arpActivePitch_, (uint8_t)0), 0);
+                else
+                    noteCount_[ch - 1][arpActivePitch_] = 0;
                 arpActivePitch_ = -1;
                 arpActiveVoice_ = -1;
                 arpCurrentVoice_.store(-1, std::memory_order_relaxed);
@@ -1069,8 +1208,11 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             if (trigger_.isGateOpen(voice)) continue;
 
             const int pitch = heldPitch_[voice];
-            const int ch0   = voiceChs[voice] - 1;
-            midi.addEvent(juce::MidiMessage::noteOn(ch0 + 1, pitch, (uint8_t)100), 0);
+            const int ch = effectiveChannel(voice);
+            arpActiveCh_ = ch;
+            sentChannel_[voice] = ch;
+            if (noteCount_[ch - 1][pitch]++ == 0)
+                midi.addEvent(juce::MidiMessage::noteOn(ch, pitch, (uint8_t)100), 0);
             arpActivePitch_  = pitch;
             arpActiveVoice_  = voice;
             arpCurrentVoice_.store(voice, std::memory_order_relaxed);
@@ -1101,13 +1243,14 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     // Atten knobs scale range but do NOT emit CC on their own (joyMoved guard).
     // CC reset on disconnect via pendingCcReset_ (set from message thread).
     {
-        const int fCh = (int)apvts.getRawParameterValue(ParamID::filterMidiCh)->load();
+        const int fCh = effectiveFilterChannel();
 
         // Handle disconnect events.
         if (pendingAllNotesOff_.exchange(false, std::memory_order_acq_rel))
         {
-            for (int v = 0; v < 4; ++v)
-                midi.addEvent(juce::MidiMessage::allNotesOff(voiceChs[v]), 0);
+            for (int ch = 1; ch <= 16; ++ch)
+                midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
+            resetNoteCount();
         }
 
         if (pendingCcReset_.exchange(false, std::memory_order_acq_rel))
