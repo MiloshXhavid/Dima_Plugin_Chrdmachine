@@ -158,7 +158,11 @@ Plans:
   2. In Single Channel mode all four voices, CC74, and CC71 messages arrive on the same MIDI channel in the DAW MIDI monitor — no messages appear on other channels
   3. Pressing two pads simultaneously that produce the same pitch in Single Channel mode results in exactly one note-on and one note-off — no doubled velocity and no stuck note
   4. Looper playback in Single Channel mode sends notes on the currently selected channel even if the channel was different at record time
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 18-01-PLAN.md — PluginProcessor.h/cpp: singleChanMode + singleChanTarget APVTS params, effectiveChannel lambda, noteCount_[16][128] deduplication, channel snapshots, flush logic at all allNotesOff paths
+- [ ] 18-02-PLAN.md — PluginEditor.h/cpp: Routing panel with routingModeBox_, singleChanTargetBox_, voiceChBox_[4], APVTS attachments, resized() layout, timerCallback() show/hide
+- [ ] 18-03-PLAN.md — Deploy VST3 + manual smoke test checkpoint (all 5 ROUT requirements verified in DAW MIDI monitor)
 
 ### Phase 19: Sub Octave Per Voice
 **Goal**: Players can add a parallel bass note exactly one octave below any individual voice, controllable per-pad from both the UI and the gamepad, enabling bass-doubling without affecting the other voices
@@ -253,7 +257,7 @@ Plans:
 | 15. Gamepad Preset Control | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 16. Distribution | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 17. Bug Fixes | v1.5 | Complete    | 2026-02-28 | 2026-02-28 |
-| 18. Single-Channel Routing | v1.5 | 0/TBD | Not started | - |
+| 18. Single-Channel Routing | v1.5 | 0/3 | Not started | - |
 | 19. Sub Octave Per Voice | v1.5 | 0/TBD | Not started | - |
 | 20. Random Trigger System Extensions | v1.5 | 0/TBD | Not started | - |
 | 21. Left Joystick Modulation Expansion | v1.5 | 0/TBD | Not started | - |
