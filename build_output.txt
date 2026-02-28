@@ -1,45 +1,60 @@
-05-03 Task 1: Release VST3 Build + Full Test Suite
-===================================================
-Date: 2026-02-22
+MSBuild-Version 18.3.0-release-26070-10+3972042b7 für .NET Framework
 
-STEP 1 — CMake configure
-  Generator: Visual Studio 18 2026
-  Status: Configuring done / Generating done / Build files written
-  Result: PASS
-
-STEP 2 — Release VST3 build
-  Target: ChordJoystick_VST3
-  Config: Release
-  Output: build\ChordJoystick_artefacts\Release\VST3\ChordJoystick.vst3\Contents\x86_64-win\ChordJoystick.vst3
-  Errors: 0
-  Warnings: 0
-  Auto-installed to: C:\Program Files\Common Files\VST3\ChordJoystick.vst3
-  Result: PASS
-
-STEP 3 — Catch2 test suite (Debug config)
-  Target: ChordJoystickTests
-  Runner: ctest --build-config Debug --output-on-failure
-  Tests run: 26 / 26
-  Tests passed: 26
-  Tests failed: 0
-  Total time: 0.74 sec
-  Result: PASS
-
-  Test breakdown:
-    01-06  ScaleQuantizer tests (6/6 passed)
-    07-15  ChordEngine tests (9/9 passed)
-    16-26  LooperEngine tests (11/11 passed)
-
-STEP 4 — Mutex grep verification
-  Files checked: Source/LooperEngine.h, Source/LooperEngine.cpp
-  Patterns: std::mutex, lock_guard, eventsMutex_
-  Matches in LooperEngine.h: 1 comment only ("// LOCK-FREE DESIGN: No std::mutex anywhere in the audio-thread call path.")
-  Matches in LooperEngine.cpp: 0
-  Actual mutex declarations/uses: NONE
-  Result: PASS
-
-SUMMARY
-  Release VST3 built and installed: YES
-  26/26 Catch2 tests passing: YES
-  No mutex in LooperEngine audio path: YES
-  All Task 1 criteria met: YES
+  Checking File Globs
+  ChordJoystick_rc_lib.vcxproj -> C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_rc_lib.dir\Release\ChordJoystick_rc_lib.lib
+  ChordJoystickFonts.vcxproj -> C:\Users\Milosh Xhavid\get-shit-done\build\Release\ChordJoystickFonts.lib
+  SDL2-static.vcxproj -> C:\Users\Milosh Xhavid\get-shit-done\build\_deps\sdl2-build\Release\SDL2-static.lib
+  ChordJoystick.vcxproj -> C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_artefacts\Release\ChordJoystick MK2_SharedCode.lib
+  juce_vst3_helper.vcxproj -> C:\Users\Milosh Xhavid\get-shit-done\build\Release\juce_vst3_helper.exe
+  ChordJoystick_VST3.vcxproj -> C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_artefacts\Release\VST3\ChordJoystick MK2.vst3\Contents\x86_64-win\ChordJoystick MK2.vst3
+  removing moduleinfo.json
+  creating C:/Users/Milosh Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick MK2.vst3/Contents/Resources/moduleinfo.json
+  -- Destination C:\Program Files\Common Files/VST3/ChordJoystick MK2.vst3 exists, overwriting
+  -- Up-to-date: C:\Program Files\Common Files/VST3/ChordJoystick MK2.vst3
+  -- Up-to-date: C:\Program Files\Common Files/VST3/ChordJoystick MK2.vst3/Contents
+  -- Installing: C:\Program Files\Common Files/VST3/ChordJoystick MK2.vst3/Contents/Resources
+  -- Installing: C:\Program Files\Common Files/VST3/ChordJoystick MK2.vst3/Contents/Resources/moduleinfo.json
+  -- Up-to-date: C:\Program Files\Common Files/VST3/ChordJoystick MK2.vst3/Contents/x86_64-win
+  -- Installing: C:\Program Files\Common Files/VST3/ChordJoystick MK2.vst3/Contents/x86_64-win/ChordJoystick MK2.vst3
+  CMake Error at _deps/juce-src/extras/Build/CMake/copyDir.cmake:45 (file):
+    file INSTALL cannot copy file "C:/Users/Milosh
+    Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick
+    MK2.vst3/Contents/x86_64-win/ChordJoystick MK2.vst3" to "C:\Program
+    Files\Common Files/VST3/ChordJoystick
+    MK2.vst3/Contents/x86_64-win/ChordJoystick MK2.vst3": Permission denied.
+  
+  
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: Der Befehl "setlocal [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" -E echo "removing moduleinfo.json" [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" -E remove -f "C:/Users/Milosh Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick MK2.vst3/Contents/moduleinfo.json" "C:/Users/Milosh Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick MK2.vst3/Contents/Resources/moduleinfo.json" [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmErrorLevel [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: exit /b %1 [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmDone [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :VCEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: setlocal [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" -E echo "creating C:/Users/Milosh Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick MK2.vst3/Contents/Resources/moduleinfo.json" [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" -E make_directory "C:/Users/Milosh Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick MK2.vst3/Contents/Resources" [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: Release\juce_vst3_helper.exe -create -version 2.0.0 -path "C:/Users/Milosh Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick MK2.vst3" -output "C:/Users/Milosh Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick MK2.vst3/Contents/Resources/moduleinfo.json" [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmErrorLevel [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: exit /b %1 [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmDone [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :VCEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: setlocal [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" "-Dsrc=C:/Users/Milosh Xhavid/get-shit-done/build/ChordJoystick_artefacts/Release/VST3/ChordJoystick MK2.vst3" "-Ddest=C:\Program Files\Common Files/VST3" -P "C:/Users/Milosh Xhavid/get-shit-done/build/_deps/juce-src/extras/Build/CMake/copyDir.cmake" [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmErrorLevel [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: exit /b %1 [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmDone [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :VCEnd [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
+C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Microsoft\VC\v180\Microsoft.CppCommon.targets(166,5): error MSB3073: :VCEnd" wurde mit dem Code 1 beendet. [C:\Users\Milosh Xhavid\get-shit-done\build\ChordJoystick_VST3.vcxproj]
