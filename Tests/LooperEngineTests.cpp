@@ -432,3 +432,63 @@ TEST_CASE("snapToGrid - wrap edge case, tie-breaking, near-zero, non-boundary", 
         CHECK(quantizeSubdivToGridSize(3) == Approx(0.125).epsilon(1e-12));
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TC 13 — BUG-01 regression: DAW sync playback beat 0 after auto-stop record cycle
+//
+// Drives a 1-bar 4/4 loop (loopLen = 4.0 beats) at 120 BPM in DAW sync mode.
+// Recording is activated at ppq = 0.0 with an anchor of 0.0 (bar boundary).
+// 4 blocks of 22050 samples (1.0 beat each) drive recording to completion.
+// On block 3 (ppq = 3.0), recordedBeats_ reaches 4.0 → auto-stop fires.
+// After auto-stop, loopStartPpq_ must be advanced by loopLen to 4.0 so that
+// subsequent playback correctly tracks the anchor for the new cycle.
+//
+// Bug manifestation: when the first playback block arrives with ppqPosition
+// just BELOW the bar boundary (4.0 - epsilon), the sentinel loopStartPpq_ = -1.0
+// causes anchorToBar() to floor to 0.0 (the PREVIOUS bar), giving elapsed ≈ 4.0
+// and playbackBeat ≈ 4.0 instead of ≈ 0.0.
+//
+// With the FIX: loopStartPpq_ = loopStartPpq_ + loopLen = 4.0.
+// For ppq = 4.0 - 1e-6: elapsed = -1e-6 → clamped to 0.0 → beat = 0.0.
+//
+// RED before fix: getPlaybackBeat() ≈ 4.0 (fails Approx(0.0) with epsilon 0.01)
+// GREEN after fix: getPlaybackBeat() = 0.0
+// ─────────────────────────────────────────────────────────────────────────────
+TEST_CASE("LooperEngine - BUG-01: DAW sync beat 0 after auto-stop record cycle", "[looper][bug01]")
+{
+    LooperEngine eng;
+    eng.setSyncToDaw(true);
+    eng.setSubdiv(LooperSubdiv::FourFour);
+    eng.setLoopLengthBars(1);   // loopLen = 4.0 beats
+    eng.setRecGates(true);
+
+    // samplesPerBeat at 120 BPM, 44100 Hz = 22050
+    // Each block is exactly 1 beat; recording auto-stops after 4 blocks.
+    // Anchor set at block 0: anchorToBar(0.0, 4.0) = 0.0 → loopStartPpq_ = 0.0
+
+    eng.startStop();   // playing_ = true (DAW sync: becomes true on first DAW-playing block)
+    eng.record();      // arm recording (recordPending_)
+
+    // Blocks 0-2: ppq 0, 1, 2 — recording accumulates, REQUIRE still recording each block
+    for (int i = 0; i < 3; ++i)
+    {
+        LooperEngine::ProcessParams p { 44100.0, 120.0, static_cast<double>(i), 22050, true };
+        eng.process(p);
+        REQUIRE(eng.isRecording());
+    }
+
+    // Block 3: ppq = 3.0 — recordedBeats_ reaches 4.0 >= loopLen → auto-stop fires
+    LooperEngine::ProcessParams p3 { 44100.0, 120.0, 3.0, 22050, true };
+    eng.process(p3);
+    REQUIRE_FALSE(eng.isRecording());
+    REQUIRE(eng.isPlaying());
+
+    // First playback block: ppq = 4.0 - 1e-6 (simulates real-world FP drift just below
+    // the bar boundary). With the BUG (loopStartPpq_ = -1.0), anchorToBar floors to 0.0
+    // (the PREVIOUS bar), giving elapsed ≈ 4.0 and playbackBeat ≈ 4.0 — clearly wrong.
+    // With the FIX (loopStartPpq_ += loopLen = 4.0), elapsed = -1e-6 → clamped to 0.0.
+    const double ppqJustBeforeBar = 4.0 - 1e-6;
+    LooperEngine::ProcessParams p4 { 44100.0, 120.0, ppqJustBeforeBar, 22050, true };
+    eng.process(p4);
+    CHECK(eng.getPlaybackBeat() == Catch::Approx(0.0).epsilon(0.01));
+}
