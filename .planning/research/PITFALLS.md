@@ -1,460 +1,366 @@
-# Pitfalls Research — v1.4 LFO Modulation
+# Domain Pitfalls — ChordJoystick v1.5
 
-**Domain:** Adding dual LFO modulation to an existing lock-free JUCE 8 VST3 MIDI plugin (ChordJoystick v1.3)
-**Researched:** 2026-02-26
-**Confidence:** HIGH — pitfalls derived from direct source code review of the v1.3 implementation + verified JUCE forum sources and DSP community references. No speculative or generic pitfalls included.
+**Domain:** JUCE VST3 MIDI generator — adding routing, sub-octave, LFO recording, arp gamepad control, left-stick modulation expansion, and gamepad Option Mode 1
+**Researched:** 2026-02-28
+**Confidence:** HIGH — all findings grounded in direct source-code analysis of the v1.4 codebase
 
 ---
 
 ## Executive Summary
 
-Adding LFOs to ChordJoystick v1.3 is a well-scoped problem with seven distinct failure modes, all of which are preventable with one-time design decisions made before the first line of LFO code is written. The two highest-severity pitfalls are: (1) using `std::rand()` or any non-audio-thread-safe PRNG for S&H, and (2) injecting LFO output at the wrong point in `processBlock` so that it overrides the looper's joystick playback rather than combining with it. The remaining pitfalls — denormals, phase accumulator overflow, APVTS smoother collision, beat clock drift, and UI display lag — are predictable and have clean solutions from the existing codebase patterns.
+v1.5 adds six features to an already complex processBlock. Four of them introduce new note-tracking responsibilities (single-channel collision, sub-octave orphan, LFO recording replay, arp+single-channel). Two introduce gamepad state-machine changes that interact with the existing 60 Hz timer architecture (Option Mode 1 button remapping, BT reconnect crash). The highest-risk pitfalls are: (1) note collision on a shared MIDI channel requiring a per-pitch reference count, (2) sub-octave note-off using a stale pitch value, (3) the existing looper start-position bug poisoning LFO recording phase alignment, and (4) the SDL2 BT reconnect crash caused by opening a handle during BT re-enumeration. All are preventable with specific design decisions documented below.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Using std::rand() or std::mt19937 for S&H on the Audio Thread
-
-**What goes wrong:**
-`std::rand()` uses a process-global hidden state protected by a hidden mutex on MSVC (and most CRT implementations). Calling it from `processBlock` risks priority inversion: the message thread or a background thread may hold the same mutex, causing the audio thread to block until the lock is released. Typical symptoms are intermittent but can include multi-millisecond stalls at precisely the moment an S&H LFO fires. `std::mt19937` is thread-safe in the sense that it has no shared state, but its state is 2,496 bytes — this matters if instantiated on the stack (stack frame blowup risk similar to the `scratchNew_` issue already solved in `LooperEngine.cpp`).
-
-**Why it happens:**
-The C++ standard does not require `std::rand()` to be lock-free. MSVC's implementation acquires a critical section per call. Developers reach for `std::rand()` because it is the obvious PRNG call and appears to work in testing (testing never creates the exact lock contention timing needed to reproduce the stall).
-
-**Consequences:**
-- Intermittent audio glitches at S&H trigger moments (non-reproducible, load-dependent)
-- Potential xruns under DAW CPU load
-- Thread sanitizer reports a data race on `_Rand_state` in MSVC CRT if TSan is enabled
-
-**Prevention:**
-Use a self-contained, stateless LCG or xorshift32 stored as an audio-thread-only member variable. The existing codebase already uses this pattern at `PluginProcessor.h:234`:
-
-```cpp
-uint32_t arpRandSeed_ = 1;  // audio-thread-only LCG seed
-// Usage (PluginProcessor.cpp:850):
-arpRandSeed_ = arpRandSeed_ * 1664525u + 1013904223u;
-const int j = static_cast<int>((arpRandSeed_ >> 16) % ...);
-```
-
-The LFO S&H waveform MUST use the same pattern. Add a separate seed member for the LFO (do not share with the arp seed — they would then be coupled, causing audible correlation between arp randomness and LFO randomness):
-
-```cpp
-// In PluginProcessor.h or LfoEngine.h:
-uint32_t lfoXRandSeed_ = 12345u;  // audio-thread-only, never zero
-uint32_t lfoYRandSeed_ = 67890u;  // separate seed per LFO
-
-// Usage in LFO S&H tick:
-lfoXRandSeed_ = lfoXRandSeed_ * 1664525u + 1013904223u;
-const float randVal = static_cast<float>((lfoXRandSeed_ >> 1) & 0x7FFFFFFFu)
-                      / static_cast<float>(0x7FFFFFFFu);  // 0..1
-```
-
-Never seed this from `time()` or any OS call at S&H trigger time — only seed once at construction or `prepareToPlay()`.
-
-**Detection:**
-- TSan reports race on CRT rand state
-- CPU profiler shows audio thread waiting in `_Rand_state` critical section acquisition at S&H moments
-- Intermittent xruns that correlate with high UI/background CPU activity, not with audio complexity
-
-**Phase:** LFO engine implementation phase (first phase).
+Mistakes that cause stuck notes, crashes, or silent audio-thread data corruption.
 
 ---
 
-### Pitfall 2: LFO Output Injected After Looper Joystick Playback Overwrite
+### Pitfall 1: Single-Channel Mode — Note-On Collision on Shared MIDI Channel
 
 **What goes wrong:**
-The critical injection point in `processBlock` is lines 469–471:
+When all 4 voices route to the same MIDI channel, two voices can compute the same MIDI pitch number. A single `noteOff(ch, pitch)` kills both because MIDI note-off is pitch-addressed, not voice-addressed.
 
-```cpp
-// Override joystick from looper playback if applicable
-if (loopOut.hasJoystickX) joystickX.store(loopOut.joystickX);
-if (loopOut.hasJoystickY) joystickY.store(loopOut.joystickY);
-```
+The current `processBlock` computes four independent pitches via `ChordEngine::computePitch(v, chordP)` and emits `noteOn(voiceChs[v], pitch, 100)` per voice (lines 879, 1115). In single-channel mode `voiceChs[0..3]` all equal the same channel. If voice 0 and voice 2 both compute pitch 64, the MIDI stream becomes:
+- `noteOn(ch1, 64, 100)` — voice 0
+- `noteOn(ch1, 64, 100)` — voice 2 (redundant; most synths ignore it or retrigger)
+- `noteOff(ch1, 64, 0)` — voice 0 releases — kills BOTH
 
-Then at lines 473+ `buildChordParams()` reads `joystickX.load()` and `joystickY.load()`. If LFO modulation is computed and added to `joystickX`/`joystickY` BEFORE the looper override block, the looper will silently clobber the LFO output every block when a loop is playing. The LFO will appear to do nothing during looper playback — a bug that only manifests when the looper is active, making it hard to reproduce in basic testing.
-
-Conversely, if LFO output is added by writing back into `joystickX`/`joystickY` AFTER line 471, it will override looper joystick playback — the looper's recorded gestures become invisible when LFO is on.
-
-**Why it happens:**
-The LFO output needs to be a modulation offset added to the final chord parameter computation, not a mutation of the `joystickX`/`joystickY` atomics. The atomics are the "user input" bus. Looper playback also writes to this bus. Inserting LFO output into the same bus creates a source conflict.
+The looper gate-on path (lines 775–787) has the same exposure: `loopOut.gateOn[0]` and `loopOut.gateOn[2]` both fire `noteOn(ch1, looperActivePitch_[v])` in the same block. The first gate-off for either voice sends a note-off that silences the other.
 
 **Consequences:**
-- LFO silently does nothing during looper playback (first failure mode)
-- LFO overrides looper playback, recorded gestures lost (second failure mode)
-- Either mode is a silent correctness bug with no crash or assertion failure
+- Stuck notes when two voices share a pitch and one releases
+- Doubled-velocity artifacts on synths that stack note-ons
+- Arp steps that happen to land on the same pitch as a held pad cause immediate mute
 
 **Prevention:**
-Compute the LFO output as an additive offset to be applied inside `buildChordParams()` (or just after it), not as a write to `joystickX`/`joystickY`. The correct signal flow is:
+Track a per-pitch reference count on each MIDI channel: `int noteCount_[16][128] = {}` (audio-thread-only, 2 KB, no atomic needed). On note-on: increment count; always emit noteOn (retrigger is usually desired). On note-off: decrement count; only emit MIDI noteOff when count reaches zero. This is the standard merge-box approach. Apply to all three note-emission paths: direct pad triggers (tp.onNote), looper gateOn/gateOff, and arp.
 
-```
-joystick input (user or looper)
-    -> buildChordParams() -> chordP.joystickX / chordP.joystickY
-    -> LFO offset added HERE (lfoX_ + lfoY_)
-    -> clamped to [-1.0, 1.0]
-    -> ChordEngine::compute()
-```
+**Detection warning signs:**
+- Notes sustain after pad release when two voices compute the same pitch
+- Reliable trigger: set all 4 voices to channel 1, set interval knobs to 0 (unison), hold two pads, release one
 
-Implement as audio-thread-only members:
-```cpp
-float lfoOutputX_ = 0.0f;  // computed each block, audio-thread-only
-float lfoOutputY_ = 0.0f;
-```
-
-In `processBlock`, after `buildChordParams()` has been called:
-```cpp
-// Apply LFO after chord params are built, before ChordEngine
-chordP.joystickX = juce::jlimit(-1.0f, 1.0f, chordP.joystickX + lfoOutputX_);
-chordP.joystickY = juce::jlimit(-1.0f, 1.0f, chordP.joystickY + lfoOutputY_);
-```
-
-**Detection:**
-- LFO has no audible effect when the looper is playing with joystick content recorded
-- LFO silently kills looper playback gestures (joystick modulation disappears from loop)
-- MIDI monitor shows no pitch variation from LFO while looper is running
-
-**Phase:** LFO engine implementation phase.
+**Phase:** Single-channel routing implementation
 
 ---
 
-### Pitfall 3: Phase Accumulator Denormals on Slow LFO Rates
+### Pitfall 2: Sub-Octave Note-Off Orphan When Pitch Changes Mid-Hold
 
 **What goes wrong:**
-At very slow LFO rates (e.g., 0.01 Hz free-running, or 1 cycle per 64 bars synced), the per-sample phase increment is approximately `0.01 / 44100 ≈ 2.27e-7` — well above the denormal threshold (~1.18e-38 for IEEE 754 float). So the phase increment itself is never denormal. However, the waveform output of some shapes can produce denormals:
+The sub-octave note is `pitch - 12`. In `processBlock`, `heldPitch_[v]` is updated every block at line 800: `heldPitch_[v] = freshPitches[v]`. The existing main-voice solution snapshots the active pitch into `looperActivePitch_[v]` at gate-on and uses that snapshot at gate-off. Sub-octave has no equivalent snapshot — if the implementation sends `noteOff(ch, heldPitch_[v] - 12)` at release time, and the joystick has moved between note-on and note-off, `heldPitch_[v]` is now a different pitch and the note-off misses the sounding note.
 
-- **Triangle/Saw near zero crossing:** The output linearly approaches zero. A triangle LFO at rate 0.01 Hz spends ~50 samples per cycle with output magnitude < 1e-38. If this output is multiplied by a small scale factor (e.g., level = 0.001), the product can enter denormal range.
-- **Sine near zero:** `std::sin(phase * 2pi)` never itself produces denormals (sin(x) is bounded [-1,1]), but accumulated floating-point phase errors can cause `sin()` to receive subnormal arguments on specific platforms.
-- **Phase accumulator accumulation:** A double-precision beat accumulator running at `sampleRate * N blocks` per session will never produce denormals (double has 52-bit mantissa, minimum normalized value ~2.2e-308). Float-precision phase accumulator running for a long session at low rates may accumulate toward zero only if phase is reset to exactly 0.0 by sync — not a denormal source per se, but phase values near 0.0f after reset can cause `sinf(0.0f)` to return exactly 0.0f, which is not denormal.
+Concrete scenario: pad pressed while joystick at Y=0.5 → sub-octave note-on at pitch 55. Joystick moves to Y=0.8 → `heldPitch_[v]` updates to 60. Pad released → `noteOff(ch, heldPitch_[v] - 12)` = `noteOff(ch, 48)`. Pitch 55 never receives a note-off. Stuck note.
 
-The real denormal risk is LFO output scaled by `level * lfoValue` where `level` is a very small user value. At `level = 0.0`, the output is 0.0f — fine. At `level = 0.001` and `lfoValue = 1e-10` (triangle crossing zero), the product is `1e-13` — denormal range on float.
-
-**Why it happens:**
-The existing `processBlock` already applies `juce::ScopedNoDenormals noDenum;` at line 359. This sets the DAZ/FZ flags for the entire block, flushing subnormals to zero. As a result, denormals from LFO computation are automatically flushed before they can affect downstream DSP. This is the JUCE-standard solution.
-
-**Consequences with `ScopedNoDenormals`:** None. The existing guard handles it.
-
-**Consequences WITHOUT it:** CPU spikes of 10-100x for the blocks where LFO output crosses zero under high-precision smoothing. This plugin already has `ScopedNoDenormals` — no action needed beyond verifying it stays at the top of `processBlock`.
+**Consequences:**
+- Stuck sub-octave note whenever joystick moves between note-on and note-off
+- Particularly high probability with looper playback: gate-on fires at beat A with one joystick position; joystick position (from looper replay) changes before gate-off fires at beat B
 
 **Prevention:**
-1. Verify `ScopedNoDenormals` remains at the very top of `processBlock()` — before any LFO computation (it already does at line 359 — maintain this).
-2. Do not add LFO computation in any path that runs OUTSIDE `processBlock()`. All LFO waveform evaluation must happen inside the `ScopedNoDenormals` scope.
-3. Explicitly clamp LFO output after scaling: `lfoOut = std::abs(lfoOut) < 1e-10f ? 0.0f : lfoOut` is unnecessary given FTZ is active, but adding a coarse `jlimit(-1.0f, 1.0f, lfoOut * level)` clamp provides defense-in-depth.
+Add `std::array<int, 4> subOctActivePitch_ {-1, -1, -1, -1}` as an audio-thread-only member in PluginProcessor (mirrors `looperActivePitch_`). At sub-octave note-on: `subOctActivePitch_[v] = pitch - 12`. At sub-octave note-off: use `subOctActivePitch_[v]`; reset to -1. Apply the same pattern to the looper gateOn path (lines 775–787) if sub-octave is active for that voice.
 
-**Detection:**
-- `JUCE_DSP_ENABLE_SNAP_TO_ZERO` flag triggered in debug builds
-- CPU spikes at very slow LFO rates with high-level smoothing (only reproducible if `ScopedNoDenormals` is accidentally removed)
+**Detection warning signs:**
+- Sub-octave note sustains indefinitely when joystick moves during a held pad press
+- Does not reproduce with static joystick
+- Deterministic: press pad → move joystick → release pad → sub-oct hangs
 
-**Phase:** LFO engine implementation phase — verify `ScopedNoDenormals` placement before writing first LFO code.
+**Phase:** Sub-octave implementation
+
+---
+
+### Pitfall 3: SDL2 Bluetooth Reconnect — Invalid Handle After Rapid Re-Open
+
+**What goes wrong:**
+The 60 Hz `timerCallback()` handles reconnect by responding to `SDL_CONTROLLERDEVICEADDED` (line 113) with `tryOpenController()` called inline inside the SDL event loop. On Bluetooth reconnect, the BT stack on Windows takes 100–500 ms to complete device enumeration after signaling `SDL_CONTROLLERDEVICEADDED`. Calling `SDL_GameControllerOpen(i)` during active BT enumeration can return a handle that passes the null check but becomes invalid on the next SDL API call (the handle points to an incompletely initialized internal SDL structure).
+
+On the subsequent timerCallback tick, `SDL_GameControllerGetAxis(controller_, SDL_CONTROLLER_AXIS_RIGHTX)` is called with the invalid handle (line 130). This produces an access violation crash.
+
+**Second failure mode:** `SDL_CONTROLLERDEVICEREMOVED` is unreliable on PS4 BT under Windows. The existing fallback poll at line 120–121 (`if (controller_ && !SDL_GameControllerGetAttached(controller_))`) correctly catches silent disconnects. However, if a `SDL_CONTROLLERDEVICEREMOVED` event arrives AND the fallback fires in the same tick (e.g., the event is queued but the poll also runs before the event is processed), `closeController()` is called twice on the same handle. The second call passes `if (controller_)` = false (already nulled) so it is safe, but only because of the null guard. Any future refactor that removes the null guard would cause a double-free.
+
+**Root cause of the crash:** `tryOpenController()` is called from within the `while (SDL_PollEvent(&ev))` loop (line 113). SDL may still have pending events for the same device in the queue. Opening the device before the queue is drained puts SDL's internal state in an inconsistent window.
+
+**Prevention:**
+Set a `bool pendingReopen_ = false` flag when `SDL_CONTROLLERDEVICEADDED` fires. On the following timerCallback tick (after the event queue is fully drained), call `tryOpenController()`. This defers the open by one 16.7 ms frame, past the BT enumeration window. After `SDL_GameControllerOpen(i)`, immediately verify: `if (!SDL_GameControllerGetAttached(result)) { SDL_GameControllerClose(result); continue; }`. Do not call `tryOpenController()` from within the SDL event processing loop.
+
+**Detection warning signs:**
+- Crash occurs on BT disconnect + reconnect but not on USB
+- Stack trace shows `SDL_GameControllerGetAxis` or `SDL_GameControllerGetButton` on the frame after reconnect
+- Reliable reproduction: hold a button, BT-disconnect, wait 1 second, BT-reconnect
+
+**Phase:** Bug fix — PS4 BT reconnect crash
+
+---
+
+### Pitfall 4: LFO Recording Buffer — FIFO Overflow on Long Loops
+
+**What goes wrong:**
+LFO output is a continuous float signal (one value per processBlock call, not a sparse event). If LFO recording stores samples into the existing `LooperEngine` FIFO as `LooperEvent` entries, a 16-bar 4/4 loop at 120 BPM = 32 seconds. At 512 samples/block and 44100 Hz, that is ~86 blocks/second = 2752 events for one loop cycle. This exceeds `LOOPER_FIFO_CAPACITY = 2048`. The existing `capReached_` guard fires and recording silently truncates mid-loop.
+
+Additionally, LFO events recorded into the LooperEngine FIFO displace gate events. A session with a 16-bar loop that records LFO for more than ~24 seconds leaves zero capacity for gate events. The cap guard stops gate recording without warning.
+
+**Consequences:**
+- LFO playback truncates at the 2048-event mark (approximately 24 seconds of recording at 86 blocks/sec)
+- Gate events are silently lost when FIFO fills with LFO samples
+- `capReached_` becomes true but the UI indicator may not clearly signal the cause
+
+**Prevention:**
+Use a **separate ring buffer** for LFO recording, independent of `LooperEngine`. Size: `ceil(maxLoopSecs * maxBlockRate)` with generous headroom. For a 16-bar 4/4 loop at 30 BPM (slowest reasonable tempo) = 128 seconds at ~86 blocks/sec = 10,987 blocks. Use a power-of-two size of 16,384 floats (~64 KB — acceptable for a plugin member). Index with a write-position counter (audio-thread-only, no FIFO needed since recording and playback never overlap in time). Playback reads the same buffer sequentially using a read-position counter that advances each block and wraps at the recorded length.
+
+Do not route LFO recording through `LooperEngine::recordJoystick()` or any FIFO-backed method.
+
+**Detection warning signs:**
+- LFO playback ends abruptly mid-loop on loops longer than ~24 seconds (at 512 samples/block, 44100 Hz)
+- `capReached_` becomes true during LFO-only recording sessions
+- Gate events stop being captured after LFO recording runs for a few seconds
+
+**Phase:** LFO recording implementation
+
+---
+
+### Pitfall 5: Looper Start-Position Bug Poisons LFO Recording Phase Alignment
+
+**What goes wrong:**
+The known bug "looper start position wrong after rec cycle" directly corrupts LFO recording playback. In `LooperEngine::process()` at lines 758–763, after `finaliseRecording()`, `internalBeat_` resets to `0.0` and `loopStartPpq_` resets to `-1.0`. On the very next block, `anchorToBar()` re-anchors to `floor(ppqPos / bpb) * bpb` — the current bar, not the bar where recording started. If the DAW playhead is mid-bar at the moment recording ends (the typical case), the anchor slips by up to one bar.
+
+For gate events, this phase slip is usually masked by note-attack transients. For LFO waveform playback, a phase slip of 0.3 beats at 120 BPM is 150 ms — an audible discontinuity at the loop seam on every cycle.
+
+**Consequence for LFO recording:** Adding LFO recording before fixing this bug produces a system where LFO playback has a phase glitch at every loop seam. The glitch will be attributed to LFO recording (a new feature) when the actual cause is the pre-existing looper anchor bug.
+
+**Prevention:**
+Fix the anchor bug before implementing LFO recording. The fix: capture `recordStartPpq_` (the `ppqPosition` at the moment `recordPending_` activates or `activateRecordingNow()` fires) and use that as the `loopStartPpq_` in `finaliseRecording()` instead of resetting to -1 and re-anchoring on the next block. The read-position counter for LFO playback must use the same anchor reference as gate event playback.
+
+**Detection warning signs:**
+- LFO playback waveform has a phase discontinuity at the loop seam after the first record cycle
+- Glitch disappears if looper is stopped and restarted manually (clean anchor from stop)
+- Glitch magnitude is proportional to `ppqPos mod beatsPerBlock` at the moment recording ends
+
+**Phase:** Looper bug fix must precede LFO recording phase
 
 ---
 
 ## Moderate Pitfalls
 
-### Pitfall 4: Beat-Synced LFO Phase Accumulation Drift Over Long Sessions
+---
+
+### Pitfall 6: Option Mode 1 — Circle Fires `looperDelete_` Unconditionally
 
 **What goes wrong:**
-A naively implemented beat-synced LFO uses a float phase accumulator incremented per block:
+In `GamepadInput::timerCallback()` (line 177–178), `SDL_CONTROLLER_BUTTON_B` (Circle on PS4) is mapped to `looperDelete_` with no mode guard. The v1.4 Option Mode implementation gates D-pad behavior via `optionMode_`, but the four face buttons (Cross/Circle/Square/Triangle) fire their looper atomics unconditionally.
+
+In v1.5, Option Mode 1 reassigns Circle to arp on/off. If the looper button dispatch is not gated, pressing Circle in Mode 1 fires both `looperDelete_` and the new arp toggle. The loop is deleted every time arp is toggled.
+
+The same applies to Triangle (looper record → arp rate), Square (looper reset → arp order), and Cross (looper start/stop → arp RND sync).
+
+**Consequences:**
+- Circle in Option Mode 1 deletes the loop
+- Triangle in Option Mode 1 starts recording
+- Square in Option Mode 1 resets looper
+- All four actions have dual effects until mode guard is added
+
+**Prevention:**
+Wrap the entire face-button looper dispatch block (lines 175–185 in GamepadInput.cpp) inside `if (optionMode_.load(std::memory_order_relaxed) == 0)`. In Option Mode 1, process the same four buttons against new atomics: `arpToggle_`, `arpRateInc_`, `arpOrderNext_`, `arpRndSyncToggle_`. Consume these in processBlock when `gamepad_.getOptionMode() == 1`. Do not reuse the existing looper atomics for dual purposes.
+
+**Detection warning signs:**
+- Pressing Circle in Option Mode 1 deletes the loop
+- Loop content disappears on first arp toggle attempt
+- Reliable test: arm a loop, switch to Mode 1, press Circle
+
+**Phase:** Gamepad Option Mode 1 implementation
+
+---
+
+### Pitfall 7: R3 + Pad Combo Detection — 60 Hz Frame Timing Misses Simultaneous BT Presses
+
+**What goes wrong:**
+R3 + held-pad combo for sub-octave toggle requires detecting R3 pressed while a voice trigger (L1/L2/R1/R2) is also held. At 60 Hz polling (16.7 ms frames), two buttons pressed within the same frame appear simultaneous. The issue is the detection site:
+
+In `timerCallback()`, R3 fires `rightStickTrig_.store(true)` (line 190–192) as a rising-edge flag. In `processBlock`, `consumeRightStickTrigger()` exchanges this flag to false. The existing held-state atomics `voiceHeld_[v]` are accurate at 60 Hz resolution.
+
+If the combo detection logic checks `voiceHeld_[v]` in `processBlock` at the moment `consumeRightStickTrigger()` returns true, and both R3 and L1 are pressed within the same 60 Hz frame, the detection is correct. But PS4 Bluetooth adds ~8 ms latency per button event. Two simultaneous physical presses may arrive in adjacent 60 Hz frames (16.7 ms apart). In the second frame, L1 has already been in `voiceHeld_[0] = true` for one frame, and R3 fires in this frame — detection succeeds. However, if R3 arrives in the first frame and L1 in the second frame (latency inversion), `voiceHeld_[0]` is false when R3 is consumed — combo fails.
+
+**Consequences:**
+- Sub-octave combo fires the old R3 action (panic, before removal) instead of toggling sub-oct
+- Combo unreliable on BT; reliable on USB
+- Intermittent: depends on exact BT scheduling
+
+**Prevention:**
+Add a `rightStickHeld_` atomic to `GamepadInput` (mirrors `voiceHeld_[v]` pattern). Detect the combo in `processBlock` with a short hold window: if `rightStickHeld_` and `getVoiceHeld(v)` are simultaneously true (even across multiple blocks), treat as combo. Since `voiceHeld_` is continuously updated at 60 Hz, the window for detection spans multiple processBlock calls (~3 calls per 60 Hz tick). Store `rightStickHeldSamples_` counter (audio-thread-only): increment while `rightStickHeld_` is true; fire combo if `voiceHeld_[v]` becomes true while counter is within a threshold window (e.g., 3 blocks ≈ 34 ms at 512 samples/block). This tolerates BT latency inversion.
+
+**Detection warning signs:**
+- Sub-octave combo works on USB gamepad but fails intermittently on BT
+- Adding `DBG` to combo detection shows R3 consumed before L1 is held approximately 30% of the time on BT
+
+**Phase:** Gamepad Option Mode 1 / sub-octave implementation
+
+---
+
+### Pitfall 8: Left-Stick Modulation Targets — `setValueNotifyingHost` from Audio Thread
+
+**What goes wrong:**
+Left stick X/Y expanded targets (LFO freq, shape, level, arp gate len) are APVTS parameters. If the implementation calls `apvts.getParameter("lfoXRate")->setValueNotifyingHost(value)` from `processBlock` (audio thread), this is illegal — JUCE's `setValueNotifyingHost` acquires the APVTS lock internally on some JUCE 8 build configurations and always notifies the host, which may call back onto the audio thread recursively. At minimum it floods the host automation track with 60-sample-rate-worth of parameter changes per second.
+
+**Consequences:**
+- JUCE assertion "This should only be called from the main thread" fires in debug builds
+- Host automation undo stack overflow at 60 writes/sec in some DAWs
+- Potential deadlock if host calls `audioProcessorParameterChanged` re-entrantly
+
+**Prevention:**
+Apply left-stick LFO/arp modulation as an inline additive offset computed inside `processBlock`, not as APVTS writes. This is the same pattern already used for LFO output on joystick position (lines 631–632). Read the APVTS base value, add the stick contribution, use the result locally:
 
 ```cpp
-float lfoPhase_ = 0.0f;  // audio-thread-only
-// Each block:
-const float rateHz = bpm / 60.0f * lfoRateDivider;
-const float phaseDeltaPerBlock = rateHz * blockSize / sampleRate;
-lfoPhase_ += phaseDeltaPerBlock;
-if (lfoPhase_ >= 1.0f) lfoPhase_ -= 1.0f;
+const float baseLfoRate = apvts.getRawParameterValue("lfoXRate")->load();
+const float effectiveRate = baseLfoRate + stickX * modDepth;  // local only, not written back
 ```
 
-This accumulates floating-point rounding error. After 100,000 blocks at 512 samples (44100 Hz), roughly 1166 seconds of audio, the accumulated phase error from float addition is approximately `100000 * FLT_EPSILON * (phaseDelta magnitude)`. For a 1/4 note LFO at 120 BPM, `phaseDelta ≈ 0.023f`, giving accumulated error of approximately `100000 * 1.2e-7 * 0.023 ≈ 2.8e-7` — less than 0.03ms of drift. For practical purposes this is inaudible at musical LFO rates.
+Pass `effectiveRate` directly to `ProcessParams.rateHz` for that block. This is zero-latency, audio-thread-safe, and produces no parameter-change notifications.
 
-The real drift problem occurs when `DAW sync` is active and the DAW is not playing. The LFO should use `ppqPosition` to anchor its phase:
+**Detection warning signs:**
+- JUCE assertion fires in debug build on first stick movement with modulation enabled
+- Host records a continuous automation lane from stick movements
 
-```
-lfoPhase = fmod(ppqPosition / lfoBeatsPerCycle, 1.0)
-```
-
-If the developer forgets to anchor to PPQ and instead lets the free-running accumulator run when DAW is stopped, the LFO drifts out of phase with the song position after each stop/start cycle.
-
-**Prevention:**
-1. When sync is active AND the DAW is playing (`isDawPlaying == true`), compute LFO phase directly from `ppqPos` rather than accumulating: `lfoPhase = std::fmod(ppqPos / lfoBeatsPerCycle, 1.0)`. This is exactly how `arpPhase_` is kept coherent in `PluginProcessor.cpp:800`: `arpPhase_ = std::fmod(ppqPos, subdivBeats)`.
-2. When sync is active but DAW is stopped, freeze the LFO phase (do not advance). Resume accumulating from the frozen phase when DAW starts again — do NOT reset to zero, which causes a phase jump.
-3. When sync is off (free-running), accumulate phase freely. Use a `double` accumulator: `double lfoPhaseD_` avoids the slow float drift at ultra-slow rates. Only cast to `float` for the waveform computation.
-4. When sync mode changes from free to synced mid-session, resync to the current `ppqPos` immediately.
-
-**Detection:**
-- Synced LFO slowly drifts out of alignment with DAW grid over long sessions (stop/start cycles)
-- LFO phase jumps to 0 on DAW start instead of picking up from current song position
-- At very slow sync rates (e.g., 8 bars per cycle), the drift is visible as the LFO peak arriving 1-2 beats late after 10 minutes
-
-**Phase:** LFO engine implementation phase.
+**Phase:** Left-stick modulation expansion
 
 ---
 
-### Pitfall 5: APVTS SmoothedValue Collision With LFO Modulation
+### Pitfall 9: Arp + Single-Channel Mode — Step Collision When Adjacent Voices Share Pitch
 
 **What goes wrong:**
-JUCE's `AudioParameterFloat` (used in APVTS) has an internal `SmoothedValue` that ramps from the previous value to the new value over a configurable duration (default: ~20ms). If the LFO modulates the same parameter that has APVTS smoothing, the result is the smoothed ramp fighting the LFO output: the smoothed ramp targets the static knob position while the LFO tries to impose a dynamic offset. The actual applied value oscillates, but not sinusoidally — it follows a clipped, distorted version of the LFO shape corrupted by the convergence trajectory of the smoother.
+The arpeggiator emits `noteOn(voiceChs[voice], heldPitch_[voice], 100)` per step, tracking one active pitch in `arpActivePitch_`. In single-channel mode, when two adjacent arp steps hit the same quantized pitch, the step-boundary note-off fires `noteOff(ch, prevPitch)` and then `noteOn(ch, samePitch)` in the same block. Some synths interpret this as a retrigger (new note envelope); others suppress the noteOff because the note is immediately re-triggered. If `arpActivePitch_` equals the next step's pitch and both are on the same channel, the behavior is synth-dependent and inconsistent.
 
-This is compounded by this plugin's parameter-reading pattern: `apvts.getRawParameterValue("x")->load()` reads the _instantaneously ramped_ atomic float, not the final target value. If the LFO modulates `joystickXAtten` (for example) by calling `setValueNotifyingHost()` at LFO rate, the smoother fires and takes 20ms to reach each new LFO target — a low-pass filter imposed on the LFO output with a 20ms time constant (~50Hz cutoff). For LFO rates below ~5 Hz this is inaudible, but above 5 Hz the LFO waveform shape is destroyed.
-
-**Why it happens:**
-Developers attempt LFO modulation by writing back to APVTS parameters via `setValueNotifyingHost()` from the audio thread (illegal) or by scheduling writes via message thread callbacks. Both approaches impose APVTS smoothing and message-thread latency on what should be a sample-accurate modulation signal.
+With the per-pitch reference-count solution from Pitfall 1, this specific case is handled: the reference count for that pitch goes 1 → (noteOff decrements to 0 → MIDI noteOff sent) → (noteOn increments to 1 → MIDI noteOn sent). This is the correct retrigger behavior. The pitfall is that Pitfall 1's solution must be applied to the arp path as well, not just the pad trigger path.
 
 **Prevention:**
-The LFO modulates the final computed value — not the APVTS parameter. The APVTS parameter is the "base" value; the LFO adds an offset to the already-read base value:
+Apply the same per-pitch reference count (`noteCount_[16][128]`) to arp note-on and note-off emissions (lines 1068, 1025, 990–991). Do not add arp-specific special-casing; the reference count solution handles all cases uniformly.
 
-```cpp
-// WRONG: writing LFO output back into APVTS (adds 20ms smoothing, illegal on audio thread)
-apvts.getRawParameterValue("joystickXAtten")->store(baseValue + lfoOffset);  // DO NOT DO THIS
-
-// CORRECT: read base value from APVTS, add LFO offset in local computation
-const float xAtten = apvts.getRawParameterValue(ParamID::joystickXAtten)->load();
-const float xAttenModulated = juce::jlimit(0.0f, 127.0f, xAtten + lfoOutputX_ * lfoXLevel_);
-chordP.xAtten = xAttenModulated;  // used only for this block, not written back
-```
-
-This is the established pattern for modulation in DSP: never write the modulated value back to the parameter source. The parameter stores the static user intent; the LFO is an ephemeral offset applied at computation time.
-
-**Detection:**
-- LFO waveform sounds rounded/softened at rates above 5 Hz (smoother low-passing the LFO)
-- LFO appears to have latency — peak arrives 10-20ms after expected
-- Any `setValueNotifyingHost()` call from the audio thread triggers JUCE assertion "This should only be called from the main thread"
-
-**Phase:** LFO engine implementation phase.
+**Phase:** Single-channel routing phase (arp integration path)
 
 ---
 
-### Pitfall 6: Phase Reset at Block Boundary Instead of Sample Boundary Causes Audible Phase Jitter
+### Pitfall 10: LFO Recording "Distort Stays Live" — Double-Distortion on Playback
 
 **What goes wrong:**
-When the LFO phase is reset (on sync start, on phase-reset trigger, or on DAW playback start), if the reset is applied to the entire block at sample 0, but the actual trigger event happens at sample N within the block, the LFO is reset N samples early. For a 512-sample block at 44100 Hz, N can be up to 11.6ms of error. For LFO rates above ~5 Hz (period ≤ 200ms), this jitter exceeds 5% of the LFO period — audible as a subtle phase inconsistency on repeated triggers.
+The v1.5 spec says "Distort stays live" (distortion parameter remains adjustable during playback of a recorded LFO cycle). If the ring buffer stores **post-distortion** samples (the final `lfoX_.process(xp)` return value, which already includes the LCG noise contribution), then during playback the user's live distortion knob re-applies distortion to an already-distorted signal:
 
-For a MIDI generator plugin with no audio output, the impact is less severe than for an audio plugin with LFO-modulated filter sweeps — the joystick value is evaluated once per block, not per sample. Block-level phase reset is therefore acceptable for ChordJoystick's use case.
+- Buffer was recorded at distortion=0.2 → waveform contains 20% noise contribution
+- User turns distortion to 0.4 during playback → live distortion 0.4 applied on top
+- Net distortion is not 0.4 but approximately 0.2 + 0.4 * (1 - 0.2) ≈ 0.52
 
-**Why it happens:**
-Sample-accurate phase reset requires computing the sample offset of the triggering event within the block (e.g., from MIDI timestamp or PPQ sub-block position) and applying the phase reset at that offset. Block-level reset is simpler and adequate for most MIDI generator contexts.
-
-**Consequences for ChordJoystick:** Acceptable. The joystick output is evaluated once per block via `buildChordParams()`. The quantization grid is at the block level. Sub-block LFO accuracy is not required. However, the beat-sync phase computation (`std::fmod(ppqPos / lfoBeatsPerCycle, 1.0)`) inherently provides block-accurate sync since `ppqPos` is the PPQ at block start.
+The user expects "live distortion = 0.4 = 40% noise", but hears 52% noise.
 
 **Prevention:**
-1. Accept block-level LFO phase accuracy. Do not implement per-sample LFO for this plugin.
-2. For beat-sync mode, use the PPQ derivation (Pitfall 4 prevention) which gives block-accurate sync "for free."
-3. For the phase-reset button in the UI: set a `std::atomic<bool> pendingLfoPhaseReset_` flag and service it at the top of `processBlock` — identical to the existing `pendingPanic_` / `pendingQuantize_` patterns. Do NOT call any phase-reset method from the message thread directly.
+Record **pre-distortion** waveform values: store the `evaluateWaveform()` output before the LCG noise is added. During playback, apply the current live distortion value to each replayed sample. This requires a small refactor of `LfoEngine`: expose `evaluateWaveform()` publicly (or add a `noDistort` flag to `ProcessParams`). The playback path in processBlock reads the ring buffer sample, then applies `liveDistortion * nextLcg() + (1.0f - liveDistortion) * bufferedSample`.
 
-**Detection:**
-- This pitfall is a design decision, not a bug to detect. Accept block-level resolution consciously.
+Document the intended behavior explicitly before implementation to avoid ambiguity.
 
-**Phase:** LFO engine implementation phase — document the decision explicitly.
+**Detection warning signs:**
+- LFO playback sounds "dirtier" than the distortion knob value suggests
+- Turning distortion to zero does not fully remove noise from recorded playback
+- The artifact is proportional to the distortion level used during recording
+
+**Phase:** LFO recording implementation
 
 ---
 
-### Pitfall 7: UI Display Rate Cannot Track LFO Rates Above ~15 Hz
+### Pitfall 11: Option Mode 1 RND Sync Toggle — `setValueNotifyingHost` from processBlock
 
 **What goes wrong:**
-The editor's `timerCallback()` runs at 30 Hz (33ms interval). An LFO at 16 Hz (period 62.5ms) completes approximately 1.9 full cycles between UI timer ticks. The UI cannot display the LFO waveform position meaningfully — the display will show aliased, apparently random values each tick, making the LFO position indicator appear to jump erratically rather than sweep smoothly.
-
-This is not a correctness bug — the LFO operates correctly on the audio thread. The UI display problem is aesthetic, but it can mislead users into thinking the LFO is malfunctioning at fast rates.
+v1.5 maps Cross (SDL A) in Option Mode 1 to `X=RND Sync`, toggling the `randomClockSync` APVTS bool. If the implementation toggles this via `setValueNotifyingHost("randomClockSync", ...)` from processBlock (audio thread), this is the same violation as Pitfall 8.
 
 **Prevention:**
-1. Do NOT attempt to display LFO waveform position as a moving cursor on the UI waveform display. At rates above ~15 Hz the display aliases and provides no useful information.
-2. Display the LFO _rate_ (in Hz or note division) and _shape_ as static labels only. This is always accurate regardless of LFO rate.
-3. If a position indicator is desired, implement it with aliasing awareness: if `lfoRateHz > 15.0f`, hide the phase cursor and show a "FAST" indicator instead.
-4. The existing `timerCallback()` pattern (single 30 Hz timer, no second timer) applies here. Read the LFO phase from an `std::atomic<float> lfoPhaseDisplay_` written by the audio thread — identical to `playbackBeat_`. Do not add a second timer for the LFO display.
+Use the same pending-delta atomic pattern as Option Mode 2's D-pad parameter control (lines 486–497): set a `pendingRndSyncToggle_` atomic bool in processBlock; consume in `PluginEditor::timerCallback()` and call `setValueNotifyingHost` there. This is the established pattern in the codebase for all gamepad-driven parameter changes.
 
-**Detection:**
-- LFO position indicator appears to jump or flicker at rates above 15 Hz
-- Adding a second `startTimerHz(60)` for the LFO display causes the CPU spike confirmed in the existing PITFALLS.md (Pitfall 8)
-
-**Phase:** LFO UI phase.
-
----
-
-### Pitfall 8: New APVTS Parameters Cause State Size Bloat and Deserialization Failures on Preset Load
-
-**What goes wrong:**
-The v1.3 APVTS layout has approximately 60 parameters (counting individual scaleNote0..11 entries and all voice channels). Each LFO requires roughly 7 parameters (waveform shape, frequency, phase offset, distortion, level, sync toggle, on/off toggle). For dual LFOs, that is 14 new parameters. JUCE's APVTS stores all parameters in a `ValueTree` serialized as XML or binary on `getStateInformation()`. Adding 14 new parameters is low-impact: the additional state size is well under 1 KB.
-
-The real risk is parameter ID naming: if a new LFO parameter ID collides with an existing parameter ID, JUCE silently overwrites the existing parameter's value on `setStateInformation()`. This has happened in this codebase between versions when parameter names changed. The specific failure mode: user opens plugin, loads a v1.3 preset; new v1.4 parameters are absent from the preset XML; JUCE silently uses their default values. This is correct behavior — no bug. But if an LFO parameter ID accidentally matches an existing ID (e.g., naming an LFO param "randomDensity"), the loaded preset value overwrites the LFO parameter with the random density value (probably 4.0), and neither parameter behaves correctly.
-
-JUCE does not validate for collisions at registration time — it silently allows duplicate IDs and produces unpredictable behavior at runtime.
-
-**Prevention:**
-1. Prefix all LFO parameter IDs with "lfo": `"lfoXShape"`, `"lfoXFreq"`, `"lfoXPhase"`, `"lfoXDist"`, `"lfoXLevel"`, `"lfoXSync"`, `"lfoXOn"`, and equivalents for Y-axis LFO.
-2. After adding parameters, grep for collisions: `grep -o '"[a-zA-Z0-9_]*"' Source/PluginProcessor.cpp | sort | uniq -d` — any duplicate output is a collision.
-3. Add a compile-time check in `createParameterLayout()` using a static assertion or set-based dedup that fires on duplicate IDs in Debug builds.
-4. Test backward compatibility: load a v1.3 preset in a debug build. All existing parameters should load at their saved values; LFO parameters should load at their defaults.
-
-**Detection:**
-- Preset causes an existing non-LFO parameter to reset to an unexpected value after v1.4 upgrade
-- `apvts.getRawParameterValue("lfoXFreq")` returns `nullptr` at runtime (ID misspelled or not registered)
-
-**Phase:** APVTS / LFO parameter registration phase.
+**Phase:** Gamepad Option Mode 1 implementation
 
 ---
 
 ## Minor Pitfalls
 
-### Pitfall 9: LFO S&H "Distortion" Waveform Shape — Zero Seed Locks PRNG
+---
+
+### Pitfall 12: Sub-Octave in Looper Playback — Both Paths Must Fire Sub-Oct
 
 **What goes wrong:**
-A zero seed in a multiplicative LCG produces a degenerate sequence: `0 * multiplier + addend = addend`, then `addend * multiplier + addend`, etc. The codebase's existing LCG (`arpRandSeed_ = arpRandSeed_ * 1664525u + 1013904223u`) is immune because `1013904223` (the addend) is nonzero — even a zero seed produces a non-repeating sequence for this LCG variant (Park-Miller property of nonzero addend). However, if a xorshift-based PRNG is chosen for the LFO instead, a zero seed causes a permanent sequence of zeros — all S&H values are 0.0f, sounding like the LFO is off.
+The looper gate-on path (lines 775–787) currently fires one `noteOn` per voice. If sub-octave is added to `tp.onNote` (the direct pad/joystick/random trigger path) but not to the looper gate-on path, live pad presses produce sub-octave notes but looper playback does not. The feature appears to work in basic testing (pad presses) but fails when the looper is active.
 
 **Prevention:**
-1. For the LFO S&H PRNG, use the same LCG variant as the existing arp: `seed = seed * 1664525u + 1013904223u`. This is immune to zero-seed lockup due to the nonzero addend.
-2. Initialize the LFO seed to a nonzero constant (e.g., `12345u`) at construction, not from any runtime source.
-3. If xorshift is preferred for better statistical quality, guard against zero: `if (seed == 0) seed = 0xDEADBEEFu;` after any seed reassignment.
+Abstract the "emit note-on for voice, optionally including sub-octave" logic into a helper used by both paths. Both `loopOut.gateOn[v]` and `tp.onNote` call the same helper. The helper accepts the voice index, pitch, channel, MIDI buffer, sample offset, and a `bool subOctEnabled[4]` state array. Sub-octave snapshot (`subOctActivePitch_[v]`) is updated inside the helper. This avoids implementing sub-octave twice and missing one path.
 
-**Phase:** LFO engine implementation phase.
+**Phase:** Sub-octave implementation
 
 ---
 
-### Pitfall 10: LFO Phase Accumulator Range — Wrapping via Subtraction vs. fmod
+### Pitfall 13: Arp `arpStep_` Not Reset When Circle Toggles Arp Off Then On
 
 **What goes wrong:**
-The phase accumulator approach using `while (phase >= 1.0f) phase -= 1.0f;` is correct for normal audio rates but can fail silently if the LFO frequency is set extremely high (e.g., 400 Hz in "audio rate" mode) and the block is large. At 400 Hz and a 1024-sample block at 44100 Hz, the phase advances by `400 * 1024 / 44100 ≈ 9.3` per block — the `while` loop executes 9 times, which is correct. However, for very long blocks (rare but possible when the DAW renders offline at 8192 samples), the phase advances by `400 * 8192 / 44100 ≈ 74.3` — the while loop executes 74 times. This is harmless functionally but burns 74 unnecessary iterations.
+The arp disable path resets `arpPhase_ = 0.0` and `arpStep_ = 0` (lines 996–997). When arp is toggled off via Circle (Mode 1) and immediately re-enabled, the phase and step reset to 0. This is usually desirable (re-lock to beat grid on re-enable). However, if the user uses Circle to "skip a beat" mid-phrase, the step counter reset produces a different voice order than expected (always restarts from voice 0 of the sequence).
 
-For a MIDI plugin with per-block evaluation, `std::fmod(phase, 1.0f)` is preferable for LFO phase wrapping since the block size can vary unpredictably in offline render mode.
+This is an intentional behavior tradeoff, not a bug. Document it: Circle toggles arp off → all state resets → next enable always starts from step 0 of the sequence. If "resume from current step" is desired, remove the `arpStep_ = 0` reset from the disable path — but this requires careful handling to avoid stale arpActivePitch_ state.
 
-**Prevention:**
-Use `lfoPhase_ = std::fmod(lfoPhase_, 1.0f)` instead of a while loop for phase wrap.
-
-**Phase:** LFO engine implementation phase.
+**Phase:** Gamepad Option Mode 1 (document the decision)
 
 ---
 
-### Pitfall 11: LFO "Distortion" Parameter — Waveform Shaper Introduces DC Offset
+### Pitfall 14: Sub-Octave Note Sent on Looper Reset Without Matching Note-Off
 
 **What goes wrong:**
-Common waveform distortion shapes (hard clipping, wavefold, tanh saturation) applied to a zero-centered LFO waveform produce asymmetric outputs when asymmetrically parameterized. For example, hard clipping only the positive half of a sine introduces a non-zero DC offset. If the LFO modulates joystick position and the DC offset is nonzero, the joystick's center position drifts when the LFO is on versus off — notes held during LFO deactivation suddenly jump in pitch.
+On looper reset (`loopOut.looperReset = true`, lines 734–744), the processor iterates `looperActivePitch_[v]` and emits note-offs. If sub-octave is active, `subOctActivePitch_[v]` also needs a note-off in this path. The current reset handler only clears `looperActivePitch_[v]`; a sub-octave note sounding from a looper gate-on will not receive a note-off on reset.
 
 **Prevention:**
-1. After waveform shaping, subtract the mean: measure the DC at the current distortion setting and subtract it. For block-rate evaluation (one LFO value per block), this is impractical at runtime. Instead, design waveform shapers that are odd functions (symmetric around zero): tanh is an odd function (no DC offset), hard clip with symmetric thresholds is odd, wavefold is odd if the fold threshold is symmetric.
-2. Add DC removal: `lfoOut = lfoOut - 0.5f` for waveforms that naturally have a 0..1 range (Saw, S&H uniform random). All LFO outputs should be normalized to [-1, 1] before scaling by `level`.
-3. Test: with distortion at maximum and LFO level at zero (bypass), no joystick modulation should occur (lfoOutput * 0.0f = 0.0f regardless of distortion). This is trivially safe.
+In the looper reset handler, also emit `noteOff(ch, subOctActivePitch_[v], 0)` for each voice where `subOctActivePitch_[v] >= 0`, then reset to -1. Apply the same logic to the DAW stop path (`loopOut.dawStopped`, lines 686–692 equivalent) and the looper stop path (lines 718–730).
 
-**Phase:** LFO waveform engine phase.
-
----
-
-## Technical Debt Patterns
-
-| Shortcut | Immediate Benefit | Long-term Cost | Verdict |
-|----------|-------------------|----------------|---------|
-| Block-rate LFO (one value per block) | Simple, no per-sample loop | LFO aliased at high rates above ~15 Hz | Acceptable — MIDI generator, not audio rate |
-| LCG PRNG (32-bit LCG) for S&H | Zero allocation, audio-safe | Statistical quality lower than MT or PCG | Acceptable — musical randomness, not cryptography |
-| float phase accumulator | Simple code | Slow drift at ultra-slow rates (>1000x slower than double) | Acceptable — use double for free-running, PPQ for synced |
-| 30 Hz UI read of lfoPhaseDisplay_ atomic | No new timer needed | Display aliases at LFO rates above 15 Hz | Acceptable — show static rate/shape, not animated phase |
-| APVTS parameters for LFO config | Host automation support | ~14 new parameters; serialization overhead negligible | Acceptable — 14 params is well within APVTS limits |
-
----
-
-## Integration Gotchas
-
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| LFO output injection | Writing LFO offset to `joystickX`/`joystickY` atomics | Apply LFO as additive offset to `chordP.joystickX/Y` inside `processBlock` after `buildChordParams()` |
-| S&H random source | `std::rand()` or `std::mt19937` from audio thread | Private `uint32_t lfoXRandSeed_` with LCG (`* 1664525u + 1013904223u`) |
-| Phase reset from UI | Calling phase-reset method from message thread | `std::atomic<bool> pendingLfoPhaseReset_` flag, serviced in `processBlock` |
-| Beat sync phase | Free-running float accumulator with sync mode | `std::fmod(ppqPos / lfoBeatsPerCycle, 1.0)` when DAW is playing |
-| APVTS modulation | `setValueNotifyingHost()` from audio thread | Read APVTS value, add LFO offset locally, do not write back |
-| UI LFO display | 60 Hz second timer for smooth LFO animation | `std::atomic<float> lfoPhaseDisplay_` read in existing 30 Hz `timerCallback()` |
-| Denormals | Assuming LFO output is safe without guard | `ScopedNoDenormals` already at line 359 of `processBlock` — maintain its position |
-
----
-
-## Performance Traps
-
-| Trap | Symptoms | Prevention | Worst-Case Block |
-|------|----------|------------|-----------------|
-| `std::rand()` from audio thread | Intermittent stalls at S&H trigger, non-reproducible xruns | Private LCG seed member | Any block where S&H fires |
-| Phase wrap while-loop for high LFO rate | CPU burn in offline render (74+ iterations per block at 400 Hz) | `std::fmod(phase, 1.0f)` | Offline render, 8192-sample block |
-| 60 Hz second timer for LFO display | ~40% CPU spike in UI idle (confirmed in prior research) | One 30 Hz timer, `lfoPhaseDisplay_` atomic | Immediately on timer creation |
-| `setValueNotifyingHost()` from audio thread | JUCE assertion fire, lock acquisition on audio thread | Additive local offset — no write-back | Any block where LFO fires |
-| `std::mt19937` on stack for S&H | Stack frame ~2.5 KB per call — risk on MSVC debug stack | Static `uint32_t lfoRandSeed_` member | First S&H trigger |
-
----
-
-## "Looks Done But Isn't" Checklist
-
-- [ ] **LFO output injection point:** LFO offset applied to `chordP.joystickX/Y` AFTER `buildChordParams()` returns, NOT written to `joystickX`/`joystickY` atomics. Verify with looper playing joystick content — both LFO and looper gestures should be visible.
-- [ ] **S&H PRNG safety:** `grep "std::rand\|mt19937\|random_device" Source/` returns zero results in any LFO code path.
-- [ ] **S&H seed nonzero:** `lfoXRandSeed_` and `lfoYRandSeed_` initialized to nonzero constants (not `0`).
-- [ ] **ScopedNoDenormals position:** `juce::ScopedNoDenormals noDenum;` is still the FIRST statement in `processBlock()` (currently line 359). LFO computation happens inside this scope.
-- [ ] **Phase accumulator type:** LFO free-running phase accumulator uses `double lfoPhaseD_` to avoid float precision drift at slow rates.
-- [ ] **Beat sync derivation:** When DAW is playing and LFO sync is on, `lfoPhase` is derived from `ppqPos` not accumulated freely.
-- [ ] **No second timer:** `grep "startTimerHz\|startTimer" Source/PluginEditor.cpp` returns exactly 1 result after LFO UI is added.
-- [ ] **Phase reset flag:** `pendingLfoPhaseReset_` is `std::atomic<bool>` set from message thread; serviced at top of `processBlock` — no direct phase member write from message thread.
-- [ ] **APVTS parameter ID uniqueness:** All new LFO param IDs begin with `"lfo"` prefix. `grep`-based dedup confirms zero collisions with existing IDs.
-- [ ] **LFO display at fast rates:** LFO phase cursor is hidden or shows "FAST" indicator when rate exceeds ~15 Hz. No 60 Hz timer added for display.
-- [ ] **getRawParameterValue pattern preserved:** All new LFO APVTS reads in `processBlock` use `getRawParameterValue("id")->load()`. Zero instances of `getParameter("id")->getValue()` in audio thread code.
-- [ ] **No write-back to APVTS from audio thread:** No `setValueNotifyingHost()` or `store()` to any APVTS raw parameter from `processBlock` on behalf of LFO output.
-
----
-
-## Recovery Strategies
-
-| Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Wrong LFO injection point (overwrites looper) | MEDIUM | Move LFO offset application to after `buildChordParams()` return; remove any atomic write to `joystickX`/`joystickY` from LFO code; 1-hour refactor |
-| `std::rand()` from audio thread | LOW | Replace with LCG using `uint32_t lfoRandSeed_` member; 5-line change |
-| APVTS write-back from audio thread | MEDIUM | Remove write-back; apply LFO offset to local variable only; verify no JUCE assertions fire in debug build |
-| Beat sync drift | LOW | Replace accumulator with `fmod(ppqPos / lfoBeatsPerCycle, 1.0)` when synced; 3-line change |
-| Parameter ID collision | HIGH | Rename colliding parameter ID; all user presets saved with the old ID become unreadable for that parameter — force defaults on load |
-| Second UI timer | LOW | Remove second `startTimerHz()` call; merge display into existing `timerCallback()`; < 30 min |
-| DC offset from distortion shaper | LOW | Ensure all LFO waveform outputs are normalized to [-1, 1] before `level` scaling; add DC remove for saw/S&H (`output = output * 2.0f - 1.0f`); < 1 hour |
+**Phase:** Sub-octave implementation (include all note-off emission points in the audit)
 
 ---
 
 ## Phase-Specific Warnings
 
 | Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| LFO engine core (phase accumulator, waveforms) | Phase overflow on long offline render + denormals on triangle near zero | `std::fmod` wrap + `ScopedNoDenormals` already present |
-| LFO S&H waveform | `std::rand()` from audio thread | Private LCG seed `lfoXRandSeed_` |
-| LFO output injection into joystick signal | Overwriting looper joystick playback | Apply as additive offset after `buildChordParams()` |
-| LFO beat sync to DAW | Phase drift on stop/start cycles | Derive phase from `ppqPos` when DAW is playing |
-| APVTS parameter additions | ID collision with existing params | `"lfo"` prefix + grep dedup |
-| LFO UI section | Second timer added for display | Single 30 Hz `timerCallback()`, hide cursor at fast rates |
-| Phase reset from UI button | Direct member write from message thread | `pendingLfoPhaseReset_` atomic flag |
-| Distortion waveform shaper | DC offset causes joystick drift on bypass | Odd-function shapers + [-1,1] normalization |
+|---|---|---|
+| Looper start-position bug fix | Must be fixed before LFO recording | Capture `recordStartPpq_` at recording activation (Pitfall 5) |
+| Single-channel routing | Note collision when two voices share pitch | Per-pitch reference count `noteCount_[16][128]` (Pitfall 1) |
+| Single-channel + arp | Same-pitch adjacent steps stutter | Apply reference count to arp path too (Pitfall 9) |
+| Sub-octave note-on/off | Orphaned sub-oct on pitch change mid-hold | `subOctActivePitch_[v]` snapshot at note-on (Pitfall 2) |
+| Sub-octave + looper | Sub-oct missing from looper gate-on path | Single emission helper for both paths (Pitfall 12) |
+| Sub-octave on looper reset/DAW stop | Sub-oct note not cleared | Include `subOctActivePitch_[v]` in all note-off flush paths (Pitfall 14) |
+| LFO recording buffer | FIFO overflow on long loops | Separate ring buffer, not LooperEngine FIFO (Pitfall 4) |
+| LFO distortion during playback | Double-distortion on replay | Record pre-distortion waveform, apply distortion live (Pitfall 10) |
+| Left-stick modulation expansion | Flooding DAW automation via `setValueNotifyingHost` | Inline additive offset in processBlock (Pitfall 8) |
+| Option Mode 1 Circle = arp | Circle also fires `looperDelete_` unconditionally | Gate all face buttons behind `optionMode_ == 0` (Pitfall 6) |
+| Option Mode 1 RND Sync | `setValueNotifyingHost` from audio thread | Pending atomic + message-thread consume (Pitfall 11) |
+| R3 + pad sub-oct combo | 60 Hz frame misses simultaneous BT presses | `rightStickHeld_` + hold window in processBlock (Pitfall 7) |
+| PS4 BT reconnect crash | SDL handle invalid after rapid re-open | Deferred re-open (one-tick delay) + verify Attached after Open (Pitfall 3) |
 
 ---
 
-## Pitfall-to-Phase Mapping
+## Implementation Order Recommendation
 
-| Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| `std::rand()` on audio thread (S&H) | LFO engine — first implementation block | `grep "std::rand"` returns zero in LFO code; TSan clean |
-| LFO overwriting looper joystick | LFO output injection | Looper plays joystick content while LFO is active — both modulations visible in MIDI output |
-| Denormals from LFO output | LFO engine — verify `ScopedNoDenormals` first | Line 359 of `processBlock` is still `juce::ScopedNoDenormals noDenum;` |
-| Beat sync phase drift | LFO beat sync implementation | PPQ derivation present in sync path; no free-running accumulator when DAW is playing |
-| APVTS smoother collision with LFO | LFO output injection | No `setValueNotifyingHost()` or atomic store to APVTS param in audio thread |
-| UI rate mismatch at fast LFO | LFO UI phase | No second timer; fast-rate cursor hidden; single `timerCallback()` |
-| APVTS parameter ID collision | APVTS parameter registration | `grep` dedup of all param IDs returns zero duplicates |
-| S&H zero seed | LFO engine | `lfoXRandSeed_` and `lfoYRandSeed_` initialized to nonzero literals |
-| Phase wrap while-loop at high rate | LFO engine | `fmod(phase, 1.0)` used for phase wrap — no while loop |
-| DC offset from distortion | Waveform shaper implementation | All waveforms normalized to [-1, 1] before level scaling |
-| Phase reset from message thread | Phase reset button | `pendingLfoPhaseReset_` atomic in processBlock service pattern |
+Based on pitfall dependencies:
+
+1. **Fix looper start-position bug first** (Pitfall 5 poisons LFO recording phase if left unfixed)
+2. **Fix PS4 BT reconnect crash** (independent; unblocks gamepad testing for all other features)
+3. **Single-channel routing with reference count** (foundation; arp and sub-octave both depend on correct note counting)
+4. **Sub-octave** (requires reference count in place; implement note emission helper for both pad and looper paths)
+5. **LFO recording** (requires looper anchor bug fixed; use separate ring buffer)
+6. **Left-stick modulation expansion** (inline offsets only; no APVTS writes from audio thread)
+7. **Option Mode 1 + R3 combo** (last; builds on sub-octave and all gamepad atomics being stable)
 
 ---
 
 ## Sources
 
-### Primary (HIGH confidence — verified from actual v1.3 source code)
-- Direct review: `Source/PluginProcessor.cpp` — `juce::ScopedNoDenormals noDenum;` at line 359 (confirmed present); `arpRandSeed_` LCG at lines 850–851 (existing safe PRNG pattern); `arpPhase_` accumulator pattern at lines 800 and 810 (PPQ coherence); `joystickX.store()` looper override at lines 469–471 (LFO injection conflict point); `buildChordParams()` structure (lines 306–352)
-- Direct review: `Source/PluginProcessor.h` — `arpRandSeed_` member at line 234; `joystickX`/`joystickY` atomics at lines 44–45; `pendingPanic_` atomic flag pattern at lines 217 (deferred-request pattern for phase reset)
-- Direct review: `Source/LooperEngine.h` — `ASSERT_AUDIO_THREAD()` macro; `pendingQuantize_`/`pendingQuantizeRevert_` pattern (lines 192–193) — same pattern for `pendingLfoPhaseReset_`
-- Direct review: `Source/PluginProcessor.cpp` createParameterLayout() (lines 70–231) — existing ~60 parameter count baseline
+All findings are HIGH confidence — derived from direct analysis of the v1.4 codebase:
 
-### Secondary (MEDIUM confidence — JUCE forum and DSP community)
-- [JUCE forum: State of the Art Denormal Prevention](https://forum.juce.com/t/state-of-the-art-denormal-prevention/16802) — `ScopedNoDenormals` and `FloatVectorOperations::disableDenormalisedNumberSupport()` confirmed; FTZ/DAZ flags; JUCE `JUCE_DSP_ENABLE_SNAP_TO_ZERO` flag
-- [JUCE forum: Sync to host and LFO](https://forum.juce.com/t/sync-to-host-and-lfo/13159) — PPQ-based phase derivation confirmed as the drift-free approach; rate change handling
-- [JUCE forum: LFO Clicks problem](https://forum.juce.com/t/lfo-clicks-problem/41475) — phase discontinuity confirmed as primary source of LFO artifacts on sync
-- [JUCE forum: AudioProcessorValueTreeState scalability](https://forum.juce.com/t/audioprocessorvaluetreestate-scalability/31350) — APVTS parameter count performance; thousands of params degrades `flushParameterValuesToValueTree()`; 14 new params is negligible
-- [JUCE: ScopedNoDenormals Class Reference](https://docs.juce.com/master/classScopedNoDenormals.html) — RAII mechanism confirmed; MXCSR FTZ+DAZ bits on x86
-- [KVR Audio: random generator for musical domain — xorshift vs LCG](https://www.kvraudio.com/forum/viewtopic.php?t=564273) — audio community confirms LCG safe for audio thread; `std::rand()` CRT mutex issue confirmed
-- [Xorshift — Wikipedia](https://en.wikipedia.org/wiki/Xorshift) — zero-seed failure mode for xorshift confirmed; xorshift requires nonzero seed invariant
+- `Source/PluginProcessor.cpp` lines 411–1150: processBlock note-on/off paths, arp state machine, LFO integration, looper gate emission
+- `Source/LooperEngine.cpp`: FIFO capacity constraints, `finaliseRecording()` anchor reset logic (lines 758–763)
+- `Source/LooperEngine.h`: `LOOPER_FIFO_CAPACITY = 2048`, event type definitions, threading invariants
+- `Source/GamepadInput.cpp`: timerCallback button dispatch order, SDL event loop, option mode gating, BT fallback poll
+- `Source/GamepadInput.h`: atomic layout, ButtonState pattern, held-state atomics
+- `Source/LfoEngine.h`: ProcessParams distortion field, phase accumulator, LCG PRNG
+- `Source/PluginProcessor.h`: `looperActivePitch_[]`, `arpActivePitch_`, `arpActiveVoice_`, all relevant state members
+- `.planning/PROJECT.md`: v1.5 requirements list, known bugs, architecture decisions
 
 ---
-*Pitfalls research for: ChordJoystick v1.4 — dual LFO modulation added to existing lock-free JUCE 8 plugin*
-*Researched: 2026-02-26*
-*All critical pitfalls derived from direct review of v1.3 source (PluginProcessor.cpp, PluginProcessor.h, LooperEngine.h) + verified JUCE forum and DSP community sources.*
+*Pitfalls research for: ChordJoystick v1.5 — routing, sub-octave, LFO recording, arp gamepad control, left-stick modulation, Option Mode 1*
+*Researched: 2026-02-28*
+*All pitfalls derived from direct review of v1.4 source files. No speculative or generic pitfalls included.*

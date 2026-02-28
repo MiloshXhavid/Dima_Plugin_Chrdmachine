@@ -1,473 +1,660 @@
-# Architecture Patterns: LFO Integration
+# Architecture Patterns: v1.5 Feature Integration
 
-**Project:** ChordJoystick v1.4 — Dual LFO Engine
-**Domain:** JUCE VST3 MIDI Plugin — audio-thread-safe modulation subsystem
-**Researched:** 2026-02-26
+**Project:** ChordJoystick v1.5 — Routing, Expression, LFO Recording, Arpeggiator Expansion
+**Domain:** JUCE VST3 MIDI Plugin — audio-thread-safe feature additions
+**Researched:** 2026-02-28
 **Overall confidence:** HIGH — based on direct source inspection of all relevant files
 
 ---
 
 ## Scope
 
-This document answers the architectural integration questions for ChordJoystick v1.4:
+This document answers the architectural integration question for ChordJoystick v1.5:
 
-1. Where does LfoEngine sit in the processBlock() call sequence?
-2. Where do LFO outputs feed into the joystick pipeline?
-3. How does LfoEngine maintain the lock-free guarantee?
-4. How do sync and phase reset work on the audio thread?
-5. How does BeatClock work at the block boundary level?
-6. What is new vs. modified vs. untouched?
-7. Recommended build order across phases.
+> How do the 6 new feature areas integrate with the existing architecture? What new components are needed vs. modifications to existing ones? What is the safest build order given dependencies?
+
+Feature areas:
+
+1. Single-channel routing mode
+2. Sub octave per voice
+3. LFO recording (arm/record/playback state machine in LfoEngine)
+4. Left joystick X/Y target expansion
+5. Arpeggiator (already mostly in-processor; expansion for Option Mode 1)
+6. Option Mode 1 gamepad arp control + R3 removal
 
 ---
 
-## Integration Point Map
+## Existing Architecture Baseline (v1.4)
 
 ```
-processBlock() — annotated execution order
-────────────────────────────────────────────────────────────────────
+processBlock() execution order — v1.4
+────────────────────────────────────────────────────────────────
 1.  gamepad_.setDeadZone(...)
-2.  [GAMEPAD] Poll triggers / buttons / D-pad / stick axes
-3.  [DAW]     getPlayHead() -> ppqPos, dawBpm, isDawPlaying
-4.  [NEW] >>> lfoEngine_.process(lp) <<<  ← insert here
-             Advances phase accumulators.
-             Writes outputX_, outputY_ (audio-thread plain floats).
-             Increments beatFired_ atomic on beat boundaries.
-5.  [LOOPER]  looper_.process(lp)
-             May write joystickX / joystickY atomics from playback.
-6.  [CHORD]   buildChordParams()       ← LFO offset applied INSIDE here
-7.  [CHORD]   ChordEngine::computePitch(v, chordP) x 4
-8.  [TRIGGER] trigger_.processBlock(tp)
-9.  [ARP]     arpeggiator logic
-10. [FILTER]  filter CC section (CC74 / CC71)
-11. [LOOPER]  config sync (subdiv / length / quantize push)
-────────────────────────────────────────────────────────────────────
+2.  [GAMEPAD]  Poll voice gates / looper buttons / D-pad / option-mode
+3.  [DAW]      getPlayHead() → ppqPos, dawBpm, isDawPlaying
+4.  [LOOPER]   looper_.process(lp)   — may override joystickX/Y atomics
+5.  [CHORD]    buildChordParams()    — reads joystick atomics + LFO ramp outputs
+6.  [LFO]      lfoX_.process() / lfoY_.process() + ramp filter
+               modulatedJoyX_/Y_ stored for UI display
+               chordP.joystickX/Y clamped ±1 after LFO addition
+7.  [BEAT]     beat-clock floor-crossing detection → beatOccurred_
+8.  [CHORD]    ChordEngine::computePitch(v, chordP) × 4 → freshPitches[]
+9.  [ROUTING]  Read voiceChs[] from APVTS (per-voice channels 1-4)
+10. [EVENTS]   DAW stop/start detection — allNotesOff, LFO reset
+11. [LOOPER]   looper start/stop detection — note-offs for hanging looper notes
+12. [LOOPER]   looper reset flag — note-offs
+13. [PANIC]    pendingPanic_ — 48 CC events, resetAllGates
+14. [LOOPER]   emit looper gateOn/gateOff MIDI (bypasses TriggerSystem)
+15. [TRIGGER]  trigger_.processBlock(tp) — pad/joy/random gate logic
+16. [ARP]      arm-and-wait logic, then arpeggiator step engine
+17. [REC]      looper_.activateRecordingNow() on joystick movement
+18. [REC]      looper_.recordJoystick() + looper_.recordFilter()
+19. [FILTER]   filter CC section — CC74/CC71/CC12/CC1/CC76 per filterXMode/YMode
+────────────────────────────────────────────────────────────────
 ```
 
-LfoEngine::process() runs **after DAW playhead query** (needs ppqPos for sync) and **before looper_.process()** (looper may override joystickX/Y atomics; LFO does not touch atomics, so order relative to looper is safe either way — but before is cleaner and avoids any future confusion).
+Key invariants that must not change:
+
+- No allocation, no mutex on the audio thread.
+- All cross-thread data via `std::atomic` or the params-struct pattern.
+- `buildChordParams()` is `const` — LFO ramp outputs are plain floats, readable const.
+- `joystickX`/`joystickY` atomics hold raw (pre-LFO) position; LFO applies only in local scope.
+- Looper gate MIDI bypasses TriggerSystem entirely (step 14 fires before TriggerSystem at step 15).
 
 ---
 
-## Where LFO Output Feeds Into the Joystick Pipeline
+## Feature 1: Single-Channel Routing Mode
 
-### Key Observation
+### What It Does
 
-Reading `buildChordParams()` in full: `joystickX`/`joystickY` atomics are loaded into **local floats** at line:
+One new APVTS `bool` (`singleChanMode`) and one `int` (`singleChanTarget`, 1..16) route all four voice note-on/off to the same MIDI channel. When two voices play the same pitch on the same channel, a naive approach sends noteOn twice and noteOff once — the second noteOff silences a note that is still logically held. This requires a per-pitch reference-count map.
+
+### Integration Point
+
+Step 9 (routing) and steps 14-16 (note emission).
+
+The channel selection logic currently runs in three places:
+
+- **Step 14** (looper gate MIDI): `voiceChs[v] - 1` used directly.
+- **Step 15** (TriggerSystem callback `tp.onNote`): `voiceChs[voice] - 1` used directly.
+- **Step 16** (arp note-on/off): `voiceChs[arpActiveVoice_] - 1` used directly.
+- **processBlockBypassed**: `voiceChs[v]` used directly.
+
+The cleanest insertion is an inline helper called `effectiveChannel(int voice)` that returns the single-channel target when the mode is active, or `voiceChs[voice]` otherwise. This is called in exactly those four spots, replacing the raw `voiceChs[v]` read.
+
+### Note-Collision Tracking
+
+A `std::array<std::unordered_map<int,int>, 16>` per-channel pitch refcount is too expensive for audio-thread construction and would require heap allocation.
+
+The correct audio-thread solution is a fixed-size flat array. The plugin has 4 voices at most. On any single channel, at most 4 distinct pitches can be playing simultaneously. A 16×128 boolean matrix (`bool activePitchOnChannel_[16][128]`) is 2048 bytes of stack/member storage — acceptable. Rather than a refcount, use a voice-keyed struct: track per-voice the actual channel and pitch that were sent, and send noteOff using exactly those values.
+
+The existing `TriggerSystem::activePitch_[v]` and `looperActivePitch_[v]` already serve this purpose for their respective sources. Single-channel mode does not change what pitch was sent; it only changes which channel it was sent on. The note-off must use the channel that was used at note-on time.
+
+**Safe implementation:** Store the effective channel alongside the pitch at note-on time:
 
 ```cpp
-const float jx  = joystickX.load();
-const float jy  = joystickY.load();
+// In PluginProcessor private:
+int sentChannel_[4] = {1, 2, 3, 4};  // channel used for last note-on, per voice (audio-thread only)
 ```
 
-These local floats are composed with gamepad values into `p.joystickX` and `p.joystickY` and passed by value to `ChordEngine::Params`. The atomics themselves are never written inside `buildChordParams()`. This is the correct application site for LFO.
+At every note-on (looper, TriggerSystem callback, arp), write `sentChannel_[voice] = effectiveChannel(voice)`. At note-off, read `sentChannel_[voice]` instead of computing `effectiveChannel(voice)` again. This guarantees note-off goes to the same channel as note-on regardless of mode changes mid-note.
 
-### Application Site — Inside buildChordParams()
-
-```cpp
-// Existing (paraphrased):
-p.joystickX = gpActive ? gpXs : jx;   // jx = joystickX.load()
-p.joystickY = gpActive ? gpYs : jy;   // jy = joystickY.load()
-
-// After LFO integration — add these two lines immediately after:
-p.joystickX = juce::jlimit(-1.0f, 1.0f, p.joystickX + lfoEngine_.getOutputX());
-p.joystickY = juce::jlimit(-1.0f, 1.0f, p.joystickY + lfoEngine_.getOutputY());
-```
-
-`jlimit` is required: LFO can push the combined value outside -1..+1, and ChordEngine expects normalized joystick range.
-
-### Why NOT Write LFO Into the Atomics
-
-`joystickX` / `joystickY` atomics serve three consumers beyond the chord engine:
-
-1. **LooperEngine::recordJoystick()** — records the raw gesture. If LFO is baked into the atomic, playback of the loop re-applies LFO to an already-modulated signal (double modulation).
-2. **UI joystick dot display** — the PluginEditor reads joystickX/Y to paint the crosshair position. LFO baked into the atomic would move the on-screen dot in a way that misrepresents the actual held position.
-3. **TriggerSystem deltaX / deltaY computation** — deltaX = `chordP.joystickX - prevJoyX_`. Since chordP is already LFO-modified (after the change to buildChordParams), the delta calculation reflects post-LFO movement. This is **intentional**: LFO motion can drive joystick-source voice retriggering.
-
----
-
-## Data Flow Diagram
-
-```
-[UI drag / gamepad stick]
-         |
-         v
-   joystickX (atomic<float>)   joystickY (atomic<float>)
-         |                           |
-         |   [looper playback may override atomics — step 5]
-         |                           |
-         v                           v
-   buildChordParams()  <---  lfoEngine_.getOutputX/Y()
-                              (audio-thread plain floats,
-                               written by lfoEngine_.process())
-         |
-         v
-   ChordEngine::Params { joystickX, joystickY }  (clamped -1..+1)
-         |
-         v
-   ChordEngine::computePitch(v, params) x 4
-         |
-         v
-   heldPitch_[4]  ->  MIDI note-on / note-off
-```
-
-```
-lfoEngine_.process()
-         |
-         +--- outputX_, outputY_  (plain floats, audio thread only)
-         |
-         +--- beatFired_ (atomic<int>, incremented on beat crossing)
-                  |
-                  v
-         PluginEditor::timerCallback() at 30 Hz
-         reads beatFired_, detects increment -> flash beat dot
-```
-
----
-
-## Component Boundaries
+This same pattern must apply to the arp's `arpActiveVoice_` path.
 
 ### New Components
 
-| Component | File | Responsibility | Thread |
-|-----------|------|---------------|--------|
-| `LfoEngine` | `Source/LfoEngine.h` / `LfoEngine.cpp` | Dual X+Y LFO: phase accumulator, 7 waveforms, distortion, beat-sync, S&H | Audio thread only (except `beatFired_` atomic) |
+None. Pure modification to PluginProcessor.
 
 ### Modified Components
 
-| Component | File | What Changes |
-|-----------|------|-------------|
-| `PluginProcessor` | `PluginProcessor.h` | Add `LfoEngine lfoEngine_` member; expose `beatFired_` read accessor for UI |
-| `PluginProcessor` | `PluginProcessor.cpp` | Call `lfoEngine_.process()` at step 4; apply LFO offsets in `buildChordParams()`; register new APVTS params; call `lfoEngine_.prepare()` in `prepareToPlay()` |
-| `PluginEditor` | `PluginEditor.h` / `.cpp` | Add LFO UI section (left of joystick); read `beatFired_` in `timerCallback()` for beat dot flash |
-| APVTS layout | `PluginProcessor.cpp` `createParameterLayout()` | Register LFO parameters (see APVTS section below) |
+| Component | Change |
+|-----------|--------|
+| `PluginProcessor.cpp` `createParameterLayout()` | Add `singleChanMode` (bool, false) and `singleChanTarget` (int, 1..16, default 1) |
+| `PluginProcessor.h` | Add `sentChannel_[4]` array; add `effectiveChannel(int voice) const` inline |
+| `PluginProcessor.cpp` processBlock steps 14/15/16 | Replace `voiceChs[v]` with `effectiveChannel(v)`; write `sentChannel_[v]` at every note-on |
+| `PluginProcessor.cpp` processBlockBypassed | Same replacement |
+| `PluginEditor` | Add toggle + channel selector UI (message thread, APVTS attachment) |
+
+### Audio-Thread Safety
+
+`singleChanMode` and `singleChanTarget` are APVTS params read via `getRawParameterValue()` — atomic read, safe on audio thread. `sentChannel_` is audio-thread-only, no atomic needed.
+
+---
+
+## Feature 2: Sub Octave Per Voice
+
+### What It Does
+
+Four APVTS bools (`subOct0..3`). When enabled for voice V, every note-on for that voice sends a second note-on 12 semitones lower on the same channel. Every note-off sends a matching note-off at the sub-octave pitch. The sub-octave note-off must match the sub-octave pitch that was sent at note-on — not recomputed from current `heldPitch_[v]`.
+
+### Integration Point
+
+Steps 14, 15, and 16 (all note-emission sites).
+
+The pattern is identical to `sentChannel_`: store the sub-octave pitch that was sent, emit the matching note-off.
+
+```cpp
+// In PluginProcessor private (audio-thread only):
+int sentSubOctPitch_[4] = {-1, -1, -1, -1};  // -1 = no sub note sounding
+```
+
+At note-on for voice V (when `subOct[V]` is enabled):
+
+```cpp
+const int subPitch = pitch - 12;
+if (subPitch >= 0) {
+    midi.addEvent(MidiMessage::noteOn(ch, subPitch, velocity), sampleOff);
+    sentSubOctPitch_[voice] = subPitch;
+}
+```
+
+At note-off for voice V:
+
+```cpp
+if (sentSubOctPitch_[voice] >= 0) {
+    midi.addEvent(MidiMessage::noteOff(ch, sentSubOctPitch_[voice], 0), sampleOff);
+    sentSubOctPitch_[voice] = -1;
+}
+```
+
+This must be added at all three emission sites: looper gate (step 14), TriggerSystem callback (step 15), and arp (step 16).
+
+The looper `looperActivePitch_[v]` already tracks the looper note-on pitch for matching note-offs. A parallel `looperActiveSubPitch_[v]` array is needed for the looper path.
+
+### MIDI Panic Interaction
+
+The panic handler must also clear `sentSubOctPitch_[]` and `looperActiveSubPitch_[]` to prevent them from re-emitting note-offs after the panic 48-CC flood.
+
+### New Components
+
+None. Pure PluginProcessor modification.
+
+### Modified Components
+
+| Component | Change |
+|-----------|--------|
+| `PluginProcessor.cpp` `createParameterLayout()` | Add `subOct0..3` (bool × 4, default false) |
+| `PluginProcessor.h` | Add `sentSubOctPitch_[4]`, `looperActiveSubPitch_[4]` arrays |
+| `PluginProcessor.cpp` steps 14/15/16 | Add sub-octave note-on/off at each emission site |
+| `PluginProcessor.cpp` panic handler | Reset `sentSubOctPitch_[]`, `looperActiveSubPitch_[]` |
+| `PluginEditor` | Add Sub Oct toggle button per pad (with Hold split UI) |
+
+### Audio-Thread Safety
+
+All new arrays are audio-thread-only. Sub oct bools read from APVTS via `getRawParameterValue()` — atomic, safe.
+
+---
+
+## Feature 3: LFO Recording
+
+### What It Does
+
+LfoEngine gains a recording state machine: `Unarmed → Armed → Recording → Playback`. During Recording, the engine stores one float sample per `process()` call into a fixed-capacity circular buffer. After one loop cycle (duration = looper loop length in beats / BPM), it transitions to Playback and reads back the stored samples instead of evaluating the waveform. Distort parameter applies in all states on top of the playback sample (exactly as it applies on the live waveform in normal mode).
+
+### LfoEngine State Machine
+
+```
+Unarmed  ──(arm())──►  Armed
+Armed    ──(first process() call after arm)──►  Recording
+Recording──(cycle complete)──►  Playback
+Playback ──(clear())──►  Unarmed
+Armed    ──(arm() again / cancel)──►  Unarmed
+```
+
+State is communicated across the audio/message boundary via atomics:
+
+```cpp
+// In LfoEngine private:
+enum class RecState { Unarmed = 0, Armed, Recording, Playback };
+std::atomic<int> recState_ { (int)RecState::Unarmed };  // written audio thread, read UI
+```
+
+`arm()` and `clear()` are called from the message thread (UI button). `arm()` does a CAS from Unarmed→Armed. `clear()` stores Unarmed unconditionally. Both are atomic stores — no mutex.
+
+The recording buffer is a fixed-capacity array of floats:
+
+```cpp
+static constexpr int kLfoRecCapacity = 8192;  // ~170 seconds at 1 Hz / 48 Hz block rate, far more than needed
+float recBuf_[kLfoRecCapacity] {};
+int   recWritePos_ = 0;   // audio-thread only
+int   recLength_   = 0;   // set at end of recording; read during playback
+int   recReadPos_  = 0;   // audio-thread only, wraps at recLength_
+```
+
+The capacity must hold at least one full loop cycle worth of blocks. At 44100 Hz with 512-sample blocks, that is 86 blocks/second. At 120 BPM with a 16-bar loop at 4/4, that is 32 beats = 16 seconds = ~1376 blocks. 8192 entries is sufficient for loop lengths up to 95 seconds at 86 blocks/sec.
+
+### Cycle Duration Tracking
+
+PluginProcessor already computes `looper_.getLoopLengthBeats()` and `effectiveBpm_`. LfoEngine needs to know the cycle length to know when to stop recording. Pass it via `ProcessParams::maxCycleBeats` (this field already exists in `LfoEngine::ProcessParams`). The recording stops when accumulated beats >= `maxCycleBeats`.
+
+Beat accumulation in recording mode:
+
+```cpp
+const double beatsThisBlock = p.bpm * p.blockSize / (p.sampleRate * 60.0);
+recordedBeats_ += beatsThisBlock;
+if (recordedBeats_ >= p.maxCycleBeats) {
+    recLength_   = recWritePos_;
+    recWritePos_ = 0;
+    recReadPos_  = 0;
+    recState_.store((int)RecState::Playback, std::memory_order_release);
+}
+```
+
+### Distort in Playback Mode
+
+The existing `distortion` param applies post-waveform noise. In Playback mode, read from `recBuf_[recReadPos_]` instead of calling `evaluateWaveform()`, then apply the same distort noise addition. The distort path is already written as a separate additive noise step, so the refactor is localized.
+
+### processBlock Integration (PluginProcessor)
+
+No changes to processBlock beyond what already exists for LFO. The `ProcessParams` passed to `lfoX_`/`lfoY_` already includes `maxCycleBeats`. PluginProcessor needs to:
+
+1. Forward `looper_.getLoopLengthBeats()` into `xp.maxCycleBeats` and `yp.maxCycleBeats` (this is already set as 16.0 hardcoded — replace with the live value).
+2. Expose `lfoX_.getRecState()` / `lfoY_.getRecState()` accessors for UI read.
+3. Expose `lfoX_.arm()` / `lfoX_.clear()` wrappers callable from message thread.
+
+### New Components
+
+None — modification to `LfoEngine` only.
+
+### Modified Components
+
+| Component | Change |
+|-----------|--------|
+| `LfoEngine.h` | Add `RecState` enum, `recState_` atomic, `recBuf_[]`, record/playback state; add `arm()`, `clear()`, `getRecState()` |
+| `LfoEngine.cpp` `process()` | State machine: in Armed→start recording; in Recording→write to buf, check cycle; in Playback→read from buf |
+| `PluginProcessor.cpp` processBlock | Replace hardcoded `maxCycleBeats = 16.0` with `looper_.getLoopLengthBeats()` |
+| `PluginProcessor.h` | Add `lfoXArm()`, `lfoXClear()`, `lfoYArm()`, `lfoYClear()` forwarding wrappers; add `getLfoXRecState()`, `getLfoYRecState()` |
+| `PluginEditor` | Add ARM button + CLEAR button per LFO axis; read rec state in timerCallback for UI blink |
+
+### Audio-Thread Safety
+
+`recState_` is `std::atomic<int>`. Writes from message thread (`arm()`, `clear()`) use `store(relaxed)` since no data the UI publishes is guarded by this atomic. Writes from audio thread use `store(release)` to ensure `recLength_` is visible when Playback state is observed. The buffer arrays `recBuf_[]`, `recWritePos_`, `recLength_`, `recReadPos_` are audio-thread-only. No mutex anywhere.
+
+---
+
+## Feature 4: Left Joystick X/Y Target Expansion
+
+### Current State
+
+`filterXMode` and `filterYMode` APVTS choice params already exist (added in v1.4/current):
+
+```cpp
+juce::StringArray yModes { "Resonance", "LFO Rate" };         // 0=CC71, 1=CC76
+juce::StringArray xModes { "Cutoff", "VCF LFO", "Mod Wheel" }; // 0=CC74, 1=CC12, 2=CC1
+```
+
+These route the left stick to different CC numbers. The filter CC section in step 19 already reads `filterXMode`/`filterYMode` and selects `ccXnum`/`ccYnum` accordingly.
+
+### New Targets
+
+The v1.5 requirement is to add **LFO freq / shape / level / arp gate len** as left-stick targets. These are not CC-routed — they modify APVTS parameters directly from the stick position.
+
+This is architecturally different from CC emission. CC emission is a per-block output operation. APVTS modification is a per-event UI-thread operation. The audio thread must NOT call `setValueNotifyingHost()`.
+
+### Correct Pattern: Stick Values as Param Hints via Atomics
+
+The existing `filterCutDisplay_` / `filterResDisplay_` atomics demonstrate the established cross-thread pattern: audio thread writes a float atomic, UI timer reads it and calls `setValueNotifyingHost()`.
+
+For stick-to-param targets, the same pattern applies:
+
+```cpp
+// In PluginProcessor private:
+std::atomic<float> pendingLStickX_ { -999.f };  // -999 = no pending update
+std::atomic<float> pendingLStickY_ { -999.f };
+```
+
+In processBlock step 19 (filter CC), when `filterXMode` indicates an APVTS-target mode (index >= 3 for new targets), write `pendingLStickX_` with the scaled stick value instead of emitting a CC. In `PluginEditor::timerCallback()`, read `pendingLStickX_`, if it changed, call `setValueNotifyingHost()` on the target APVTS param.
+
+### APVTS Choice Param Extension
+
+The choice lists must be extended:
+
+```
+filterYMode:  { "Resonance", "LFO Rate", "LFO Level", "LFO Freq", "Arp Gate" }
+filterXMode:  { "Cutoff", "VCF LFO", "Mod Wheel", "LFO Shape", "LFO Level", "LFO Freq", "Arp Gate" }
+```
+
+Extending a `juce::AudioParameterChoice` with more options changes the choice count. In JUCE, `AudioParameterChoice` saves its value as a normalized float (index / (count-1)). Adding options changes the normalization and can corrupt saved state for mode indices already in use. The only safe approach is to add new choices at the END of the list, preserving all existing indices.
+
+The existing indices (0, 1, 2 for X and 0, 1 for Y) must remain at the same positions. New entries are appended.
+
+### processBlock Impact
+
+In step 19, the existing `ccXnum`/`ccYnum` logic already has a mode switch. Add new branches:
+
+```cpp
+if (xMode >= 3) {
+    // APVTS-param target: write pendingLStickX_ scaled to param range
+    // No CC emitted
+} else {
+    // existing CC logic
+}
+```
+
+The `filterModOn` guard already gates the whole block, so the new branches inherit the same enable/disable logic.
+
+### New Components
+
+None. PluginProcessor + PluginEditor modification only.
+
+### Modified Components
+
+| Component | Change |
+|-----------|--------|
+| `PluginProcessor.cpp` `createParameterLayout()` | Extend `filterXMode` / `filterYMode` choice lists (append new entries) |
+| `PluginProcessor.h` | Add `pendingLStickX_`, `pendingLStickY_` atomics |
+| `PluginProcessor.cpp` step 19 filter CC | Add mode branches for APVTS-param targets; write pending atomics |
+| `PluginEditor.cpp` `timerCallback()` | Read pending atomics, call `setValueNotifyingHost()` on target params |
+| `PluginEditor` | Update filterMode dropdown labels |
+
+---
+
+## Feature 5: Arpeggiator — Current State and Gap Analysis
+
+### What Already Exists
+
+The arpeggiator is **not a separate class**. It lives entirely in `PluginProcessor.cpp` processBlock step 16. APVTS parameters `arpEnabled`, `arpSubdiv`, `arpOrder`, `arpGateTime` are already registered and fully functional. State variables `arpPhase_`, `arpStep_`, `arpActivePitch_`, `arpActiveVoice_`, `arpCurrentVoice_`, `arpNoteOffRemaining_`, `arpRandSeed_`, `arpRandomOrder_[4]`, `arpWaitingForPlay_`, `prevArpOn_` are all declared in `PluginProcessor.h`.
+
+The arp supports 7 order modes (Up, Down, Up+Down, Down+Up, Outer-In, Inner-Out, Random), DAW-sync and looper-sync clock modes, arm-and-wait logic, and pad-priority choking.
+
+### What v1.5 Adds
+
+The only arp gap for v1.5 is **gamepad Option Mode 1 control** (Feature 6 below). No new arp logic is needed beyond the gamepad bindings. The arpeggiator architecture itself is complete.
+
+---
+
+## Feature 6: Option Mode 1 Gamepad Arp Control + R3 Removal
+
+### Current Option Mode 1 Behaviour
+
+In GamepadInput, `optionMode_` cycles 0→1→2→0 on each START button press. In processBlock step 2:
+
+- Mode 1: D-pad controls octave params via `consumeOptionDpadDelta(dir)`.
+- Mode 2: D-pad controls transpose + intervals.
+- Mode 0: D-pad controls BPM and looper rec state.
+
+R3 (right stick press) currently triggers MIDI panic unconditionally (step 2, `consumeRightStickTrigger()`).
+
+### New Option Mode 1 Bindings
+
+The requirement is to repurpose the face buttons (Circle/Triangle/Square/X) in Option Mode 1 to control arp parameters. Currently, face buttons in all modes are hardwired to looper transport: Cross=start/stop, Square=reset, Triangle=record, Circle=delete.
+
+### Architecture Decision: Where to Implement
+
+Option A — GamepadInput handles mode-sensitive button mapping:
+- GamepadInput.timerCallback() checks `optionMode_` before setting looper/arp trigger atomics.
+- Clean separation: GamepadInput translates hardware → intent.
+- Problem: GamepadInput currently has no knowledge of arp state. Adding APVTS or arp coupling to GamepadInput breaks its isolation (it currently has no APVTS dependency).
+
+Option B — PluginProcessor handles mode-sensitive dispatch:
+- GamepadInput continues to expose raw consume flags for all buttons.
+- processBlock step 2 reads `getOptionMode()` and dispatches accordingly.
+- This is the **existing pattern**: processBlock already reads `optMode` and dispatches D-pad differently per mode. The same `if (optMode == 1)` branch can be extended to intercept face buttons.
+
+Option B is correct. It requires zero changes to GamepadInput.
+
+### Implementation in processBlock Step 2
+
+```cpp
+const int optMode = gamepad_.getOptionMode();
+
+// Face buttons — mode-sensitive dispatch
+if (gamepad_.consumeLooperStartStop()) {
+    if (optMode == 1) { /* X → toggle RND Sync */ }
+    else               looper_.startStop();
+}
+if (gamepad_.consumeLooperRecord()) {
+    if (optMode == 1) { /* Triangle → arp rate step */ }
+    else               looper_.record();
+}
+if (gamepad_.consumeLooperReset()) {
+    if (optMode == 1) { /* Square → arp order step */ flashLoopReset_.fetch_add(1, ...); }
+    else             { looper_.reset(); flashLoopReset_.fetch_add(1, ...); }
+}
+if (gamepad_.consumeLooperDelete()) {
+    if (optMode == 1) { /* Circle → arp on/off toggle */ }
+    else             { looper_.deleteLoop(); flashLoopDelete_.fetch_add(1, ...); }
+}
+```
+
+For "arp rate step" and "arp order step", use the existing `stepWrappingParam()` helper (already in PluginProcessor.h as a static method). For "arp on/off", call `setValueNotifyingHost()` via `apvts.getParameter("arpEnabled")` — this is safe from the audio thread because JUCE's `setValueNotifyingHost()` is thread-safe for AudioProcessorParameter.
+
+For "RND Sync" toggle, the same pattern: read `randomClockSync` APVTS param, invert, call `setValueNotifyingHost()`.
+
+### R3 Removal
+
+Currently in processBlock step 2:
+```cpp
+if (gamepad_.consumeRightStickTrigger())
+    triggerPanic();   // R3 -> MIDI panic
+```
+
+This line is deleted unconditionally. R3 standalone panic is removed entirely.
+
+The `consumeRightStickTrigger()` method in GamepadInput remains (no header change needed) but is simply not called in processBlock. It will drain silently.
+
+### R3 + Held Pad = Sub Oct Toggle
+
+The requirement "R3 + held pad (any mode) = toggle Sub Oct for that voice" needs R3 as a held-state modifier, not a rising-edge trigger. GamepadInput currently exposes `consumeRightStickTrigger()` (rising edge only) and `btnRightStick_` (private).
+
+Two options:
+
+Option A — Add `getRightStickHeld()` accessor to GamepadInput:
+
+```cpp
+// In GamepadInput.h public:
+bool getRightStickHeld() const { return rightStickHeld_.load(std::memory_order_relaxed); }
+// In GamepadInput private:
+std::atomic<bool> rightStickHeld_ { false };
+// In timerCallback(), alongside existing btnRightStick_ debounce:
+rightStickHeld_.store(debounced_held_state, std::memory_order_relaxed);
+```
+
+Option B — Detect in processBlock via the existing rising-edge flag plus a local held-state tracker (mirror of the `gamepadVoiceWasHeld_` pattern). This requires the timerCallback to set the flag each tick, which it already does for voice buttons.
+
+Option A is cleaner and symmetric with `getVoiceHeld()` / `getAllNotesHeld()` which both exist. It is one new atomic + one line in timerCallback — minimal GamepadInput change.
+
+In processBlock:
+
+```cpp
+const bool r3Held = gamepad_.getRightStickHeld();
+if (r3Held) {
+    for (int v = 0; v < 4; ++v) {
+        if (gamepad_.getVoiceHeld(v)) {
+            // rising-edge detected by prevR3HeldAndVoice_[v] tracking
+            // toggle subOct[v] APVTS param via setValueNotifyingHost
+        }
+    }
+}
+```
+
+Edge-detect per voice requires a `prevR3WithVoice_[4]` bool array (audio-thread only) tracking whether R3+voice[v] was held last block.
+
+### Modified Components
+
+| Component | Change |
+|-----------|--------|
+| `GamepadInput.h` | Add `rightStickHeld_` atomic + `getRightStickHeld()` accessor |
+| `GamepadInput.cpp` timerCallback | Set `rightStickHeld_` from debounced R3 state |
+| `PluginProcessor.cpp` processBlock step 2 | Mode-sensitive face-button dispatch; R3 panic removal; R3+pad sub-oct toggle |
+| `PluginProcessor.h` | Add `prevR3WithVoice_[4]` bool array (audio-thread only) |
+
+---
+
+## Unified Data Flow Diagram — v1.5
+
+```
+[UI drag / gamepad right stick]
+         |
+         v
+   joystickX/Y (atomic<float>)   ← raw pitch joystick position
+         |
+         |  [looper playback may override — step 4]
+         |
+         v
+   buildChordParams()
+   + LFO ramp output (lfoXRampOut_/lfoYRampOut_, plain floats)
+         |
+         v
+   ChordEngine::Params { joystickX, joystickY } (clamped ±1)
+         |
+         v
+   freshPitches[4]
+         |
+         +──► TriggerSystem.processBlock → tp.onNote callback
+         |         └──► note-on: sentChannel_[v] written
+         |              note-off: sentChannel_[v] read
+         |              sub-oct: sentSubOctPitch_[v] written/read
+         |
+         +──► looper gateOn/gateOff
+         |         └──► looperActivePitch_[v] / looperActiveSubPitch_[v]
+         |              effectiveChannel(v) used for MIDI channel
+         |
+         +──► arp step engine
+                   └──► arpActivePitch_ / arpActiveVoice_
+                        effectiveChannel(arpActiveVoice_) for channel
+
+[gamepad left stick]
+         |
+         v
+   filterX_/filterY_ (atomics in GamepadInput)
+         |
+         v
+   processBlock step 19:
+     filterXMode 0-2: emit CC74/CC12/CC1
+     filterXMode 3+:  write pendingLStickX_ atomic
+         |
+         v
+   PluginEditor.timerCallback():
+     read pendingLStickX_ → setValueNotifyingHost on LFO/arp APVTS param
+
+[LfoEngine X / Y]
+         |
+   RecState: Unarmed/Armed/Recording/Playback
+         |
+   process(): evaluateWaveform OR recBuf_[readPos] + distort
+         |
+         v
+   lfoXRampOut_ / lfoYRampOut_ (plain floats, ramp-smoothed)
+   → applied in buildChordParams() local scope
+```
+
+---
+
+## Component Summary Table
+
+### New Components
+
+None required. All features integrate into existing component structure.
+
+### Modified Components
+
+| Component | Feature Areas | What Changes |
+|-----------|--------------|--------------|
+| `LfoEngine.h` / `.cpp` | F3 (LFO recording) | RecState enum + atomic; recBuf_[]; arm()/clear(); process() state machine |
+| `GamepadInput.h` / `.cpp` | F6 (R3 held state) | rightStickHeld_ atomic; getRightStickHeld() accessor; timerCallback sets it |
+| `PluginProcessor.h` | F1/F2/F4/F6 | sentChannel_[4]; sentSubOctPitch_[4]; looperActiveSubPitch_[4]; pendingLStickX_/Y_; prevR3WithVoice_[4]; effectiveChannel() inline |
+| `PluginProcessor.cpp` createParameterLayout | F1/F2/F4 | singleChanMode, singleChanTarget, subOct0-3; extend filterXMode/YMode choices |
+| `PluginProcessor.cpp` processBlock | F1/F2/F4/F5/F6 | effectiveChannel() at note-on/off sites; sub-oct emission; filter mode new branches; mode-1 face-button dispatch; R3 removal; R3+pad sub-oct toggle |
+| `PluginEditor.h` / `.cpp` | F1/F2/F3/F4 | Single-chan UI; sub-oct buttons; LFO arm/clear UI; filter mode dropdown extension |
 
 ### Unmodified Components
 
 | Component | Reason |
 |-----------|--------|
-| `ChordEngine` | Pure static function; `Params.joystickX/Y` arrive already LFO-modified |
-| `ScaleQuantizer` | No dependency on joystick position |
-| `LooperEngine` | Reads/writes raw atomics; unaware of LFO |
-| `TriggerSystem` | Receives `chordP.joystickX/Y` (already LFO-modified); delta is computed from the post-LFO value, which is correct |
-| `GamepadInput` | Provides raw stick values; LFO is downstream |
+| `ChordEngine` | Pure pitch computation; channel/sub-oct are post-ChordEngine |
+| `ScaleQuantizer` | No dependency on any v1.5 feature |
+| `LooperEngine` | No changes required; existing event types sufficient |
+| `TriggerSystem` | No changes required; sub-oct and channel remapping happen in the onNote callback in processBlock, outside TriggerSystem |
 
 ---
 
-## LfoEngine Class Design
+## Dependency Graph and Build Order
 
-### Recommended Interface
-
-```cpp
-class LfoEngine
-{
-public:
-    // --- Params struct (built by processBlock, passed to process()) ---
-    // Follows same pattern as TriggerSystem::ProcessParams.
-    // All values read from APVTS raw parameters in processBlock.
-    struct LfoParams {
-        bool  enabled;
-        int   shape;       // 0=Sine 1=Tri 2=Saw+ 3=Saw- 4=Square 5=S&H 6=Random
-        float rate;        // Hz (free mode) or beats-per-cycle (sync mode)
-        float level;       // 0..1 depth multiplier
-        float phaseOffset; // 0..1 (0 = 0 degrees)
-        float distortion;  // 0..1 jitter amount
-        bool  sync;        // true = rate in beats, false = Hz
-    };
-
-    struct Params {
-        LfoParams x;
-        LfoParams y;
-        double bpm;
-        double ppqPosition; // -1 if not available
-        int    blockSize;
-        double sampleRate;
-    };
-
-    // Called from prepareToPlay (audio thread, guaranteed before first processBlock)
-    void prepare(double sampleRate) noexcept;
-
-    // Called every processBlock (audio thread).
-    // Advances phase accumulators. Updates outputX_, outputY_. Detects beat crossings.
-    void process(const Params& p) noexcept;
-
-    // Audio-thread outputs — plain floats, read only in buildChordParams() (audio thread).
-    float getOutputX() const noexcept { return outputX_; }
-    float getOutputY() const noexcept { return outputY_; }
-
-    // Beat clock — incremented on audio thread, read on message thread (30 Hz timer).
-    // Same pattern as flashLoopReset_ / flashPanic_ in PluginProcessor.
-    std::atomic<int> beatFired_ { 0 };
-
-    // Phase reset — called from processBlock when dawJustStarted is true.
-    // Resets free-running accumulators only; sync-mode derives phase from ppq.
-    void resetPhase() noexcept;
-
-private:
-    double sampleRate_ = 44100.0;
-
-    struct LfoState {
-        double   phase     = 0.0;        // accumulator, 0..1
-        float    shHeld    = 0.0f;       // sample-and-hold output
-        uint32_t rng       = 0xDEADBEEF; // LCG seed (Random waveform)
-        double   prevPhase = 0.0;        // for crossing detection (S&H trigger)
-    };
-
-    LfoState stateX_, stateY_;
-    float    outputX_ = 0.0f;
-    float    outputY_ = 0.0f;
-
-    // Beat clock state (audio-thread-only except beatFired_)
-    double prevPpq_        = -1.0;  // for PPQ-based beat crossing detection
-    double freeBeatPhase_  = 0.0;   // free-running beat accumulator
-
-    static float computeWave(LfoState& s, const LfoParams& p,
-                             double bpm, double ppq,
-                             double sampleRate, int blockSize) noexcept;
-};
+```
+F1 (Single channel)   ──► No deps on other new features
+F2 (Sub octave)       ──► No deps; safe after F1 (both touch note-emission sites)
+F3 (LFO recording)    ──► No deps on other new features
+F4 (Stick targets)    ──► Requires APVTS choice param extension (do after F1/F2 to consolidate layout changes)
+F5 (Arp review)       ──► Already complete; no new arp logic needed
+F6 (Gamepad opt mode) ──► Requires GamepadInput R3 held state (GamepadInput change first)
 ```
 
-### Design Rationale: Params Struct (Not Internal Setters)
+### Recommended Phase Order
 
-All existing subsystems in processBlock build a local params struct and pass it by const reference: `TriggerSystem::ProcessParams`, `LooperEngine::ProcessParams`. LfoEngine follows the identical pattern. `buildChordParams()` is called `const` on `PluginProcessor` — LfoEngine's process() is not called there, only `getOutputX/Y()`.
+**Phase 1 — Gamepad R3 Held State (GamepadInput — 1 file change)**
 
-This avoids:
-- Atomic setters for every LFO config field (7 fields x 2 axes = 14 atomics — noisy).
-- LfoEngine holding an APVTS reference (would create an ownership coupling).
+This is the smallest isolated change. Add `rightStickHeld_` to `GamepadInput.h` and set it in `timerCallback()`. Ship nothing else yet. Verify no regression by checking R3-as-panic still fires (it will, nothing changed in processBlock yet). Build and test.
 
-The tradeoff is that processBlock must construct `LfoEngine::Params` each block, reading 14 APVTS `getRawParameterValue()` calls. This is identical in cost to existing APVTS reads in processBlock (arpeggiator reads 3 params, filter reads 6+ params per block). No measurable overhead.
+Rationale: GamepadInput changes are independent of APVTS and processBlock. Getting this file change done and tested in isolation avoids having it interleave with the larger processBlock edit.
 
-### Waveform Computation (per-block, not per-sample)
+**Phase 2 — Single-Channel Routing (PluginProcessor — APVTS + processBlock)**
 
-LFO produces one output value per block. This is sufficient because:
-- Joystick pitch is quantized to semitones by ScaleQuantizer; sub-semitone pitch changes have no effect.
-- The arpeggiator in the codebase uses per-block beat accumulation as the established precedent.
-- Per-sample LFO would add complexity with no audible benefit for discrete-pitch MIDI output.
+Add `singleChanMode` / `singleChanTarget` APVTS params and `sentChannel_[4]`. Implement `effectiveChannel()`. Replace `voiceChs[v]` at all emission sites. Write `sentChannel_[v]` at all note-on sites.
 
-Exception: if pitch-bend (continuous, not quantized) is ever driven by the LFO, reconsider per-sample computation. Not in scope for v1.4.
+This phase touches every note-emission path and establishes the channel-tracking infrastructure that sub-octave (Phase 3) will reuse. Completing it first means Phase 3 can follow the established `sentChannel_` pattern.
 
----
+**Phase 3 — Sub Octave Per Voice (PluginProcessor — APVTS + processBlock)**
 
-## BeatClock Design
+Add `subOct0..3` APVTS params. Add `sentSubOctPitch_[4]` and `looperActiveSubPitch_[4]`. Add sub-octave note-on/off at all three emission sites (looper, TriggerSystem callback, arp). Add panic cleanup.
 
-BeatClock is not a separate class — it is a small section inside `LfoEngine::process()`. It detects beat boundary crossings and increments the `beatFired_` atomic.
+**Phase 4 — LFO Recording (LfoEngine only)**
 
-### PPQ-Based Detection (DAW sync on)
+Add RecState to LfoEngine. Implement recording buffer. Wire processBlock to pass `looper_.getLoopLengthBeats()` as `maxCycleBeats`. Add UI arm/clear buttons.
 
-```cpp
-// Inside LfoEngine::process(), when ppqPosition >= 0:
-const long long beatAtStart = static_cast<long long>(prevPpq_);
-const long long beatAtEnd   = static_cast<long long>(p.ppqPosition
-                              + p.bpm * p.blockSize / (p.sampleRate * 60.0));
-if (beatAtEnd > beatAtStart)
-    beatFired_.fetch_add(1, std::memory_order_relaxed);
-prevPpq_ = p.ppqPosition + p.bpm * p.blockSize / (p.sampleRate * 60.0);
-```
+This is self-contained to LfoEngine and a minor processBlock change. No note-emission path is touched.
 
-This is the same beat-grid integer-crossing method used for the arpeggiator's DAW-sync step counting in processBlock (`stepsAtStart` / `stepsAtEnd` pattern) — proven correct in v1.0.
+**Phase 5 — Left Stick Target Expansion (PluginProcessor APVTS + filter section)**
 
-### Free-Running Detection (no DAW playhead)
+Extend `filterXMode` / `filterYMode` choice lists. Add `pendingLStickX_`/`Y_` atomics. Add mode branches in step 19. Add timerCallback read in PluginEditor.
 
-```cpp
-// When ppqPosition < 0:
-const double beatsThisBlock = p.bpm * p.blockSize / (p.sampleRate * 60.0);
-freeBeatPhase_ += beatsThisBlock;
-while (freeBeatPhase_ >= 1.0) {
-    freeBeatPhase_ -= 1.0;
-    beatFired_.fetch_add(1, std::memory_order_relaxed);
-}
-```
+Isolating this to Phase 5 avoids changing the APVTS layout while Phases 2/3 are also in progress. After Phase 3 the layout is stable and this can be added cleanly.
 
-### UI Consumption in timerCallback (30 Hz)
+**Phase 6 — Gamepad Option Mode 1 Arp Bindings + R3 Removal (processBlock only)**
 
-```cpp
-// PluginEditor::timerCallback() — existing pattern for flash_ counters:
-const int nowBeat = processor_.getBeatFiredCount();  // forwarding accessor
-if (nowBeat != lastBeatCount_) {
-    lastBeatCount_ = nowBeat;
-    // trigger beat dot flash: set a short repaint countdown
-    beatDotLit_ = true;
-    beatDotFrames_ = 2;  // 2 timer ticks at 30 Hz = ~66 ms visible
-    beatDotComponent_.repaint();
-}
-if (beatDotFrames_ > 0) {
-    --beatDotFrames_;
-    if (beatDotFrames_ == 0) {
-        beatDotLit_ = false;
-        beatDotComponent_.repaint();
-    }
-}
-```
+Replace R3 panic with nothing. Add mode-1 face-button dispatch (arp on/off, rate step, order step, RND sync). Add `prevR3WithVoice_[4]` and sub-oct toggle via R3+pad.
 
-This is identical to the `flashLoopReset_` / `flashLoopDelete_` / `flashPanic_` pattern already implemented in PluginProcessor.h and PluginEditor. No new mechanism is needed.
+This phase is last because it uses `getRightStickHeld()` (Phase 1), `subOct` params (Phase 3), and arp params (already exist).
 
----
+**Bug Fixes (can run in parallel with any phase)**
 
-## Sync and Phase Reset
-
-### Sync Mode: Phase Derived from ppqPosition
-
-When `LfoParams::sync = true`, the LFO phase is not accumulated — it is derived directly from the DAW playhead position. This gives sample-accurate beat-locked modulation with automatic alignment.
-
-```cpp
-// Sync mode — inside computeWave():
-if (p.sync && ppq >= 0.0) {
-    const double lfoBeats = 1.0 / (double)p.rate; // rate=2 -> half-bar cycle
-    s.phase = std::fmod(ppq / lfoBeats, 1.0) + p.phaseOffset;
-    if (s.phase >= 1.0) s.phase -= 1.0;
-    // No accumulation — phase is re-derived each block from ppq
-}
-```
-
-**Key property:** When DAW loops, repositions, or starts from a different position, the LFO phase automatically follows — no explicit reset call is needed in sync mode. This eliminates the most common LFO sync bug.
-
-### Free Mode: Phase Accumulator
-
-```cpp
-// Free mode — inside computeWave():
-const double phaseInc = p.rate * blockSize / sampleRate;
-s.phase = std::fmod(s.phase + phaseInc + p.phaseOffset, 1.0);
-```
-
-Phase offset is applied per-block (additive to accumulated phase). For persistent phase offset, it should be subtracted from the starting accumulator when the user sets it — or, simpler: apply it only at output sample point, not in the accumulator. Decision to make at implementation time.
-
-### DAW Start Phase Reset
-
-When the DAW starts playing (dawJustStarted = true in processBlock), free-running LFO accumulators reset to 0. This is already computed in processBlock:
-
-```cpp
-// In processBlock, after computing dawJustStarted (already exists):
-if (dawJustStarted)
-    lfoEngine_.resetPhase();
-```
-
-`resetPhase()` sets `stateX_.phase = stateY_.phase = freeBeatPhase_ = 0.0`. Sync-mode LFOs are unaffected (they derive phase from ppq, not the accumulator).
-
-### Sync-to-Free Toggle Mid-Playback
-
-When the user switches a sync LFO to free mode, the accumulator starts from 0 (default). To avoid a phase jump, `resetPhase()` can seed the accumulator from the current ppq phase before the toggle. Implementation detail for the phase; not an architectural constraint.
-
----
-
-## APVTS Parameters (New for v1.4)
-
-```cpp
-// In createParameterLayout():
-
-// ── LFO X (pitch X axis) ──────────────────────────────────────────────────
-addBool  ("lfoXEnabled",     "LFO X Enable",       false);
-addChoice("lfoXShape",       "LFO X Shape",
-          { "Sine","Tri","Saw+","Saw-","Square","S&H","Random" }, 0);
-addFloat ("lfoXRate",        "LFO X Rate",         0.01f, 20.0f, 1.0f);
-addFloat ("lfoXLevel",       "LFO X Level",        0.0f, 1.0f, 0.0f);
-addFloat ("lfoXPhase",       "LFO X Phase",        0.0f, 1.0f, 0.0f);
-addFloat ("lfoXDistortion",  "LFO X Distortion",   0.0f, 1.0f, 0.0f);
-addBool  ("lfoXSync",        "LFO X Sync",         false);
-
-// ── LFO Y (pitch Y axis) ──────────────────────────────────────────────────
-addBool  ("lfoYEnabled",     "LFO Y Enable",       false);
-addChoice("lfoYShape",       "LFO Y Shape",
-          { "Sine","Tri","Saw+","Saw-","Square","S&H","Random" }, 0);
-addFloat ("lfoYRate",        "LFO Y Rate",         0.01f, 20.0f, 1.0f);
-addFloat ("lfoYLevel",       "LFO Y Level",        0.0f, 1.0f, 0.0f);
-addFloat ("lfoYPhase",       "LFO Y Phase",        0.0f, 1.0f, 0.0f);
-addFloat ("lfoYDistortion",  "LFO Y Distortion",   0.0f, 1.0f, 0.0f);
-addBool  ("lfoYSync",        "LFO Y Sync",         false);
-```
-
-14 new parameters. Defaults are all disabled (lfoXEnabled=false, lfoYEnabled=false, level=0) so existing saved state loads correctly — LFO is a no-op until explicitly enabled.
-
----
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Writing LFO Output Into joystickX/Y Atomics
-
-**What goes wrong:** LooperEngine reads `joystickX`/`joystickY` atomics in `recordJoystick()` to record gestures. Baking LFO into the atomics causes the looper to capture modulated values. On playback, LFO would modulate a loop that already has LFO embedded — double modulation and broken looper semantics. The UI joystick dot would also move under LFO control, misrepresenting the physical stick position.
-
-**Prevention:** Apply LFO only inside `buildChordParams()` as a local float addition. Never store LFO-modulated values back to the atomics.
-
-### Anti-Pattern 2: Any Blocking Synchronisation in LfoEngine::process()
-
-**What goes wrong:** std::mutex, std::condition_variable, or any non-lock-free primitive on the audio thread causes xruns and DAW-level issues. LooperEngine.h already documents this with the ASSERT_AUDIO_THREAD() macro.
-
-**Prevention:** LfoEngine has no mutex. All cross-thread data uses atomics (beatFired_ only) or the params-struct pattern (all other data is audio-thread-local or passed in by value). The APVTS read is done in processBlock before calling process(); LfoEngine::process() receives only a plain Params struct.
-
-### Anti-Pattern 3: Per-Sample Transcendental Functions with Excessive Cost
-
-**What goes wrong:** Calling std::sin() / std::cos() per sample at typical block sizes (64–512 samples) is not inherently wrong on modern CPUs, but it is unnecessary for this use case since pitch is quantized to discrete semitones. It also adds complexity to the implementation.
-
-**Prevention:** Compute one LFO output value per block. Per-block LFO is established precedent in this codebase (arpeggiator uses per-block beat counting). Revisit only if sub-semitone pitch-bend modulation is added in a future version.
-
-### Anti-Pattern 4: Heap Allocation in LfoEngine::process()
-
-**What goes wrong:** Any allocation (std::vector, std::function, juce::String) on the audio thread causes non-deterministic latency spikes. JUCE's memory allocator is not real-time-safe.
-
-**Prevention:** LfoEngine holds all state as plain value members (two LfoState structs, two floats, one double for beat phase). The Params struct is passed by const reference. No dynamic allocation anywhere in the process() path.
-
-### Anti-Pattern 5: Making TriggerSystem Delta Computation Independent of LFO
-
-**What goes wrong:** If the joystick delta (`chordP.joystickX - prevJoyX_`) were computed from the pre-LFO raw value, joystick-source voices would not be retriggered by LFO motion — LFO would only affect pitch of already-held notes, not create new notes. This may or may not be desired.
-
-**Clarification needed:** The current implementation (post-LFO delta) means LFO motion **will** retrigger joystick-mode voices. This is an intentional trade-off to decide before implementing: does the musician want LFO to drive the joystick trigger, or only modulate pitch of triggered notes?
-
-**Recommendation:** Default to using post-LFO position for deltas (drives joystick gates) since it makes the LFO feel like "moving the joystick." If the other behaviour is preferred, compute `tp.deltaX = rawJx - prevJoyX_` (before adding LFO offset) and update `prevJoyX_` from raw position.
+- Looper wrong start position after record cycle: isolated to `LooperEngine.cpp` `finaliseRecording()` / `loopStartPpq_` anchor logic.
+- PS4 BT reconnect crash: isolated to `GamepadInput.cpp` `tryOpenController()` / `closeController()` SDL2 handle management.
 
 ---
 
 ## Phase-Specific Warnings
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| APVTS param registration | New params change saved state format. Old presets use defaults silently. | Set defaults to no-op (enabled=false, level=0). v1.3 presets load fine. |
-| S&H waveform | S&H must hold the same value until the phase wraps 1.0, then sample a new random. Incorrectly resampling every block produces noise, not S&H. | Detect 1.0 crossing via `s.prevPhase` vs `s.phase` in the per-block waveform. |
-| Sync mode rate = 0 | Division by zero when computing lfoBeats = 1.0 / rate. | Clamp rate minimum to 0.01 in APVTS or in computeWave() before division. |
-| Beat dot at high BPM | At 240 BPM the beat interval is 250 ms. 30 Hz timer tick is 33 ms. Each beat fires beatFired_ once; UI sees it within 33 ms. Acceptable latency. | No action needed; 30 Hz timer is sufficient. |
-| prepareToPlay ordering | lfoEngine_.prepare(sampleRate) must run before first processBlock. | Add call in PluginProcessor::prepareToPlay() alongside existing sampleRate_ = sr assignment. Trivial. |
-| Phase offset UX | Phase offset slider adjusts waveform start angle. If it feeds directly into the accumulator each block it will be re-added on every block instead of acting as an initial offset. | Apply phase offset only at the output evaluation point (added to accumulated phase before looking up waveform value), not to the accumulator state itself. |
-| buildChordParams() is const | `buildChordParams()` is declared `const` on PluginProcessor. `lfoEngine_.getOutputX/Y()` must be `const noexcept`. | LfoEngine::getOutputX/Y() returns `outputX_` which is a plain float member — fine for const. |
+| Phase | Pitfall | Mitigation |
+|-------|---------|------------|
+| Phase 1 (single channel) | Note-off goes to wrong channel if `effectiveChannel()` is not memoized at note-on time | Always write `sentChannel_[v]` at every note-on; note-off reads `sentChannel_[v]`, never recomputes |
+| Phase 1 (single channel) | processBlockBypassed also sends note-offs using `voiceChs[v]` directly | Update processBlockBypassed to use `sentChannel_[v]` or `effectiveChannel(v)` |
+| Phase 2 (sub octave) | Panic clears `sentSubOctPitch_[]` but sub note was already silenced by allNotesOff | Set `sentSubOctPitch_[v] = -1` after panic loop, same as `looperActivePitch_.fill(-1)` pattern |
+| Phase 2 (sub octave) | Sub pitch below MIDI 0 (pitch 0..11, sub = -12..-1) | Guard `if (subPitch >= 0)` before emitting; set `sentSubOctPitch_[v] = -1` when guard fails |
+| Phase 3 (LFO recording) | RecState::Armed → Recording transition timing: if process() runs with RecState::Armed before the buffer is zeroed, stale data plays back | Zero `recBuf_` and reset `recWritePos_` atomically when transitioning Armed→Recording inside process() on the audio thread |
+| Phase 3 (LFO recording) | `arm()` called from message thread while process() is mid-recording | `arm()` does a CAS: `Unarmed → Armed` only. If state is Recording or Playback, arm() is a no-op (cancel requires explicit `clear()` first) |
+| Phase 4 (stick targets) | Extending `filterXMode` choices changes normalization of existing saved mode values (0,1,2 map to different floats with more choices) | In JUCE, AudioParameterChoice stores the index as an integer raw value (not normalized to 0..1 like float params). Verify in JUCE 8 source that AudioParameterChoice::getValue() returns index/count-1 or raw index. If raw index, appending is safe. If normalized, must add a value migration path. |
+| Phase 4 (stick targets) | `setValueNotifyingHost()` called from audio thread in the APVTS-param branch | This call must NOT be in processBlock. Use the pending-atomic pattern: processBlock writes `pendingLStickX_`, timerCallback reads and calls `setValueNotifyingHost()` |
+| Phase 5 (gamepad mode 1) | Face button "consume" flags are consumed even in option mode 1, preventing looper transport in that mode | This is correct by design — option mode 1 intentionally replaces looper transport bindings with arp controls |
+| Phase 5 (gamepad mode 1) | R3 + pad sub-oct toggle: R3 held while voice button held fires every block, not once | Use `prevR3WithVoice_[v]` to detect the rising edge (both conditions newly true) — same pattern as `gamepadVoiceWasHeld_[v]` |
 
 ---
 
-## Build Order
+## Audio-Thread Safety Checklist
 
-```
-Phase A: LfoEngine core (new file, no modification to existing files)
-  - LfoEngine.h + LfoEngine.cpp
-  - All 7 waveforms implemented
-  - Beat boundary detection (beatFired_)
-  - Unit testable in isolation (ChordEngineTests.cpp pattern)
-  - No APVTS, no UI, no processor changes
-  Deliverable: LfoEngine compiles and waveforms produce correct output
-
-Phase B: ProcessBlock integration (modifies PluginProcessor only)
-  - Add LfoEngine lfoEngine_ member to PluginProcessor.h
-  - Register 14 LFO APVTS params in createParameterLayout()
-  - Call lfoEngine_.prepare(sr) in prepareToPlay()
-  - Build LfoEngine::Params from APVTS in processBlock, call lfoEngine_.process()
-  - Apply getOutputX/Y in buildChordParams()
-  - Add dawJustStarted -> lfoEngine_.resetPhase() call
-  Depends on: Phase A
-  Risk: APVTS param registration must be complete before any UI attaches
-
-Phase C: BeatClock UI dot (modifies PluginEditor only)
-  - Add beatDotComponent_ (small circle Component) near Free BPM knob
-  - Read beatFired_ in timerCallback(), edge-detect, flash dot
-  Depends on: Phase B (beatFired_ available via processor)
-  Note: Can develop in parallel with Phase D (different UI area)
-
-Phase D: LFO UI section (modifies PluginEditor only)
-  - Add LFO X and Y panels left of joystick
-  - Shape dropdown (AudioParameterChoice attachment)
-  - Rate, Level, Phase, Distortion sliders (AudioParameterFloat attachments)
-  - Enabled toggle, Sync button
-  Depends on: Phase B (APVTS params registered)
-
-Phase E: Distortion waveform post-processing
-  - Add jitter noise to LfoEngine::computeWave() based on distortion param
-  - Use existing LfoState::rng LCG
-  Depends on: Phase A (adds to computeWave())
-  Risk: LOW — additive change, does not touch processor or UI
-```
+| Item | Mechanism | Verified |
+|------|-----------|---------|
+| `singleChanMode` / `singleChanTarget` read on audio thread | APVTS `getRawParameterValue()` atomic read | Safe |
+| `sentChannel_[4]` written and read on audio thread only | Plain array, no atomic needed | Safe |
+| `subOct0..3` read on audio thread | APVTS `getRawParameterValue()` | Safe |
+| `sentSubOctPitch_[4]` audio-thread only | Plain array | Safe |
+| `looperActiveSubPitch_[4]` audio-thread only | Plain array | Safe |
+| `LfoEngine::recState_` written from message thread (arm/clear), read from audio thread | `std::atomic<int>`, arm uses CAS, clear uses store | Safe |
+| `LfoEngine::recBuf_[]` audio-thread only | Plain array | Safe |
+| `pendingLStickX_/Y_` written on audio thread, read on message thread | `std::atomic<float>` | Safe |
+| `rightStickHeld_` written from SDL timer thread (message thread), read on audio thread | `std::atomic<bool>` | Safe |
+| `prevR3WithVoice_[4]` audio-thread only | Plain array | Safe |
+| `setValueNotifyingHost()` from arp/RND-sync gamepad bindings (called in processBlock audio thread) | JUCE AudioProcessorParameter::setValueNotifyingHost() posts to message queue — thread-safe by JUCE design | Safe (JUCE guarantee) |
 
 ---
 
@@ -475,23 +662,24 @@ Phase E: Distortion waveform post-processing
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Integration point (step 4 in processBlock) | HIGH | Verified by reading full processBlock source; ppqPos available before LFO call |
-| Application site (buildChordParams local floats) | HIGH | Read buildChordParams() in full; p.joystickX/Y are local floats, perfect injection point |
-| Lock-free guarantee | HIGH | Entire codebase uses atomics + APVTS raw reads; LfoEngine follows identical pattern |
-| beatFired_ pattern | HIGH | flashPanic_ / flashLoopReset_ in PluginProcessor.h and PluginEditor confirm pattern works |
-| TriggerSystem delta interaction | MEDIUM | Post-LFO delta will drive joystick gates — need deliberate decision on whether that is desired |
-| Per-block vs per-sample LFO | MEDIUM | Per-block sufficient for semitone-quantized pitch; would need revisiting if pitch-bend LFO added |
-| Phase offset implementation detail | MEDIUM | Accumulator vs. lookup-time application — two correct approaches; implementation choice at build time |
+| Single-channel routing integration | HIGH | All emission sites verified by reading full processBlock; `sentChannel_` pattern mirrors existing `looperActivePitch_` |
+| Sub-octave emission | HIGH | Same pattern as single-channel; all three emission sites (looper/trigger/arp) confirmed present in code |
+| LFO recording state machine | HIGH | LfoEngine interface verified; `ProcessParams::maxCycleBeats` already exists; `recState_` atomic pattern matches existing flash counters |
+| Left stick target expansion | MEDIUM | JUCE AudioParameterChoice index storage must be verified — if normalized float, appending changes existing indices; direct inspection of JUCE 8 source needed at implementation time |
+| Gamepad mode-1 dispatch | HIGH | Existing D-pad mode-dispatch pattern in processBlock is the exact structure to extend; no new mechanism needed |
+| R3 removal | HIGH | Single line deletion in processBlock; no API changes |
+| R3 held state | HIGH | `getVoiceHeld()` and `getAllNotesHeld()` in GamepadInput demonstrate exact pattern |
+| Build order safety | HIGH | Dependency graph is acyclic; each phase is independently compilable |
 
 ---
 
 ## Sources
 
-- Direct inspection: `Source/PluginProcessor.cpp` — full processBlock() and buildChordParams() (all 1044 lines)
-- Direct inspection: `Source/PluginProcessor.h` — member layout, atomics, flash counter pattern, thread annotations
-- Direct inspection: `Source/LooperEngine.h` — ASSERT_AUDIO_THREAD macro, lock-free design comments, BlockOutput struct
-- Direct inspection: `Source/TriggerSystem.h` — ProcessParams struct, deltaX/Y fields, audio-thread-only contract
-- Direct inspection: `Source/ChordEngine.h` — Params struct, joystickX/Y field semantics
-- Direct inspection: `Source/GamepadInput.h` — 60 Hz timer, atomic stick values
-- Direct inspection: `.planning/PROJECT.md` — v1.4 requirements, key decisions log
-- Confidence: HIGH — all findings based on actual source code, no training-data inference used
+- Direct inspection: `Source/PluginProcessor.h` — full member layout, arp state, looper active pitch, flash atomics
+- Direct inspection: `Source/PluginProcessor.cpp` — full processBlock() (all 1300+ lines read); createParameterLayout() confirms existing filterXMode/filterYMode and arpEnabled/arpSubdiv/arpOrder/arpGateTime params
+- Direct inspection: `Source/LfoEngine.h` — ProcessParams struct confirms maxCycleBeats field; RecState not yet present
+- Direct inspection: `Source/LooperEngine.h` — lock-free design, BlockOutput, all public API
+- Direct inspection: `Source/TriggerSystem.h` — ProcessParams, onNote callback signature
+- Direct inspection: `Source/GamepadInput.h` — option mode API, getVoiceHeld/getAllNotesHeld pattern, rightStickTrig_ (rising edge, no held state exposed yet)
+- Direct inspection: `.planning/PROJECT.md` — v1.5 requirements verbatim
+- Confidence: HIGH — all findings based on actual source inspection; no training-data inference used for integration decisions

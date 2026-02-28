@@ -1,467 +1,296 @@
-# Feature Landscape: Dual LFO Modulation + Beat Clock
+# Feature Landscape — ChordJoystick v1.5
 
-**Domain:** Plugin LFO engine for a JUCE VST3 MIDI performance instrument
-**Researched:** 2026-02-26
-**Milestone:** ChordJoystick v1.4 — LFO + Clock
-**Overall confidence:** HIGH for waveform math and S&H/Random distinction; HIGH for sync/phase reset behavior; MEDIUM for distortion interpretation
+**Domain:** MIDI generator VST3 plugin — live performance / composition tool
+**Researched:** 2026-02-28
+**Milestone:** v1.5 Routing + Expression
+**Confidence:** HIGH (codebase directly inspected; MIDI design claims verified against MIDI specification and KVR community knowledge)
 
 ---
 
-> **Scope note:** This document covers only the NEW features for v1.4.
-> Previous milestone feature research (v1.1 MIDI Panic, Quantize, Looper Position Bar,
-> Gamepad Detection) is preserved at the bottom as a historical appendix.
+> **Scope note:** This document covers the NEW features for v1.5.
+> Previous milestone research (v1.4 LFO + Clock) is preserved at the bottom as a historical appendix.
 
 ---
 
 ## Context
 
-The two LFOs modulate the plugin's virtual joystick X and Y position values internally,
-before those values reach the chord engine and scale quantizer. Both LFOs are structurally
-identical; one drives X (fifth/tension), the other drives Y (root/third). Each LFO has 7
-controls and 2 boolean toggles. A beat clock indicator provides visual tempo feedback.
+The seven v1.5 features plus two bug fixes are analysed here through the lens of:
+- Table stakes vs differentiator vs anti-feature classification
+- User-facing behavior expectations
+- Critical edge cases per feature
+- Dependencies on existing subsystems (LooperEngine, LfoEngine, TriggerSystem, GamepadInput, PluginProcessor)
+
+**Existing subsystem summary relevant to v1.5:**
+- `LooperEngine` — lock-free SPSC FIFO, beat-timestamped events, AbstractFifo double-buffer, 2048 capacity
+- `LfoEngine` — stateless processBlock() DSP, ProcessParams-driven, 7 waveforms, no APVTS coupling
+- `TriggerSystem` — 4-voice gate, pad/joystick/random sources, NoteCallback per voice
+- `GamepadInput` — SDL2 60 Hz timer, optionMode_ (0/1/2), R3 = rightStickTrig_, held state per voice
+- `PluginProcessor` — arpeggiator state (arpPhase_, arpStep_, etc.), heldPitch_[4], looperActivePitch_[4]
+- Filter mode boxes — filterXMode/filterYMode APVTS enums, currently 2–3 items each
 
 ---
 
 ## Table Stakes
 
-Features that any professional LFO in a live performance instrument must have.
-Missing = product feels amateur or broken.
+Features that must work correctly once they exist. Wrong behavior makes the feature feel broken.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Sine waveform | Default LFO shape in virtually every instrument; smooth, organic | Low | `sin(2π * φ)` where φ is a [0,1) phasor |
-| Triangle waveform | Standard LFO shape; linear and predictable | Low | `(φ < 0.5) ? (4φ - 1) : (3 - 4φ)` |
-| Sawtooth Up waveform | Classic filter sweep; gradual rise with instant reset | Low | `2φ - 1.0` |
-| Sawtooth Down waveform | Reverse sweep; instant jump then gradual fall | Low | `1.0 - 2φ` |
-| Square waveform | Rhythmic gating; hard binary modulation | Low | `φ < 0.5 ? +1.0 : -1.0` |
-| Sample & Hold (S&H) | Iconic stepped random; staircase voltage; users expect it by name | Medium | New random value at each cycle boundary; held constant until next boundary |
-| Random (smooth) | Interpolated S&H; organic drift without abrupt steps | Medium | Linear interpolation between random targets over one cycle |
-| Frequency slider | Controls rate; the most fundamental LFO parameter | Low | Hz in Free mode; derived from BPM + subdivision in Sync mode |
-| Level slider (depth) | Controls how much the LFO offsets the axis value | Low | Scales LFO output ∈ [-1,+1] before adding to joystick position |
-| On/Off toggle | Enable/bypass per LFO without losing parameter state | Low | Boolean gate; outputs 0.0 when off |
-| Sync toggle | Locks LFO rate to DAW BPM (or internal free BPM) | Medium | Hard phase reset at DAW play start; PPQ-derived phase for seek-safe alignment |
-| Phase preserved across processBlock | Phasor is a class member; not recalculated each call | Low | Required to avoid tearing artifacts between blocks |
-| No memory allocation in audio thread | Real-time safety is a hard requirement for VST3 | Low | All LFO state in pre-allocated POD struct members; use JUCE Random::nextFloat() |
-| Beat clock indicator (one flash per beat) | Visual confirmation that tempo is live; essential in live performance | Medium | Flashing dot at 30 Hz polling; reads PPQ position or elapsed time |
-
----
-
-## Waveform Reference: Mathematical Definitions
-
-All waveforms use a normalized phasor `φ ∈ [0.0, 1.0)` that increments once per sample.
-Output range before Level scaling is `[-1.0, +1.0]`.
-
-### Phase Accumulator — Shared by All Waveforms
-
-```cpp
-// Per sample in processBlock:
-φ += frequency / sampleRate;
-if (φ >= 1.0f) φ -= 1.0f;   // wrap without fmod (faster, no branch misprediction)
-```
-
-When sync is active and DAW is playing, φ can alternatively be derived from PPQ:
-```cpp
-double beatsPerCycle = noteDivisionInBeats;   // e.g. 4.0 for 1 bar at 4/4
-φ = (float)fmod(ppqPosition / beatsPerCycle, 1.0);
-φ += phaseOffset;
-if (φ >= 1.0f) φ -= 1.0f;
-```
-PPQ-derived phase handles seek, loop, and tempo automation without drift.
-
-### Sine
-```
-output = sin(2π * φ)
-```
-Smooth, continuous, never abrupt. Feels "organic." Recommended default shape.
-
-### Triangle
-```
-output = (φ < 0.5f) ? (4.0f * φ - 1.0f) : (3.0f - 4.0f * φ)
-```
-Linear rise then linear fall, symmetric. Sounds more mechanical than sine.
-Tip: triangle is perceived as gentler than square but more defined than sine.
-
-### Sawtooth Up (Ramp Up)
-```
-output = 2.0f * φ - 1.0f
-```
-Gradual rise from -1 to +1, then instant reset. Classic filter sweep shape.
-
-### Sawtooth Down (Ramp Down)
-```
-output = 1.0f - 2.0f * φ
-```
-Inverted saw. Instant jump to +1 then gradual fall. Reverse sweep feel.
-
-### Square
-```
-output = (φ < 0.5f) ? 1.0f : -1.0f
-```
-Binary: fully up or fully down. Hard rhythmic gating feel.
-Duty cycle fixed at 50% for v1.4. Variable pulse width is a differentiator (see below).
-
-### Sample & Hold (S&H) — Stepped Random
-
-A new random value is drawn at each cycle boundary (when φ wraps) and held for the
-entire next cycle. There is no interpolation; transitions are instantaneous.
-
-```cpp
-// State (class members):
-float sAndHValue = 0.0f;      // the held value
-float prevPhase  = 0.0f;      // to detect wrap
-
-// Per sample:
-if (φ < prevPhase) {          // wrap detected
-    sAndHValue = rng.nextFloat() * 2.0f - 1.0f;   // new random in [-1, +1]
-}
-prevPhase = φ;
-output = sAndHValue;
-```
-
-Key behaviors users expect from S&H:
-- Each cycle produces a **different** output value with no relation to the previous.
-- The transition is **instantaneous** — no portamento or glide between steps.
-- The held value lasts exactly one cycle (duration controlled by Frequency).
-- Tempo-synced S&H produces rhythmically quantized random jumps — a classic sound.
-
-### Random (Smooth / Interpolated)
-
-Identical trigger logic to S&H, but output glides linearly toward the new target
-over the duration of the cycle. φ doubles as the interpolation parameter.
-
-```cpp
-// State (class members):
-float prevTarget    = 0.0f;
-float currentTarget = 0.0f;
-float prevPhase     = 0.0f;
-
-// Per sample:
-if (φ < prevPhase) {          // wrap detected
-    prevTarget    = currentTarget;
-    currentTarget = rng.nextFloat() * 2.0f - 1.0f;
-}
-prevPhase = φ;
-output = prevTarget + φ * (currentTarget - prevTarget);   // linear interpolation
-```
-
-Optional upgrade: cosine interpolation for a rounder curve.
-Linear is acceptable and CPU-trivial for v1.4.
-
----
-
-## S&H vs Random — Distinction Summary
-
-| Property | S&H (Stepped Random) | Random (Smooth) |
-|----------|----------------------|-----------------|
-| Output shape | Staircase — flat horizontal steps | Flowing ramps between values |
-| Transition | Instantaneous jump | Gradual glide over one full cycle |
-| Interpolation | None | Linear (or cosine) |
-| New target chosen | At cycle boundary | At cycle boundary (same moment) |
-| CPU cost per sample | One comparison + occasional RNG call | Above + one multiply-add |
-| Sound character | Staccato, quantized, nervous, vintage | Drifting, organic, breath-like |
-| Historical name | "S&H" (Moog usage), "stepped random" | "Smooth random", "glide random" |
-| Live use case | Rhythmic arpeggio randomization | Slow filter drift, humanization |
-| Sync behavior | Aligned jumps on beat boundaries | Ramps arrive at beat boundaries |
-
-Both shapes draw a new random target at the same moment (cycle wrap).
-The only distinction is whether that value is applied immediately (S&H) or interpolated
-toward linearly (Random). This distinction is not always intuitive to users; label clearly.
+| Single-channel mode: all 4 voices to one MIDI channel | Mono synths and non-MPE targets require single-channel output; users expect a clean toggle | Medium | Requires note-collision guard — see edge cases |
+| Single-channel note collision: same pitch on same channel → extend gate, not retrigger | Standard MIDI behavior expectation; sending note-on for a sounding pitch on same channel causes stuck notes or envelope reset in most synths | Medium | Reference counting per active pitch is the safe implementation |
+| Sub octave: fires exactly -12 semitones below the parent voice pitch | "Sub octave" has a precise meaning to musicians — exactly one octave lower, not user-adjustable | Low | Fixed -12 offset; not a tunable interval |
+| Sub octave: follows the same gate (on/off timing) as the parent voice | Lower note must sound and stop together with its parent | Low | Use the same sampleOffset in the note-on/off callback |
+| Sub octave: persists across state save/load | APVTS bool per voice | Low | Standard APVTS bool parameter |
+| LFO recording: records exactly 1 loop cycle | Gesture automation must match the looper's loop length; arbitrary buffer length is confusing | Medium | Tie to looper's `getLoopLengthBeats()` |
+| LFO recording: Distort stays live during playback | Distort is a post-waveform noise shaper; users expect to sculpt the playback in real time | Low | Distort is a ProcessParams field, never stored in the recording buffer |
+| LFO playback: shape/freq/phase/level controls grayed out (not Distort) | Only params that define the recorded waveform should be locked | Low | UI-only: gray out 4 controls; leave Distort and on/off toggle enabled |
+| Arpeggiator DAW sync: already built | Arp already exists with subdivisions and random order; gamepad control is the only new part | Low | Gamepad routing change only — no new DSP |
+| Looper wrong start position: bug fix | Looper must replay events aligned to the beat boundary where REC started; wrong offset is a correctness regression | Medium | loopStartPpq_ anchor re-entrancy after record cycle end |
 
 ---
 
 ## Differentiators
 
-Features that go beyond a minimum viable LFO. Valuable for live performance and
-sound design. Not strictly expected, but elevate the product's quality.
+Features that add expressive value beyond user expectation.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Phase slider (offset) | User sets where in the cycle the LFO starts; aligns X/Y LFOs for Lissajous-style motion | Low | Add `phaseOffset` to φ after phasor update; range 0.0–1.0 (= 0°–360°) |
-| Distortion / Jitter slider | Adds controlled randomness to waveform; prevents repetitive, robotic modulation | Medium | See Distortion Algorithms section below |
-| Sync subdivisions | Musical note division when sync is on; makes LFO period match musical bars | Low | 1/1, 1/2, 1/4, 1/8, 1/16, 1/32 dropdown; freq = BPM / 60 / noteValue |
-| Free BPM for internal clock | When DAW not playing, plugin generates its own tempo for LFO sync | Medium | Already partially exists (randomFreeTempo); LFO reuses same BPM param |
-| Variable pulse width | Square wave duty cycle > 50%; allows asymmetric on/off times | Low | Replace 0.5 threshold with `pulseWidth` parameter (0.0–1.0) |
-| Triplet and dotted subdivisions | Extended rhythmic variety in sync mode | Low | Base subdivision × 2/3 (triplet) or × 1.5 (dotted) |
-| LFO-to-LFO phase relationship display | Visual indicator showing relative phase of X vs Y LFOs | Medium | Lissajous preview mini-display; potentially useful but UI-heavy |
-
----
-
-## Distortion Slider — Algorithm Options
-
-The distortion slider "adds noise/jitter" to the waveform shape. Three implementable
-approaches, ordered by recommendation:
-
-### Option A: Additive White Noise (Recommended for v1.4)
-
-Mix a fraction of white noise into the LFO output after the waveform formula:
-
-```cpp
-float noise  = rng.nextFloat() * 2.0f - 1.0f;   // JUCE Random, audio-thread safe
-output = lfoWaveform + distortion * noise;
-output = juce::jlimit(-1.0f, 1.0f, output);
-```
-
-Pros: trivial to implement, zero latency, no additional state, sounds good.
-Behavior: at distortion=0 the waveform is clean; at distortion=1 it becomes pure noise.
-Complexity: Low.
-
-This is the standard behavior of the "Jitter" slider documented in Ableton's Max for
-Live LFO device. It is the correct interpretation for this parameter.
-
-### Option B: Phase Jitter
-
-Add a small random offset to the phase accumulator each sample:
-
-```cpp
-φ += distortion * (rng.nextFloat() - 0.5f) * 0.02f;   // ±1% per sample
-if (φ >= 1.0f) φ -= 1.0f;
-if (φ < 0.0f)  φ += 1.0f;
-```
-
-Produces subtle wavering of the period length — sounds like clock instability.
-Different character from Option A: it shifts waveform timing, not amplitude.
-Complexity: Low.
-
-### Option C: Wavefolder / Soft Clip Saturation
-
-Apply tanh saturation to shape the waveform before level scaling:
-
-```cpp
-float drive = 1.0f + distortion * 4.0f;
-output = std::tanh(output * drive) / std::tanh(drive);
-```
-
-Rounds and clips waveform edges; creates a more driven, saturated shape.
-This does NOT add randomness. It changes waveshape, not "jitter."
-Semantically wrong for the "distortion = noise" intent in the milestone spec.
-Complexity: Low — but incorrect framing for a "distortion" knob.
-
-**Decision: Use Option A.** Matches the Ableton M4L LFO "Jitter" documented behavior,
-maps well to the knob label "Distortion / Jitter," is CPU-free, and is immediately
-audible. Use JUCE's `juce::Random` class, seeded once at construction; `nextFloat()`
-is safe to call on the audio thread.
-
----
-
-## Sync Behavior: Phase Reset Options
-
-### Hard Phase Reset — Recommended for v1.4
-
-When DAW transitions from stopped to playing, reset φ to `phaseOffset`.
-LFO always starts from the same position relative to bar 1.
-
-This is the standard behavior in Serum, Vital, Massive, and u-he DIVA.
-
-```cpp
-// In processBlock, check isPlaying transition:
-if (positionInfo.isPlaying && !wasPlaying) {
-    lfoX.phase = lfoX.phaseOffset;
-    lfoY.phase = lfoY.phaseOffset;
-    lfoX.sAndHValue = rng.nextFloat() * 2.0f - 1.0f;   // reseed S&H
-    lfoY.sAndHValue = rng.nextFloat() * 2.0f - 1.0f;
-}
-wasPlaying = positionInfo.isPlaying;
-```
-
-For seek/jump robustness, derive phase from PPQ position on every block:
-```cpp
-if (syncEnabled && positionInfo.isPlaying) {
-    double ppqPerCycle = noteDivisionInBeats;    // e.g. 1.0 for 1-beat LFO
-    φ = (float)fmod(positionInfo.ppqPosition / ppqPerCycle, 1.0) + phaseOffset;
-    if (φ >= 1.0f) φ -= 1.0f;
-}
-```
-PPQ derivation eliminates drift even after timeline jumps or BPM automation.
-
-### Soft Sync — Not Recommended for v1.4
-
-Adjusts cycle length incrementally toward the clock period (Batumi SYNC mode).
-More complex, rarely expected by DAW plugin users. Defer to v2 if ever needed.
-
-### Free Mode (No DAW Sync)
-
-LFO runs from its own phase accumulator at the specified Hz rate.
-No reset occurs. Phase drifts relative to song position — expected behavior.
-Uses `randomFreeTempo` (existing APVTS param) as the BPM source when a "1/4 note"
-subdivision is selected, or the explicit frequency slider value in Hz.
-
----
-
-## Beat Clock Indicator
-
-### Behavior Users Expect
-
-- One brief flash per quarter note (one beat in 4/4).
-- Flash duration: approximately 80–120ms — long enough to see, short enough to feel like a pulse.
-- When DAW is playing with sync enabled: reads `ppqPosition` from `AudioPlayHead`.
-  Flash fires whenever `fmod(ppqPosition, 1.0) < threshold`.
-- When DAW is stopped or sync is off: reads internal free BPM; flash is time-based.
-- No flash when plugin has no tempo source at all (DAW stopped, no free BPM).
-- Visual: small circle or filled dot. Not a large animation. One element.
-
-### Implementation Pattern
-
-The existing 30 Hz `timerCallback` in `PluginEditor` is sufficient for this.
-At 120 BPM, a beat lasts 500ms; 30 Hz gives ~15 frames per beat — smooth enough.
-
-```cpp
-// In PluginEditor::timerCallback() — message thread:
-const bool dawPlaying = processorRef_.getDawIsPlaying();
-const double freeBPM  = processorRef_.getFreeBPM();   // from APVTS randomFreeTempo
-
-bool beatOn = false;
-
-if (dawPlaying) {
-    double ppq  = processorRef_.getLastPpqPosition();
-    double frac = std::fmod(ppq, 1.0);
-    beatOn = (frac < 0.08);   // on for ~8% of beat = ~96ms at 120 BPM
-} else if (freeBPM > 0.0) {
-    double now         = juce::Time::getMillisecondCounterHiRes() * 0.001;
-    double beatPeriod  = 60.0 / freeBPM;
-    double frac        = std::fmod(now, beatPeriod) / beatPeriod;
-    beatOn = (frac < 0.08);
-}
-
-beatDot_.setColour(beatOn
-    ? juce::Colour(0xFF00FFFF)      // bright cyan on beat
-    : juce::Colour(0xFF1A1A1A));    // near-black off
-beatDot_.repaint();
-```
-
-This reuses existing infrastructure:
-- `getDawIsPlaying()` — PluginProcessor already reads `AudioPlayHead` in processBlock.
-- `getLastPpqPosition()` — PluginProcessor stores last PPQ as an atomic double.
-- `getFreeBPM()` — wraps the existing `randomFreeTempo` APVTS parameter.
-- 30 Hz timer — already exists in PluginEditor.
-
-**No new audio thread infrastructure is needed for the beat clock.**
+| Per-voice sub octave (not a global octave shift) | Lets user add bass doubling on the root voice without affecting the third — useful for bass+chord splits | Low | 4 APVTS bools subOctVoice0..3; UI: right-half of Hold button becomes SubOct toggle |
+| Sub octave + single-channel collision avoidance | When sub oct note = another voice's note on same channel, extend rather than retrigger — prevents mud | Medium | Requires cross-voice pitch comparison at note-on time in processBlock |
+| LFO recording arm/record/play/clear workflow | Captures a custom LFO shape from live performance without leaving the plugin; gesture automation | High | Largest new subsystem; beat-indexed float buffer per axis, new state machine |
+| Left joystick target expansion: LFO freq/shape/level/arp gate | Turns the left stick into a live modulation surface for internal plugin parameters beyond CC74/CC71 | Medium | Extend filterXMode/filterYMode APVTS enum by 4–6 values; new processBlock routing switch cases |
+| Gamepad Option Mode 1: arp controls on face buttons | Enables arp on/off, rate, and order changes during performance without touching the mouse | Low | Pure GamepadInput + processBlock routing change; no new DSP |
+| R3 + held pad = sub oct toggle for that voice | Ergonomic: hold a voice with one hand, toggle its sub oct with R3 + that pad | Low | Additive condition on existing gamepad held-state check; evaluate before R3-standalone |
 
 ---
 
 ## Anti-Features
 
-Features to explicitly NOT build in v1.4.
+Features to explicitly NOT build in v1.5.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| LFO-to-MIDI CC output | These LFOs are position modulators, not CC generators | Keep LFO as internal axis offset; no CC emission |
-| Custom LFO shape drawing | Weeks of scope; Serum-tier feature | Use fixed 7 waveforms; defer custom shapes to v2 |
-| LFO envelope (attack/decay on LFO itself) | Adds complexity; position modulation doesn't need per-trigger envelope | Level slider covers depth; no envelope needed |
-| Variable pulse width | Nice-to-have but adds a parameter; 50% is sufficient for v1.4 | 50% fixed duty cycle |
-| LFO-to-velocity or note length | Outside the axis-position modulation model | Not applicable to this design |
-| Retrigger on MIDI note | Plugin has no MIDI input (generates MIDI) | N/A |
-| Wavetable LFO shapes | Massive infrastructure; out of scope | Defer to v2 |
-| Per-voice LFO (4 separate LFOs) | Overcomplicated; 4 voices share 2 axes which share 2 LFOs | Two global LFOs is the correct design |
-| Modulation routing matrix | ChordJoystick has exactly 2 modulation destinations (X and Y) | Fixed routing: LFO X → X axis, LFO Y → Y axis |
-| Second beat clock (one per LFO) | One dot near BPM knob is sufficient; two would be confusing | One beat clock dot total |
-| LFO-to-LFO modulation | Not needed for a 2-destination instrument | Out of scope |
+| Sub octave as a tunable interval (not fixed -12) | "Sub octave" has a precise meaning; tunable offset creates UI scope creep for marginal benefit | Fix at -12 semitones; add a named "voice octave offset" knob separately if needed |
+| LFO recording: selectable multi-cycle length | Recording exactly 1 loop cycle matches the looper's mental model; multi-cycle adds sync complexity | Lock to 1 cycle; if longer is needed, extend the looper loop length first |
+| LFO recording: record the Distort parameter | Distort is a live-shaping overlay; recording it breaks the "Distort stays live" contract | Keep Distort as a real-time overlay; never include it in the recording buffer |
+| Arp + looper: force looper to stop when arp turns on | Arp and looper are designed to run simultaneously; muting one on the other's activation is surprising | Let them run independently; handle note-collision cases with single-channel guard |
+| Single-channel mode: remove multi-channel mode | Multi-channel is the v1.0 default; it must remain the default; single-channel is opt-in | Toggle in UI + APVTS bool singleChannelMode, default false |
+| Remove R3 panic globally | Panic is safety-critical; removing it entirely is dangerous for live performance | Remove R3 standalone panic only when in Option Mode 1; panic remains available via UI button and via modes 0 and 2 |
+| Gamepad Option Mode 1: D-pad mapping for LFO params | D-pad is already used for octave/transpose control in modes 1 and 2; adding more sub-modes creates a menu jungle | Stick to face-button remapping only in v1.5; revisit D-pad extensions in v2 |
+
+---
+
+## Edge Cases by Feature
+
+### Feature 1: Single-Channel Routing Mode
+
+**Edge case A — Note collision (same pitch, same channel):**
+Standard MIDI does not define behavior when a note-on arrives for a pitch already sounding on the same channel. Most synths either retrigger (resetting the envelope, which is usually unwanted) or create a stuck note (never hearing the second note-off that matches this note-on). The safe implementation: maintain a `singleChActiveCount[128]` reference count array for the target channel in processBlock. On note-on: if count > 0, skip the note-on but increment the count. On note-off: decrement count; only send MIDI note-off when count reaches zero.
+
+Confidence: MEDIUM — derived from KVR community consensus ("reference counting is the safe approach") and MIDI specification's undefined behavior for duplicate note-ons.
+
+**Edge case B — Sub octave + single-channel collision:**
+Voice 0 sounds MIDI 48; its sub octave is MIDI 36. Voice 1 happens to also compute MIDI 36. In single-channel mode both would emit note-on 36. Use the same reference-count guard to prevent double note-on.
+
+**Edge case C — Mode toggle with notes held:**
+If the user switches single-channel mode while a note is sounding, the note-off must be sent on the original channel used at note-on time (not the new routing). Track per-voice "channel used at last note-on" alongside activePitch_ — same pattern already used for looperActivePitch_.
+
+**Edge case D — Channel selection in single-channel mode:**
+Use voiceCh0 (root voice APVTS parameter, already exists) as the single output channel when singleChannelMode is active. Avoids adding a new APVTS parameter and is intuitive (voice 0 = the "main" voice).
+
+---
+
+### Feature 2: Sub Octave Per Voice
+
+**Edge case A — Sub note MIDI range clamping:**
+If voice pitch is 0–11 (MIDI notes 0–11), subtracting 12 produces a negative value. Clamp to MIDI note 0 minimum. No user interaction needed; silent floor clamping is correct.
+
+**Edge case B — Sub note with Hold mode:**
+The existing padHold_ flag keeps the parent note sounding when mouseUp fires. Sub octave uses the same gate-open state as its parent voice — the hold behavior is automatic with no separate tracking.
+
+**Edge case C — Sub note with Arpeggiator:**
+The arpeggiator cycles individual voices, firing note-on via the TriggerSystem NoteCallback. Sub-octave emission must occur in the same callback branch as the main arp note-on, not as a separate later step. Order: fire main note, then immediately fire sub-oct note with the same sampleOffset.
+
+**Edge case D — Sub note with Looper playback:**
+Looper replays gate events from playbackStore_ which contain voice index and beatPosition — but not sub-octave state. Sub octave is a real-time APVTS parameter. Apply sub-octave doubling at the point of looper gate-on emission in processBlock, reading subOctVoiceN at playback time (not recording time). This means changing the sub-oct APVTS knob mid-playback takes effect immediately — which is the expected live behavior.
+
+**Edge case E — R3 + held pad toggle mid-gate:**
+When R3 is pressed while a voice pad is physically held, toggle subOctVoiceN for that voice. Do NOT retroactively add or remove a currently sounding sub-octave note; that would produce a stuck note or orphan note-off. The toggle takes effect on the next note-on only. This is acceptable because the user is changing behavior for the next hit, not the current one.
+
+---
+
+### Feature 3: LFO Recording
+
+**Behavior contract (state machine per LFO axis):**
+- IDLE → ARM: arm button pressed; LFO output monitoring begins; no buffer write yet
+- ARM → RECORDING: looper enters playing state (or manual trigger if looper not running); LFO process() output sampled into a beat-indexed buffer for exactly 1 loop cycle
+- RECORDING → PLAYBACK: 1 cycle elapsed; buffer locked; LfoEngine.process() bypassed; buffer provides LFO value at each block via beat-position lookup
+- PLAYBACK → IDLE: Clear button pressed; buffer discarded; LfoEngine.process() resumes free-running
+
+**Edge case A — Buffer size calculation:**
+The recording resolution is one sample per processBlock (block-rate, not sample-rate). LFO values do not need sample-accurate timestamping. At 120 BPM, 16-bar 4/4 loop = 64 beats = 32 seconds. At 512-sample blocks and 44100 Hz, that is ~2755 blocks. A fixed buffer of 4096 `(float beatPosition, float lfoValue)` pairs (two float per entry = 32 KB per axis) covers all practical loop lengths. This is the same pattern as LooperEngine's playbackStore_ but for LFO values instead of gate events.
+
+Use a `std::array<std::pair<float,float>, 4096>` or two parallel float arrays. Store as (beatPosition, value) pairs sorted by beatPosition so playback can binary-search or linearly scan.
+
+**Edge case B — Playback interpolation:**
+Recorded samples are spaced at processBlock intervals — approximately every 5–12 ms. At slow LFO rates (0.1 Hz) this is fine. At fast rates (10 Hz) with small blocks (64 samples), the recording resolution may be coarser than the LFO output. Linear interpolation between adjacent (beatPos, value) pairs eliminates zipper artifacts. This is low-cost and should be implemented from the start.
+
+**Edge case C — Tempo change during playback:**
+The buffer stores beat positions, not sample positions. Playback reads the buffer by mapping current playbackBeat_ (from LooperEngine) to the nearest recorded beat position. If the DAW BPM changes, the beat-position mapping stays correct — the playback speed just changes in musical time, which is correct behavior (same as how the looper itself behaves).
+
+**Edge case D — Gray-out scope during playback:**
+Gray out (disable UI): LFO shape combo, rate slider, phase slider, level slider.
+Leave active (not grayed out): Distort slider, LFO on/off toggle, arm/record/clear buttons.
+Rationale: Distort is explicitly stated to remain live. The on/off toggle must stay active so the user can bypass the whole LFO (including the recording) if needed.
+
+**Edge case E — Sync button interaction with recording:**
+If LFO sync is on, recording should start at the next bar boundary (same as looper's recPendingNextCycle_ pattern). If sync is off, recording starts immediately when ARM transitions to RECORDING.
+
+**Edge case F — Two independent recording instances (LFO X and LFO Y):**
+Each axis has its own recording buffer and state machine. Implement as a `LfoRecorder` struct (or nested class) held by PluginProcessor (one instance: lfoXRecorder_, one: lfoYRecorder_). Keep LfoEngine itself stateless-ish and unmodified. PluginProcessor stitches: if recorder is in PLAYBACK state, ignore lfoX_.process() output and use recorder's buffer output instead.
+
+---
+
+### Feature 4: Left Joystick X/Y Modulation Target Expansion
+
+**Current targets (filterXMode / filterYMode APVTS enums):**
+- X: Cutoff (CC74), VCF LFO (CC12), Mod Wheel (CC1)
+- Y: Resonance (CC71), LFO Rate (CC76)
+
+**New targets to add (6 new enum values, 3 per axis):**
+- LFO-X Freq, LFO-X Shape, LFO-X Level (new X axis targets)
+- LFO-Y Freq, LFO-Y Shape, LFO-Y Level (new Y axis targets, add to both dropdowns)
+- Arp Gate Length (add to both X and Y dropdowns)
+
+**Edge case A — Shape is a discrete enum, not a float:**
+LFO shape is Waveform integer (0–6). Left stick output is float -1..+1. Map by dividing the ±1 range into 7 equal bands (each band is 2/7 wide). Apply hysteresis (±0.04) at each boundary to prevent rapid flickering when the stick hovers on a boundary. This is the standard approach for continuous-to-step mapping in hardware synthesizers.
+
+**Edge case B — LFO Freq target when sync is on:**
+When LFO sync mode is enabled, the rate parameter is in beat subdivisions (not Hz). Driving the sync subdivision with an analog stick would produce confusing jumps between discrete time signatures. If the target is "LFO-X Freq" and sync is on, suppress the CC output (or display a warning label). The user should turn off sync before using the left stick as LFO rate.
+
+**Edge case C — Arp Gate Length mapping:**
+arpGateTime APVTS is 0.0–1.0. Left stick -1..+1 maps to 0..1 via `(value + 1.0f) * 0.5f`. Direct float assignment to the APVTS parameter. No special handling needed; this is the cleanest of the new targets.
+
+**Edge case D — Multi-target conflict:**
+Both X and Y dropdowns could select the same target (e.g., both targeting LFO-X Level). Allowed — last write wins within processBlock. No need to prevent it.
+
+---
+
+### Feature 5: Gamepad Option Mode 1 Remapping
+
+**New face-button mapping in Option Mode 1:**
+- Circle (B) → Arp on/off toggle
+- Triangle (Y) → Arp Rate: cycle subdivision forward (wraps 0→5→0)
+- Square (X) → Arp Order: cycle order forward (wraps 0→6→0)
+- Cross (A) → RND Sync toggle (intercept before looper start/stop dispatch)
+- R3 (right stick btn) → sub oct toggle for held pad (no longer panic in mode 1)
+
+**Edge case A — Circle toggles arp; arp starts waiting for DAW:**
+Existing behavior: when arpEnabled is set to true while DAW is not playing, `arpWaitingForPlay_` becomes true (blink state). The existing blink counter handles this. Circle just sets the APVTS arpEnabled bool using `p->setValueNotifyingHost()` — no new state needed.
+
+**Edge case B — R3 standalone panic removal in mode 1 only:**
+In processBlock, the current logic fires panic on `consumeRightStickTrigger()` regardless of mode. Add a guard: `if (optionMode != 1 && consumeRightStickTrigger()) { ... panic ... }`. In mode 1, R3 is consumed only in combination with a held pad (for sub oct toggle) and ignored when no pad is held.
+
+**Edge case C — Cross intercept for RND Sync in mode 1:**
+Cross (A) in mode 0 = looper start/stop. In mode 1, Cross = RND Sync toggle. Implement as: before the normal looper start/stop branch, check `if (optionMode == 1 && consumeLooperStartStop()) { toggle randomClockSync APVTS bool; return; }`. The `consumeLooperStartStop()` is a destructive consume so it cannot fire twice.
+
+**Edge case D — Rate/Order cycling:**
+Triangle → increment `arpSubdiv` APVTS index cyclically within [0, 5]. Square → increment `arpOrder` APVTS index cyclically within [0, 6]. Both use the existing `stepWrappingParam()` helper in PluginProcessor. These consume the option-mode D-pad delta signals — use the same consume pattern: check `consumeOptionDpadDelta()` or add a new option-button-delta mechanism for face buttons in GamepadInput.
+
+Actually: Triangle/Square/Circle are not D-pad buttons — they are face buttons. The D-pad delta mechanism (pendingOptionDpadDelta_) is for D-pad only. For face buttons in option mode, add direct consume flags: `pendingOptionCircle_`, `pendingOptionTriangle_`, `pendingOptionSquare_` as `std::atomic<bool>` in GamepadInput, set on rising edge when optionMode == 1.
+
+---
+
+### Feature 6: Bug Fix — Looper Wrong Start Position After Record Cycle
+
+**Root cause (inferred from LooperEngine.h):**
+`loopStartPpq_` is set when the looper begins playing/recording to anchor beat 0. After `finaliseRecording()` runs and the looper transitions from recording to playback, `internalBeat_` is reset but the anchor may not re-snap to the nearest bar boundary. If the PPQ position at the moment of transition is mid-bar, the first playback cycle starts from a fractional beat offset instead of beat 0.
+
+**Expected fix:** After `finaliseRecording()` completes and playback begins, compute the PPQ distance from the current position to the last bar boundary and reset `loopStartPpq_` to that bar boundary. This ensures the first playback pass starts at beat 0 of the recorded material.
+
+**Edge case — DAW loop playback (Ableton clip loop):**
+If the DAW loops its own timeline, PPQ position resets backward. The looper must detect backward PPQ jumps (current ppq < previous ppq by more than half a beat) and re-anchor loopStartPpq_ to the new position. This avoids the looper drifting out of sync after a DAW loop point.
+
+---
+
+### Feature 7: Bug Fix — SDL2 Bluetooth Reconnect Crash
+
+**Root cause (inferred from GamepadInput.h):**
+The `timerCallback()` calls `tryOpenController()` on SDL_CONTROLLERDEVICEADDED events. If a disconnect and reconnect occur in quick succession (BT pairing oscillation), two ADD events may fire before the first `closeController()` has fully executed. The previous `SDL_GameController*` handle may still be non-null but invalidated, causing a crash in the next SDL_GameControllerOpen call or in axis polling.
+
+**Expected fix:**
+1. Add a `lastCloseTimestampMs_` member. In `tryOpenController()`, return early if `SDL_GetTicks() - lastCloseTimestampMs_ < 500` — a 500 ms debounce on reconnect.
+2. In `closeController()`, set `lastCloseTimestampMs_ = SDL_GetTicks()` before nulling the pointer.
+3. Null-guard all SDL_GameController* accesses at the top of `timerCallback()`.
+
+**Edge case — Multiple controllers connected simultaneously:**
+SDL may report multiple ADD events if a second controller is connected. GamepadInput currently tracks only one controller_. Add a check in tryOpenController(): if controller_ is already non-null and valid, do not open a second one.
 
 ---
 
 ## Feature Dependencies
 
 ```
-Beat clock indicator
-    └── AudioPlayHead (already in PluginProcessor.processBlock)
-    └── getLastPpqPosition() atomic (already stored or trivially added)
-    └── getDawIsPlaying() (already available)
-    └── 30 Hz timerCallback (already exists in PluginEditor)
-    └── getFreeBPM() — wraps existing randomFreeTempo APVTS parameter
+Single-channel mode
+  → new: singleChannelMode APVTS bool (default false)
+  → new: singleChActiveCount[128] reference count in processBlock (audio thread only)
+  → uses: voiceCh0 APVTS param as target channel (existing)
+  → used by: sub octave collision guard
 
-LFO engine (both LFOs share identical structure)
-    └── Phase accumulator: float class member, initialized to phaseOffset
-    └── Random source: juce::Random seeded at construction (one per LFO)
-    └── APVTS parameters (new, 14 total for 2 LFOs):
-        └── lfoXShape       (int 0–6)
-        └── lfoXFreq        (float, Hz)
-        └── lfoXPhase       (float 0.0–1.0)
-        └── lfoXDistortion  (float 0.0–1.0)
-        └── lfoXLevel       (float 0.0–1.0)
-        └── lfoXSync        (bool)
-        └── lfoXEnabled     (bool)
-        └── lfoYShape .. lfoYEnabled (mirror of above)
+Sub octave per voice
+  → new: subOctVoice0..3 APVTS bools
+  → uses: heldPitch_[4] array (existing)
+  → uses: NoteCallback in TriggerSystem (existing — fire sub note in same callback)
+  → requires single-channel collision guard when singleChannelMode is active
+  → UI: split Hold button right-half into SubOct region (per-voice TouchPlate area)
+  → UI: R3 + held pad shortcut in GamepadInput processBlock routing
 
-LFO sync → AudioPlayHead::PositionInfo.bpm (already read in processBlock)
-LFO sync → AudioPlayHead::PositionInfo.ppqPosition (already read in processBlock)
-LFO sync → wasPlaying_ bool state (new member in PluginProcessor)
+LFO recording
+  → new: LfoRecorder struct (beat-indexed float buffer + state machine, one per axis)
+  → uses: LfoEngine.process() output (existing — recorder intercepts it)
+  → uses: looper.getLoopLengthBeats() (existing)
+  → UI: ARM button near LFO Sync; CLEAR button; gray-out logic for 4 LFO controls
 
-LFO output injection
-    └── Joystick X float modified before ChordEngine reads it
-    └── Joystick Y float modified before ChordEngine reads it
-    └── Output clamped to [0.0, 1.0] (joystick position range)
-    └── Level scale: final = joystickValue + lfoOutput * lfoLevel * attenuatorRange
+Left joystick target expansion
+  → extends: filterXMode / filterYMode APVTS enum values (add 4–6 new values)
+  → uses: LfoEngine ProcessParams (existing — new case in processBlock switch)
+  → uses: arpGateTime APVTS param (existing)
+  → new: hysteresis + step mapping for LFO Shape discrete target
+
+Gamepad Option Mode 1 remapping
+  → new: pendingOptionCircle_, pendingOptionTriangle_, pendingOptionSquare_ atomics in GamepadInput
+  → uses: stepWrappingParam() (existing)
+  → uses: arpEnabled APVTS (existing)
+  → changes: R3 routing guard (optionMode != 1 precondition before panic)
+  → changes: Cross routing guard (optionMode == 1 intercept for RND Sync)
+  → depends on: sub octave (R3+pad gesture)
+
+Bug fix: looper start position
+  → changes: LooperEngine — loopStartPpq_ re-anchor logic after finaliseRecording()
+  → changes: backward PPQ jump detection
+
+Bug fix: BT reconnect crash
+  → changes: GamepadInput — lastCloseTimestampMs_ debounce in tryOpenController()
+  → changes: null-guard in timerCallback()
 ```
 
 ---
 
-## APVTS Parameter Additions
+## MVP Build Order for v1.5
 
-| Parameter ID | Type | Range | Default | Purpose |
-|--------------|------|-------|---------|---------|
-| lfoXEnabled | bool | off/on | off | Bypass LFO X |
-| lfoXShape | int | 0–6 | 0 (Sine) | Waveform selector |
-| lfoXFreq | float | 0.05–20.0 Hz | 1.0 | Rate in free mode |
-| lfoXPhase | float | 0.0–1.0 | 0.0 | Phase offset at start/reset |
-| lfoXDistortion | float | 0.0–1.0 | 0.0 | Additive noise amount |
-| lfoXLevel | float | 0.0–1.0 | 0.5 | Output depth |
-| lfoXSync | bool | off/on | off | Lock to BPM |
-| lfoXSyncDiv | int | 0–5 | 2 (1/4) | Sync subdivision (1/1, 1/2, 1/4, 1/8, 1/16, 1/32) |
-| lfoYEnabled | bool | off/on | off | Mirror of X set |
-| lfoYShape | int | 0–6 | 0 | — |
-| lfoYFreq | float | 0.05–20.0 Hz | 1.0 | — |
-| lfoYPhase | float | 0.0–1.0 | 0.0 | — |
-| lfoYDistortion | float | 0.0–1.0 | 0.0 | — |
-| lfoYLevel | float | 0.0–1.0 | 0.5 | — |
-| lfoYSync | bool | off/on | off | — |
-| lfoYSyncDiv | int | 0–5 | 2 | — |
+Build in this sequence to respect dependencies and validate foundational changes before layering complexity:
 
-16 new APVTS parameters total. All are UI-exposed; all persist via APVTS state save/load.
+1. **Bug fixes first** — Looper start position and BT crash are live correctness issues. Fix these before adding features that stress these same systems.
 
----
+2. **Single-channel routing mode** — Foundational routing change. The reference-count collision guard is reused by sub octave. Low risk: it is additive to the existing multi-channel path.
 
-## Sync Subdivision Reference
+3. **Sub octave per voice** — Depends on single-channel collision guard. The DSP is 4 extra note-on/off calls per trigger. The UI split-button is the highest-effort part; it is self-contained.
 
-| Subdivision | Beats (1 beat = 1 quarter note) | LFO frequency at 120 BPM |
-|-------------|--------------------------------|--------------------------|
-| 1/1 (whole) | 4.0 | 0.500 Hz |
-| 1/2 (half) | 2.0 | 1.000 Hz |
-| 1/4 (quarter) | 1.0 | 2.000 Hz |
-| 1/8 (eighth) | 0.5 | 4.000 Hz |
-| 1/16 (sixteenth) | 0.25 | 8.000 Hz |
-| 1/32 (thirty-second) | 0.125 | 16.000 Hz |
+4. **Left joystick target expansion** — Extends the existing filterXMode/filterYMode switch statement. Low integration risk. Delivers user-visible expressive value early.
 
-Calculation: `freqHz = (BPM / 60.0) / beatsPerCycle`
+5. **Gamepad Option Mode 1 remapping** — Pure routing change. Depends on sub octave (R3+pad gesture). Requires new atomic flags in GamepadInput for face buttons.
 
----
-
-## MVP Build Order
-
-Recommended implementation sequence to minimize risk and enable early testing:
-
-1. **LFO DSP struct** — Phase accumulator + 7 waveform outputs, Level scaling, Distortion
-   noise. No APVTS hookup yet. Write a unit test: feed known frequencies, verify output
-   range and waveform shape at cycle boundaries. (Low complexity)
-
-2. **APVTS registration** — Add 16 new parameters to PluginProcessor::createParameters().
-   No UI yet; verify state saves/loads without crash. (Low complexity)
-
-3. **Joystick position injection** — In processBlock, add LFO output to joystickX_ and
-   joystickY_ after reading from sliders, before ChordEngine uses them. Clamp result.
-   (Low complexity — 4 lines of code)
-
-4. **Sync implementation** — wasPlaying_ transition detection, hard phase reset, PPQ-derived
-   phase when sync is active. (Medium complexity)
-
-5. **LFO UI section** — Shape dropdown, Freq/Phase/Distortion/Level sliders, On/Off toggle,
-   Sync toggle, Sync subdivision dropdown. Left of joystick pad. (Medium complexity — layout)
-
-6. **Beat clock indicator** — Flashing dot in timerCallback using existing 30 Hz timer.
-   (Low complexity — 15 lines of code)
-
-**Defer to v2:**
-- Triplet and dotted subdivisions (adds UI complexity without high user demand)
-- Smooth random cosine interpolation (linear is indistinguishable in practice)
-- Variable pulse width for Square waveform
+6. **LFO recording** — Highest complexity. Build last so foundational features are stable. Requires the most new state and the most edge-case validation (interpolation, gray-out, sync timing). Can be delivered in a 1.5.1 patch if it blocks the milestone.
 
 ---
 
@@ -469,83 +298,92 @@ Recommended implementation sequence to minimize risk and enable early testing:
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Waveform math (sine, tri, saw, square) | HIGH | Standard DSP; verified against multiple independent sources including musicdsp.org and JUCE forum |
-| S&H vs Random distinction | HIGH | Well-documented in synth literature; Sweetwater, KVR, modwiggler all agree |
-| Distortion as additive noise (Option A) | MEDIUM | Ableton M4L LFO "Jitter" parameter documented as "adds randomness"; interpretation is conventional, not formally specified for this plugin |
-| Sync hard reset behavior | HIGH | Standard industry behavior across Serum, Vital, DIVA, confirmed in JUCE forum and KVR discussions |
-| PPQ-derived phase approach | HIGH | Documented in JUCE forum (getting-bpm-and-beats thread) and JUCE step-by-step blog |
-| Beat clock indicator (30 Hz timer) | HIGH | Uses existing confirmed infrastructure in the codebase |
-| APVTS parameter count and naming | MEDIUM | Convention follows existing plugin patterns; count is additive and manageable |
+| Single-channel note collision: reference count approach | MEDIUM | KVR community consensus; MIDI spec is undefined for this case; reference counting is the most widely cited safe approach |
+| Sub octave -12 semitone fixed offset | HIGH | "Sub octave" is a well-defined musical term; no ambiguity |
+| Sub octave gate timing (same sampleOffset as parent) | HIGH | Direct from TriggerSystem NoteCallback design in codebase |
+| LFO recording buffer size (4096 beat-indexed pairs) | HIGH | First-principles calculation from looper max 16 bars, min 30 BPM, 512-sample blocks |
+| LFO recording Distort stays live | HIGH | Explicitly stated in milestone spec; Distort is a ProcessParams field not stored in buffer |
+| Left joystick shape discrete mapping (7 bands + hysteresis) | MEDIUM | Standard hardware synth pattern; no official VST plugin spec for this |
+| Gamepad Option Mode 1 face-button atoms needed | HIGH | Direct consequence of how GamepadInput currently exposes D-pad-only option deltas |
+| Looper start-position root cause | MEDIUM | Inferred from LooperEngine.h anchor logic; not confirmed by running code |
+| BT reconnect crash root cause | MEDIUM | Inferred from GamepadInput.h + SDL2 timer thread patterns; not confirmed by repro |
 
 ---
 
 ## Sources
 
-- [A Simple Guide to Modulation: Sample & Hold — Sweetwater InSync](https://www.sweetwater.com/insync/a-simple-guide-to-modulation-sample-and-hold/)
-- [Smooth Random LFO Generator — Musicdsp.org (Algorithm #269)](https://www.musicdsp.org/en/latest/Synthesis/269-smooth-random-lfo-generator.html)
-- [Classic Waveforms as LFOs — cmp.music.illinois.edu](https://dobrian.github.io/cmp/topics/control-signals/1.Classic-Waveforms-as-LFOs.html)
-- [5 Essential LFO Parameters You Should Know — TheProAudioFiles](https://theproaudiofiles.com/essential-lfo-parameters/)
-- [Synth Modulation Sources: S&H, Jitter and More — TheProAudioFiles](https://theproaudiofiles.com/synth-modulation-sources-and-controls/)
-- [Sample & Hold — Synthesizer Wiki (sequencer.de)](https://www.sequencer.de/synth/index.php/Sample_&_Hold)
-- [How to code a random LFO? — KVR Audio DSP Forum](https://www.kvraudio.com/forum/viewtopic.php?t=456482)
-- [Tempo sync'd LFO? — JUCE Forum](https://forum.juce.com/t/tempo-syncd-lfo/4496)
-- [Host SYNC (LFO/ADSR) — KVR Audio DSP Forum](https://www.kvraudio.com/forum/viewtopic.php?t=270213)
-- [7b. LFO Sync — JUCE Step by Step Blog](https://jucestepbystep.wordpress.com/7b-lfo-sync/)
-- [Getting BPM and Beats — JUCE Forum](https://forum.juce.com/t/getting-bpm-and-beats/13151)
-- [LFO waveform ruler beat display — Surge Synthesizer GitHub Issue #1388](https://github.com/surge-synthesizer/surge/issues/1388)
-- [Max for Live LFO Devices with Jitter slider — Ableton Reference Manual v12](https://www.ableton.com/en/live-manual/12/max-for-live-devices/)
-- [Noise Engineering: Introducing LFOs to free plugins](https://noiseengineering.us/blogs/loquelic-literitas-the-blog/introducing-lfos/)
-- [LFO Like a Boss: Complete Beginner's Guide 2025 — EDMProd](https://www.edmprod.com/lfo/)
-- [ModPlay MIDI LFO Plugin (2025) — Bedroom Producers Blog](https://bedroomproducersblog.com/2025/07/23/fsk-audio-modplay/)
-- [Digital Generation of LFOs — GEOfex](http://www.geofex.com/article_folders/lfos/psuedorandom.htm)
+- Codebase inspection: `Source/PluginProcessor.h`, `Source/LooperEngine.h`, `Source/LfoEngine.h`, `Source/TriggerSystem.h`, `Source/GamepadInput.h`, `Source/PluginEditor.h`, `Source/PluginEditor.cpp`
+- MIDI same-pitch collision: KVR Audio DSP forum — "Midi events with note on and note off at the same time" (reference count approach is community consensus) — MEDIUM confidence
+- MIDI specification undefined duplicate note-on: midi.teragonaudio.com Note-On specification — HIGH confidence
+- Arpeggiator loop start-position quirk: Ableton Forum — "Arpeggiator problem" thread — MEDIUM confidence (same symptom as the looper bug)
+- Gamepad mode design (dual-purpose buttons): ControllerBuddy design documentation — MEDIUM confidence
+- LFO buffer calculation: first-principles from codebase constants (looper 16 bars, 512 block, 30 BPM minimum) — HIGH confidence
 
 ---
+
+---
+
+## Appendix: v1.4 Feature Research (Historical — 2026-02-26)
+
+> Preserved for roadmap continuity. All v1.4 features were validated and shipped.
+
+**Domain:** Plugin LFO engine for a JUCE VST3 MIDI performance instrument
+**Researched:** 2026-02-26
+**Milestone:** ChordJoystick v1.4 — LFO + Clock
+**Overall confidence:** HIGH for waveform math and S&H/Random distinction; HIGH for sync/phase reset behavior; MEDIUM for distortion interpretation
+
+### Table Stakes (v1.4)
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Sine waveform | Default LFO shape; smooth, organic | Low | `sin(2π * φ)` |
+| Triangle waveform | Standard LFO shape; linear | Low | `(φ < 0.5) ? (4φ - 1) : (3 - 4φ)` |
+| Sawtooth Up / Down | Classic filter sweeps | Low | `2φ - 1` / `1 - 2φ` |
+| Square waveform | Rhythmic gating | Low | `φ < 0.5 ? +1 : -1` |
+| Sample & Hold | Stepped random; staircase voltage | Medium | New random value at each cycle boundary |
+| Random (smooth) | Interpolated S&H; organic drift | Medium | Linear interpolation between random targets |
+| Frequency slider | Fundamental LFO parameter | Low | Hz free mode / BPM subdivision sync mode |
+| Level (depth) | Controls modulation amount | Low | Scales output ∈ [-1,+1] |
+| On/Off toggle | Bypass without losing state | Low | Outputs 0.0 when off |
+| Sync toggle | Lock rate to DAW BPM | Medium | Hard phase reset at transport start; PPQ-derived phase |
+| Phase preserved across blocks | Phase is class member | Low | Required to avoid tearing |
+| No memory allocation on audio thread | Real-time safety | Low | All state in pre-allocated POD members |
+| Beat clock indicator | Visual tempo confirmation | Medium | Flashing dot 30 Hz, reads PPQ or elapsed time |
+
+### Differentiators (v1.4)
+
+Phase slider, Distortion/Jitter slider (additive white noise), Sync subdivisions, Free BPM internal clock.
+
+### Anti-Features (v1.4)
+
+LFO-to-MIDI CC output, custom LFO shape drawing, LFO envelope, variable pulse width, per-voice LFO (4 separate), modulation routing matrix.
+
+### APVTS Parameters Added (v1.4)
+
+lfoXEnabled, lfoXShape (0–6), lfoXFreq, lfoXPhase, lfoXDistortion, lfoXLevel, lfoXSync, lfoXSyncDiv and mirrored lfoY* set — 16 new parameters total.
+
+### Distortion Implementation (v1.4)
+
+Additive white noise: `output = lfoWaveform + distortion * noise` where `noise = lcg() ∈ [-1,+1]`. Clamped to ±1. Matches Ableton M4L LFO "Jitter" documented behavior.
+
+### Sync Behavior (v1.4)
+
+Hard phase reset on DAW play-start (transport stopped → playing transition). PPQ-derived phase during playback for seek/loop robustness: `φ = fmod(ppqPosition / beatsPerCycle, 1.0) + phaseOffset`.
 
 ---
 
 ## Appendix: v1.1 Feature Research (Historical — 2026-02-24)
 
-> Preserved for roadmap continuity. All v1.1 features were validated and shipped in v1.3.
+> Preserved for roadmap continuity. All v1.1 features shipped in v1.3.
 
-**Domain:** MIDI Chord Generator / Performance Controller VST Plugin — v1.1 Additions
-**Researched:** 2026-02-24
+**MIDI Panic:** CC64=0, CC120=0, CC123=0 on all 16 channels. CC121 explicitly excluded (downstream VST3 instruments map CC121 to parameters). One-shot (not persistent mute).
 
-### Feature Domain 1: MIDI Panic Full Reset
+**Trigger/Gate Quantization:** Live (snap on record) and Post (snap existing loop). Algorithm: `round(beatPos / gridSize) * gridSize`. Applied only to Gate events. Subdivisions: 1/4=1.0 beats, 1/8=0.5, 1/16=0.25, 1/32=0.125.
 
-**Standard MIDI channel mode messages (MIDI 1.0 spec, HIGH confidence):**
+**Looper Playback Position Bar:** Horizontal progress bar. Ratio = `getPlaybackBeat() / getLoopLengthBeats()`. Cyan playing, amber recording. 30 Hz update.
 
-| CC | Name | Value | Effect |
-|----|------|-------|--------|
-| 120 | All Sound Off | 0 | Immediate silence |
-| 121 | Reset All Controllers | 0 | Resets pitch bend, mod wheel, sustain, expression |
-| 123 | All Notes Off | 0 | Transitions all notes to released state |
-| 64 | Sustain Pedal | 0 | Explicitly releases hold pedal |
-
-De-facto industry panic sequence on ALL 16 channels:
-CC64=0, CC120=0, CC123=0, CC121=0, PitchBend center (8192).
-
-**v1.1 gap filled:** Previous v1.0 panic sent allNotesOff on 4 channels only.
-v1.1 expanded to all 16 channels + full CC sweep + filter CC reset.
-
-### Feature Domain 2: Trigger / Gate Quantization
-
-Two modes: Live quantize (snap as events are recorded) and Post-record quantize
-(snap existing loop). Algorithm: `round(beatPos / subdivBeats) * subdivBeats`.
-Apply only to Gate events, not JoystickX/Y or FilterX/Y events.
-
-Subdivisions: 1/4 = 1.0 beats, 1/8 = 0.5, 1/16 = 0.25, 1/32 = 0.125.
-
-### Feature Domain 3: Looper Playback Position Bar
-
-Horizontal progress bar (Pattern 1). Ratio = `getPlaybackBeat() / getLoopLengthBeats()`.
-Cyan when playing, amber when recording. Updated at 30 Hz in timerCallback.
-
-### Feature Domain 4: Gamepad Controller Type Detection
-
-`SDL_GameControllerGetType(controller)` (available since SDL 2.0.12).
-Returns enum 0–13 covering PS3/PS4/PS5, Xbox 360/One, Switch Pro, Joy-Con, etc.
-Display string: "{Type} Connected" or "No Controller".
+**Gamepad Controller Type Detection:** `SDL_GameControllerGetType()` (SDL 2.0.12+). Returns enum covering PS3/PS4/PS5, Xbox 360/One, Switch Pro. Display string: "{Type} Connected" or "No Controller".
 
 ---
-*Feature research for: ChordJoystick v1.4 LFO + Clock (primary) and v1.1 additions (appendix)*
-*Primary research date: 2026-02-26*
+*Feature research for: ChordJoystick v1.5 Routing + Expression (primary) and v1.4 LFO + Clock / v1.1 additions (appendix)*
+*Primary research date: 2026-02-28*
