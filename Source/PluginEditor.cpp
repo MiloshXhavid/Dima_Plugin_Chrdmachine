@@ -1867,28 +1867,24 @@ void PluginEditor::resized()
     {
         const int rPanelX = right.getX();
         const int rPanelW = right.getWidth();
-        constexpr int comboH = 16;
-        const int halfW = rPanelW / 2;
 
-        // "Routing" label + mode dropdown on one line
-        {
-            auto row = right.removeFromTop(comboH);
-            routingLabel_  .setBounds(row.removeFromLeft(46));
-            routingModeBox_.setBounds(row);
-        }
+        // "Routing" label line
+        routingLabel_.setBounds(rPanelX, right.getY(), rPanelW, 12);
+        right.removeFromTop(12);
+
+        // Mode dropdown — full width, taller for prominence
+        routingModeBox_.setBounds(right.removeFromTop(20));
         right.removeFromTop(2);
 
-        // Voice ch 2×2 grid (no row labels) and single-channel target — same band,
+        // All 4 voice ch combos in one row + single-channel target — same band,
         // visibility toggled by timerCallback.
-        const int rY0 = right.getY();
-        singleChanTargetBox_.setBounds(rPanelX, rY0, rPanelW, comboH);
-        voiceChBox_[0].setBounds(rPanelX,         rY0, halfW - 2, comboH);
-        voiceChBox_[2].setBounds(rPanelX + halfW, rY0, halfW - 2, comboH);
+        constexpr int comboH = 16;
+        const int rY = right.getY();
+        const int slotW = rPanelW / 4;
 
-        right.removeFromTop(comboH + 2);
-        const int rY1 = right.getY();
-        voiceChBox_[1].setBounds(rPanelX,         rY1, halfW - 2, comboH);
-        voiceChBox_[3].setBounds(rPanelX + halfW, rY1, halfW - 2, comboH);
+        singleChanTargetBox_.setBounds(rPanelX, rY, rPanelW, comboH);
+        for (int v = 0; v < 4; ++v)
+            voiceChBox_[v].setBounds(rPanelX + v * slotW, rY, slotW - 2, comboH);
         right.removeFromTop(comboH);
 
         // Row labels not needed — collapse to zero
