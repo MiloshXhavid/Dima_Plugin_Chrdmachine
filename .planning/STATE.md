@@ -6,9 +6,9 @@ status: unknown
 last_updated: "2026-02-28T19:25:47.688Z"
 progress:
   total_phases: 10
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 26
-  completed_plans: 23
+  completed_plans: 26
 ---
 
 # Project State
@@ -18,21 +18,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.5 — Phase 17: Bug Fixes (looper anchor + BT crash)
+**Current focus:** v1.5 — Phase 18: Single-Channel Routing
 
 ## Current Position
 
-Phase: 17 of 25 (Bug Fixes)
-Plan: 2 of 3 in current phase (17-01 and 17-02 complete; 17-03 pending)
-Status: In progress
-Last activity: 2026-02-28 — Plan 17-01 complete (BUG-01 looper anchor drift fixed via loopStartPpq_ += loopLen)
+Phase: 17 of 25 (Bug Fixes) — COMPLETE
+Plan: 3 of 3 in Phase 17 complete; next is Phase 18
+Status: Phase 17 complete, Phase 18 not started
+Last activity: 2026-02-28 — Plan 17-03 complete (pluginval level 5 PASS + smoke tests PASS — BUG-01 and BUG-02 verified fixed)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
 v1.3 Polish [██████████] SHIPPED 2026-02-25
 v1.4 LFO    [██████████] SHIPPED 2026-02-26
 v1.5 Routing+Expression  [          ] In progress
-  Phase 17  [          ]   Bug Fixes              Not started
+  Phase 17  [██████████]   Bug Fixes              COMPLETE 2026-02-28
   Phase 18  [          ]   Single-Channel Routing Not started
   Phase 19  [          ]   Sub Octave Per Voice   Not started
   Phase 20  [          ]   RND Trigger Extensions Not started
@@ -46,7 +46,7 @@ v1.5 Routing+Expression  [          ] In progress
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 31 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 2)
+- Total plans completed: 34 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 3 [Phase 17 complete])
 - Average duration: not tracked per plan
 - Total execution time: not tracked
 
@@ -81,5 +81,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 17-01-PLAN.md (BUG-01 looper anchor drift fix)
-Next step: Execute plan 17-03 (BT smoke test / manual verification)
+Stopped at: Completed 17-03-PLAN.md (pluginval level 5 PASS + smoke tests PASS — Phase 17 complete)
+Next step: Execute Phase 18 (Single-Channel Routing)

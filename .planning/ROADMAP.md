@@ -52,7 +52,7 @@ Full details: Phase Details section below (Phases 12–16).
 
 **Milestone Goal:** Add single-channel MIDI routing, per-voice sub octave, expanded random trigger system, left-stick modulation targets, LFO recording, arpeggiator, gamepad Option Mode 1 arp control, and fix the looper anchor + BT crash bugs.
 
-- [ ] **Phase 17: Bug Fixes** — Looper wrong start-position anchor fix + SDL2 BT reconnect crash guard
+- [x] **Phase 17: Bug Fixes** — Looper anchor drift fixed (loopStartPpq_ += loopLen) + SDL2 BT reconnect crash eliminated (deferred-open + instance-ID guard) — pluginval level 5 PASS, smoke tests PASS (completed 2026-02-28)
 - [ ] **Phase 18: Single-Channel Routing** — singleChanMode / singleChanTarget APVTS params, effectiveChannel() helper, noteCount[16][128] reference counter, UI toggle + channel selector
 - [ ] **Phase 19: Sub Octave Per Voice** — subOct0..3 APVTS bools, -12 semitone parallel note, sentSubOctPitch snapshot, all emission + flush paths, R3+pad gamepad shortcut, per-pad UI toggle
 - [ ] **Phase 20: Random Trigger System Extensions** — Free/Hold trigger modes, Population + Probability knobs, 1/64 subdivision, unified Gate Length param
@@ -145,9 +145,9 @@ Plans:
   3. Both fixes pass a pluginval level 5 run with no new failures introduced
 **Plans**: 3 plans
 Plans:
-- [ ] 17-01-PLAN.md — LooperEngine.cpp: overshoot-corrected loopStartPpq_ anchor fix; TC 13 regression test (BUG-01)
-- [ ] 17-02-PLAN.md — GamepadInput.h/cpp: !controller_ guard on ADDED, instance-ID guard on REMOVED, pendingReopenTick_ deferred open (BUG-02)
-- [ ] 17-03-PLAN.md — pluginval level 5 run + manual smoke test checkpoint (both bugs)
+- [x] 17-01-PLAN.md — LooperEngine.cpp: overshoot-corrected loopStartPpq_ anchor fix; TC 13 regression test (BUG-01) (completed 2026-02-28)
+- [x] 17-02-PLAN.md — GamepadInput.h/cpp: !controller_ guard on ADDED, instance-ID guard on REMOVED, pendingReopenTick_ deferred open (BUG-02) (completed 2026-02-28)
+- [x] 17-03-PLAN.md — pluginval level 5 run + manual smoke test checkpoint (both bugs) (completed 2026-02-28)
 
 ### Phase 18: Single-Channel Routing
 **Goal**: Users can route all four voices to a single configurable MIDI channel so that any monophonic or paraphonic synthesizer can be driven by the plugin without per-voice MIDI channel setup in the DAW
@@ -252,7 +252,7 @@ Plans:
 | 14. LFO UI + Beat Clock | v1.4 | 3/3 | Complete | 2026-02-26 |
 | 15. Gamepad Preset Control | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 16. Distribution | v1.4 | 2/2 | Complete | 2026-02-26 |
-| 17. Bug Fixes | 2/3 | In Progress|  | - |
+| 17. Bug Fixes | v1.5 | 3/3 | Complete | 2026-02-28 |
 | 18. Single-Channel Routing | v1.5 | 0/TBD | Not started | - |
 | 19. Sub Octave Per Voice | v1.5 | 0/TBD | Not started | - |
 | 20. Random Trigger System Extensions | v1.5 | 0/TBD | Not started | - |
