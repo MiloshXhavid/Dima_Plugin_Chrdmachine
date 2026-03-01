@@ -281,15 +281,22 @@ void TriggerSystem::processBlock(const ProcessParams& p)
         }
 
         // Auto note-off countdown for RandomFree / RandomHold sources
-        // The -1 sentinel (manual open gate) is correctly skipped by the > 0 guard
+        // The -1 sentinel (manual open gate) is correctly skipped by the > 0 guard.
+        // RandomHold: while the pad is physically held the gate stays open;
+        // the timer is paused so the note sustains for as long as the pad is held.
+        // Pad release fires note-off immediately (handled above).
         if ((src == TriggerSource::RandomFree || src == TriggerSource::RandomHold)
             && gateOpen_[v].load() && randomGateRemaining_[v] > 0)
         {
-            randomGateRemaining_[v] -= p.blockSize;
-            if (randomGateRemaining_[v] <= 0)
+            const bool padSustain = (src == TriggerSource::RandomHold && padPressed_[v].load());
+            if (!padSustain)
             {
-                randomGateRemaining_[v] = 0;
-                fireNoteOff(v, ch - 1, p.blockSize - 1, p);
+                randomGateRemaining_[v] -= p.blockSize;
+                if (randomGateRemaining_[v] <= 0)
+                {
+                    randomGateRemaining_[v] = 0;
+                    fireNoteOff(v, ch - 1, p.blockSize - 1, p);
+                }
             }
         }
         // Clear random gate countdown when source is not a random type.

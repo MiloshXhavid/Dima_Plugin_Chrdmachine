@@ -744,8 +744,22 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         prevIsDawPlaying_ = isDawPlaying;
         if (justStopped)
         {
+            // Explicit per-pitch note-offs for trigger and arp voices before generic sweep.
+            for (int v = 0; v < 4; ++v)
+            {
+                const int pitch = trigger_.getActivePitch(v);
+                if (pitch >= 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(sentChannel_[v], pitch, (uint8_t)0), 0);
+                if (subHeldPitch_[v] >= 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(sentChannel_[v], subHeldPitch_[v], (uint8_t)0), 0);
+            }
+            if (arpActivePitch_ >= 0)
+                midi.addEvent(juce::MidiMessage::noteOff(arpActiveCh_, arpActivePitch_, (uint8_t)0), 0);
             for (int ch = 1; ch <= 16; ++ch)
+            {
+                midi.addEvent(juce::MidiMessage::controllerEvent(ch, 120, 0), 0);  // all sound off
                 midi.addEvent(juce::MidiMessage::allNotesOff(ch), 0);
+            }
             trigger_.resetAllGates();
             resetNoteCount();
             lfoX_.reset();
@@ -840,6 +854,23 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     if (pendingPanic_.exchange(false, std::memory_order_acq_rel))
     {
         if (looper_.isPlaying()) looper_.startStop();
+        // Explicit per-pitch note-offs first — some synths ignore CC120/CC123 but
+        // always respond to individual note-off messages. This prevents stuck notes
+        // on synths that don't fully implement allNotesOff / allSoundsOff.
+        for (int v = 0; v < 4; ++v)
+        {
+            const int pitch = trigger_.getActivePitch(v);
+            if (pitch >= 0)
+                midi.addEvent(juce::MidiMessage::noteOff(sentChannel_[v], pitch, (uint8_t)0), 0);
+            if (subHeldPitch_[v] >= 0)
+                midi.addEvent(juce::MidiMessage::noteOff(sentChannel_[v], subHeldPitch_[v], (uint8_t)0), 0);
+            if (looperActivePitch_[v] >= 0)
+                midi.addEvent(juce::MidiMessage::noteOff(looperActiveCh_[v], looperActivePitch_[v], (uint8_t)0), 0);
+            if (looperActiveSubPitch_[v] >= 0)
+                midi.addEvent(juce::MidiMessage::noteOff(looperActiveCh_[v], looperActiveSubPitch_[v], (uint8_t)0), 0);
+        }
+        if (arpActivePitch_ >= 0)
+            midi.addEvent(juce::MidiMessage::noteOff(arpActiveCh_, arpActivePitch_, (uint8_t)0), 0);
         for (int ch = 1; ch <= 16; ++ch)
         {
             midi.addEvent(juce::MidiMessage::controllerEvent(ch, 64,  0), 0);  // sustain off
