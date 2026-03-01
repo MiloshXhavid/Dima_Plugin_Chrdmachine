@@ -427,6 +427,15 @@ ChordEngine::Params PluginProcessor::buildChordParams() const
 void PluginProcessor::resetNoteCount() noexcept
 {
     std::fill(&noteCount_[0][0], &noteCount_[0][0] + 16 * 128, 0);
+
+    // Also reset sub-octave snapshot arrays so stale sub pitches don't cause
+    // double note-on on re-trigger after allNotesOff / DAW stop / panic.
+    for (int v = 0; v < 4; ++v)
+    {
+        subHeldPitch_[v]         = -1;
+        looperActiveSubPitch_[v] = -1;
+        subOctSounding_[v].store(false, std::memory_order_relaxed);
+    }
 }
 
 // ─── processBlock ─────────────────────────────────────────────────────────────
@@ -495,7 +504,24 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         if (gamepad_.consumeLooperReset())   { looper_.reset();       flashLoopReset_.fetch_add(1,  std::memory_order_relaxed); }
         if (gamepad_.consumeLooperDelete())  { looper_.deleteLoop();  flashLoopDelete_.fetch_add(1, std::memory_order_relaxed); }
         if (gamepad_.consumeRightStickTrigger())
-            triggerPanic();   // R3 -> MIDI panic (same as UI panicBtn_)
+        {
+            // R3 + held pad (L1/L2/R1/R2): toggle subOctN for that voice.
+            // R3 alone: no action. Panic is UI-button only (Phase 19 Decision 3).
+            bool anyHeld = false;
+            for (int v = 0; v < 4; ++v)
+            {
+                if (gamepad_.getVoiceHeld(v))
+                {
+                    anyHeld = true;
+                    const juce::String paramID = "subOct" + juce::String(v);
+                    auto* param = dynamic_cast<juce::AudioParameterBool*>(
+                        apvts.getParameter(paramID));
+                    if (param != nullptr)
+                        param->setValueNotifyingHost(param->get() ? 0.0f : 1.0f);
+                }
+            }
+            (void)anyHeld;
+        }
 
         // D-pad: mode 0=BPM/looper, mode 1=octaves (green), mode 2=transpose+intervals (red)
         const int optMode = gamepad_.getOptionMode();
@@ -762,6 +788,16 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                         noteCount_[ch - 1][looperActivePitch_[v]] = 0;
                     looperActivePitch_[v] = -1;
                 }
+                // Looper sub-octave note-off on looper stop
+                const int subPitch = looperActiveSubPitch_[v];
+                if (subPitch >= 0)
+                {
+                    const int ch = looperActiveCh_[v];
+                    if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
+                        midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
+                    else
+                        noteCount_[ch - 1][subPitch] = 0;
+                }
             }
             resetNoteCount();
         }
@@ -783,6 +819,16 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 else
                     noteCount_[ch - 1][looperActivePitch_[v]] = 0;
                 looperActivePitch_[v] = -1;
+            }
+            // Looper sub-octave note-off on looper reset
+            const int subPitch = looperActiveSubPitch_[v];
+            if (subPitch >= 0)
+            {
+                const int ch = looperActiveCh_[v];
+                if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
+                else
+                    noteCount_[ch - 1][subPitch] = 0;
             }
         }
         resetNoteCount();
@@ -852,6 +898,20 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             sentChannel_[v]    = ch;  // also snapshot sentChannel_ for consistency
             if (noteCount_[ch - 1][looperActivePitch_[v]]++ == 0)
                 midi.addEvent(juce::MidiMessage::noteOn(ch, looperActivePitch_[v], (uint8_t)100), 0);
+
+            // Looper sub-octave: live SUB8 param at emission time (not baked into loop)
+            const bool subEnabled = (*apvts.getRawParameterValue("subOct" + juce::String(v)) > 0.5f);
+            if (subEnabled)
+            {
+                const int subPitch = juce::jlimit(0, 127, looperActivePitch_[v] - 12);
+                looperActiveSubPitch_[v] = subPitch;
+                if (noteCount_[ch - 1][subPitch]++ == 0)
+                    midi.addEvent(juce::MidiMessage::noteOn(ch, subPitch, (uint8_t)100), 0);
+            }
+            else
+            {
+                looperActiveSubPitch_[v] = -1;
+            }
         }
         if (loopOut.gateOff[v] && looperActivePitch_[v] >= 0)
         {
@@ -862,6 +922,53 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             else
                 noteCount_[ch - 1][looperActivePitch_[v]] = 0;
             looperActivePitch_[v] = -1;
+
+            // Looper sub-octave note-off using snapshot
+            const int subPitch = looperActiveSubPitch_[v];
+            if (subPitch >= 0)
+            {
+                if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
+                else
+                    noteCount_[ch - 1][subPitch] = 0;
+                looperActiveSubPitch_[v] = -1;
+            }
+        }
+    }
+
+    // Mid-note SUB8 toggle: enable/disable sub-octave while gate is already open.
+    // Runs BEFORE TriggerSystem::processBlock() so the toggle is detected before
+    // any new gate events fire in this block.
+    for (int v = 0; v < 4; ++v)
+    {
+        const bool subWanted   = (*apvts.getRawParameterValue("subOct" + juce::String(v)) > 0.5f);
+        const bool subSounding = subOctSounding_[v].load(std::memory_order_relaxed);
+        const bool gateOpen    = isGateOpen(v);
+
+        if (gateOpen && subWanted && !subSounding)
+        {
+            // SUB8 toggled ON while gate open — emit immediate note-on
+            const int ch       = sentChannel_[v];
+            const int subPitch = juce::jlimit(0, 127, heldPitch_[v] - 12);
+            subHeldPitch_[v]   = subPitch;
+            if (noteCount_[ch - 1][subPitch]++ == 0)
+                midi.addEvent(juce::MidiMessage::noteOn(ch, subPitch, (uint8_t)100), 0);
+            subOctSounding_[v].store(true, std::memory_order_relaxed);
+        }
+        else if (subSounding && (!subWanted || !gateOpen))
+        {
+            // SUB8 toggled OFF or gate closed externally — emit immediate note-off
+            const int ch       = sentChannel_[v];
+            const int subPitch = subHeldPitch_[v];
+            if (subPitch >= 0)
+            {
+                if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
+                else
+                    noteCount_[ch - 1][subPitch] = 0;
+                subHeldPitch_[v] = -1;
+            }
+            subOctSounding_[v].store(false, std::memory_order_relaxed);
         }
     }
 
@@ -962,6 +1069,21 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             sentChannel_[voice] = ch;
             if (noteCount_[ch - 1][pitch]++ == 0)
                 midi.addEvent(juce::MidiMessage::noteOn(ch, pitch, (uint8_t)100), sampleOff);
+
+            // Sub-octave emission: snapshot pitch at gate-open so gate-close uses the same value
+            const bool subEnabled = (*apvts.getRawParameterValue("subOct" + juce::String(voice)) > 0.5f);
+            if (subEnabled)
+            {
+                const int subPitch = juce::jlimit(0, 127, pitch - 12);
+                subHeldPitch_[voice] = subPitch;
+                if (noteCount_[ch - 1][subPitch]++ == 0)
+                    midi.addEvent(juce::MidiMessage::noteOn(ch, subPitch, (uint8_t)100), sampleOff);
+                subOctSounding_[voice].store(true, std::memory_order_relaxed);
+            }
+            else
+            {
+                subHeldPitch_[voice] = -1;
+            }
         }
         else
         {
@@ -975,6 +1097,18 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 midi.addEvent(juce::MidiMessage::noteOff(ch, pitch, (uint8_t)0), sampleOff);
             else
                 noteCount_[ch - 1][pitch] = 0;  // clamp (defensive)
+
+            // Sub-octave note-off — always use snapshot, never heldPitch_[voice] - 12
+            const int subPitch = subHeldPitch_[voice];
+            if (subPitch >= 0)
+            {
+                if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), sampleOff);
+                else
+                    noteCount_[ch - 1][subPitch] = 0;
+                subHeldPitch_[voice] = -1;
+                subOctSounding_[voice].store(false, std::memory_order_relaxed);
+            }
         }
     };
     tp.onPitchBend = [&](int voice, int bendVal14, int ch0, int sampleOff)
