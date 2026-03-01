@@ -4,10 +4,10 @@
 #include <functional>
 
 // Per-voice trigger source
-enum class TriggerSource { TouchPlate = 0, Joystick = 1, Random = 2 };
+enum class TriggerSource { TouchPlate = 0, Joystick = 1, RandomFree = 2, RandomHold = 3 };
 
 // Random subdivision options (beats per bar, denominator)
-enum class RandomSubdiv { Quarter = 0, Eighth, Sixteenth, ThirtySecond };
+enum class RandomSubdiv { Quarter = 0, Eighth = 1, Sixteenth = 2, ThirtySecond = 3, SixtyFourthNote = 4 };
 
 // ─── TriggerSystem ────────────────────────────────────────────────────────────
 // Manages gate state for 4 voices.
@@ -57,8 +57,9 @@ public:
 
         // Random trigger params (per-voice)
         RandomSubdiv   randomSubdiv[4]  = {};          // per-voice subdivision (was single value)
-        float          randomDensity     = 4.0f;        // hits per bar (1..8; was 0..1 probability)
-        float          randomGateTime    = 0.5f;        // fraction of subdivision for note duration
+        float          randomPopulation  = 4.0f;        // max gates fired per bar (1–64)
+        float          randomProbability = 1.0f;        // per-slot fire chance (0.0–1.0); 1.0 = always fire
+        float          gateLength        = 0.5f;        // note hold fraction (0.0=manual open gate, 0.0–1.0)
 
         // Timing (for DAW-synced random clock)
         double         ppqPosition       = -1.0;        // beats since session start; -1 = not available
