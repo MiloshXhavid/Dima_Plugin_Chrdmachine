@@ -235,7 +235,10 @@ Plans:
   3. With DAW sync active, turning the arp on arms it and stepping begins exactly on the next bar boundary — no early or late first note
   4. Turning the arp off stops all notes immediately and the step counter resets to 0 — the next arp-on starts from the first voice
   5. Arp note durations follow the unified Gate Length parameter — setting Gate Length to 50% causes each arp note to hold for half its subdivision slot
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 23-01-PLAN.md — PluginProcessor.cpp: timeSigNumer extraction + bar-boundary arpWaitingForPlay_ release; build verification (ARP-05 fix)
+- [ ] 23-02-PLAN.md — Deploy VST3 + DAW smoke test checkpoint (all 6 ARP requirements)
 
 ### Phase 24: Gamepad Option Mode 1
 **Goal**: Option Mode 1 on the gamepad provides one-handed arp and random trigger control during live performance — Circle toggles arp, Triangle steps arp rate, Square steps arp order, X toggles RND Sync — and R3 alone no longer triggers MIDI Panic
@@ -278,7 +281,7 @@ Plans:
 | 20. Random Trigger System Extensions | v1.5 | 3/3 | Complete | 2026-03-01 |
 | 21. Left Joystick Modulation Expansion | 2/2 | Complete    | 2026-03-01 | - |
 | 22. LFO Recording | 2/3 | In Progress| 2026-03-01 | - |
-| 23. Arpeggiator | v1.5 | 0/TBD | Not started | - |
+| 23. Arpeggiator | v1.5 | 0/2 | Not started | - |
 | 24. Gamepad Option Mode 1 | v1.5 | 0/TBD | Not started | - |
 | 25. Distribution | v1.5 | 0/TBD | Not started | - |
 
