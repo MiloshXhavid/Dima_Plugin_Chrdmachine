@@ -36,9 +36,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 ## Current Position
 
 Phase: 20 of 25 (RND Trigger Extensions) — In progress
-Plan: 1 of 3 in Phase 20 complete
-Status: Plan 20-01 complete — TriggerSystem.h/cpp backend updated with RandomHold, double-roll, sentinel, 1/64
-Last activity: 2026-03-01 — Plan 20-01 executed; TriggerSystem backend ready; Plan 20-02 (PluginProcessor) next
+Plan: 2 of 3 in Phase 20 complete
+Status: Plan 20-02 complete — PluginProcessor APVTS bridge updated; randomPopulation/randomProbability/gateLength registered and forwarded
+Last activity: 2026-03-01 — Plan 20-02 executed; APVTS params migrated; Plan 20-03 (PluginEditor UI) next
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -48,7 +48,7 @@ v1.5 Routing+Expression  [███       ] In progress
   Phase 17  [██████████]   Bug Fixes              COMPLETE 2026-02-28
   Phase 18  [██████████]   Single-Channel Routing COMPLETE 2026-02-28
   Phase 19  [██████████]   Sub Octave Per Voice   COMPLETE 2026-03-01
-  Phase 20  [███       ]   RND Trigger Extensions In progress (1/3 plans)
+  Phase 20  [██████    ]   RND Trigger Extensions In progress (2/3 plans)
   Phase 21  [          ]   Left Joystick Targets  Not started
   Phase 22  [          ]   LFO Recording          Not started
   Phase 23  [          ]   Arpeggiator            Not started
@@ -59,7 +59,7 @@ v1.5 Routing+Expression  [███       ] In progress
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 39 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 8 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01])
+- Total plans completed: 40 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 9 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02])
 - Average duration: not tracked per plan
 - Total execution time: not tracked
 
@@ -98,6 +98,9 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 20-01]: Double-roll model: two independent nextRandom() calls per tick; both popProb and userProb must pass; expected notes/bar = population * probability
 - [Phase 20-01]: Manual gate sentinel: gateLength <= 0.0f sets randomGateRemaining_[v] = -1; countdown guard > 0 skips sentinel so note sustains until next trigger's note-on fires note-off
 - [Phase 20-01]: RandomHold pad-release check fires immediate note-off (overrides any active gate timer); processed before tick+roll evaluation
+- [Phase 20-02]: arpGateTime param (5–100%) removed; unified gateLength (0.0–1.0) serves both Arp and Random gate-time — no /100 conversion needed, gateRatio reads directly
+- [Phase 20-02]: tp.joystickGateTime hardcoded to 1.0f constant — arpGateTime was its only source and is gone; dedicated param deferred to future milestone
+- [Phase 20-02]: trigSrcNames index 2 label changed from 'Random' to 'Random Free'; 'Random Hold' appended at index 3 — integer values unchanged for DAW session compat
 
 ### Pending Todos
 
@@ -110,5 +113,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 20-01-PLAN.md — TriggerSystem backend complete; RandomHold, double-roll, sentinel, 1/64 implemented
-Next step: Execute Plan 20-02 (PluginProcessor APVTS param rename + forwarding)
+Stopped at: Completed 20-02-PLAN.md — PluginProcessor APVTS bridge updated; randomPopulation/randomProbability/gateLength registered and forwarded
+Next step: Execute Plan 20-03 (PluginEditor UI — Probability knob, expanded combo boxes)

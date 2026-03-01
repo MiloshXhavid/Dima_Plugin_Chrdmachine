@@ -99,7 +99,7 @@
 - [x] **RND-04**: "Population" knob (1–64) replaces the existing RND Density knob — sets the maximum number of gates fired per bar
 - [x] **RND-05**: "Probability" knob (0–100%) replaces the existing RND Gate knob — chance each scheduled population slot actually fires
 - [x] **RND-06**: Random subdivision options extended to include 1/64 (alongside existing 1/4, 1/8, 1/16, 1/32)
-- [ ] **RND-07**: Unified "Gate Length" parameter (0–100% of subdivision) controls note hold duration for both Arp and Random sources; left joystick X or Y can modulate it
+- [x] **RND-07**: Unified "Gate Length" parameter (0–100% of subdivision) controls note hold duration for both Arp and Random sources; left joystick X or Y can modulate it
 
 ### Gamepad Option Mode 1
 
@@ -184,7 +184,7 @@
 | RND-04 | Phase 20 | Complete |
 | RND-05 | Phase 20 | Complete |
 | RND-06 | Phase 20 | Complete |
-| RND-07 | Phase 20 | Pending |
+| RND-07 | Phase 20 | Complete |
 | LJOY-01 | Phase 21 | Pending |
 | LJOY-02 | Phase 21 | Pending |
 | LJOY-03 | Phase 21 | Pending |
