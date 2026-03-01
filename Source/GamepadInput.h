@@ -13,7 +13,7 @@ typedef struct _SDL_GameController SDL_GameController;
 // Writes state to atomics so the audio thread and UI thread can read safely.
 //
 // PS Controller mapping:
-//   Right stick X/Y  → pitch joystick
+//   Right stick X/Y    → pitch joystick
 //   L1 (LeftShoulder)  → voice 0 (Root)
 //   L2 (LeftTrigger)   → voice 1 (Third)
 //   R1 (RightShoulder) → voice 2 (Fifth)
@@ -26,6 +26,7 @@ typedef struct _SDL_GameController SDL_GameController;
 //   Triangle (Y)       → looper record
 //   Circle (B)         → looper delete
 //   R3 (RightStick btn)→ MIDI panic
+//   PS / Guide button  → soft disconnect / reconnect (toggles gamepad on/off)
 
 class GamepadInput : private juce::Timer
 {
@@ -78,8 +79,8 @@ public:
     bool consumeArpCircle()     { return pendingArpCircle_.exchange(false, std::memory_order_relaxed); }
     bool consumeRndSyncToggle() { return pendingRndSyncToggle_.exchange(false, std::memory_order_relaxed); }
 
-    // Whether a gamepad is connected
-    bool isConnected() const { return controller_ != nullptr; }
+    // Whether a gamepad is connected and not soft-disconnected via PS button
+    bool isConnected() const { return controller_ != nullptr && virtuallyConnected_; }
 
     // Returns the SDL controller name string if connected, empty string if not.
     // Used by PluginEditor constructor for synchronous initial label update.
@@ -192,6 +193,11 @@ private:
     ButtonState btnMode1Triangle_;
     ButtonState btnMode1Square_;
     ButtonState btnMode1Cross_;
+    ButtonState btnGuide_;   // PS / Guide button — soft connect/disconnect toggle
+
+    // True while the controller is physically open AND the user has not
+    // soft-disconnected via the PS button. isConnected() checks both.
+    bool virtuallyConnected_ = false;
 
     bool sdlInitialised_    = false;  // guard: SdlContext::release() only if acquire() succeeded
     bool pendingReopenTick_ = false;  // deferred BT open: set on SDL_CONTROLLERDEVICEADDED, consumed after event loop

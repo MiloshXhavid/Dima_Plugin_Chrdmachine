@@ -50,6 +50,7 @@ void GamepadInput::tryOpenController()
             controller_ = SDL_GameControllerOpen(i);
             if (controller_)
             {
+                virtuallyConnected_ = true;
                 // Fire both callback slots — processor handles pending flags, editor handles UI
                 if (onConnectionChange)   onConnectionChange(true);
                 if (onConnectionChangeUI)
@@ -70,6 +71,7 @@ void GamepadInput::closeController()
     {
         SDL_GameControllerClose(controller_);
         controller_ = nullptr;
+        virtuallyConnected_ = false;
         // Fire both callback slots
         if (onConnectionChange)   onConnectionChange(false);
         if (onConnectionChangeUI) onConnectionChangeUI(juce::String{});  // empty = disconnected
@@ -143,6 +145,34 @@ void GamepadInput::timerCallback()
         closeController();
 
     if (!controller_) return;
+
+    // ── PS / Guide button: soft connect / disconnect toggle ───────────────────
+    // Pressing PS while connected soft-disconnects the plugin (fires all-notes-off
+    // + CC reset via onConnectionChange(false)) but keeps the SDL handle open so
+    // the button can be detected again.  Pressing PS while soft-disconnected
+    // re-enables input and fires onConnectionChange(true).
+    {
+        const bool cur = SDL_GameControllerGetButton(controller_, SDL_CONTROLLER_BUTTON_GUIDE) != 0;
+        if (debounce(cur, btnGuide_) && btnGuide_.prev)
+        {
+            virtuallyConnected_ = !virtuallyConnected_;
+            if (virtuallyConnected_)
+            {
+                if (onConnectionChange)   onConnectionChange(true);
+                if (onConnectionChangeUI)
+                {
+                    const char* n = SDL_GameControllerName(controller_);
+                    onConnectionChangeUI(n ? juce::String(n) : juce::String("Unknown Controller"));
+                }
+            }
+            else
+            {
+                if (onConnectionChange)   onConnectionChange(false);
+                if (onConnectionChangeUI) onConnectionChangeUI(juce::String{});
+            }
+        }
+    }
+    if (!virtuallyConnected_) return;  // soft-disconnected: ignore all other input
 
     // ── Right stick → pitch joystick (returns to center when released) ──────────
     // No sample-and-hold: when the stick enters the dead zone, pitchX/Y return to 0
