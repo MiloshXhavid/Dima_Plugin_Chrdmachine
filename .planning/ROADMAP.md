@@ -57,7 +57,8 @@ Full details: Phase Details section below (Phases 12–16).
 - [x] **Phase 19: Sub Octave Per Voice** — subOct0..3 APVTS bools, -12 semitone parallel note, sentSubOctPitch snapshot, all emission + flush paths, R3+pad gamepad shortcut, per-pad UI toggle
  (completed 2026-03-01)
 - [x] **Phase 20: Random Trigger System Extensions** — Free/Hold trigger modes, Population + Probability knobs, 1/64 subdivision, unified Gate Length param (completed 2026-03-01)
-- [x] **Phase 21: Left Joystick Modulation Expansion** — Extended filterXMode / filterYMode choice lists, LFO freq/shape/level + arp gate length targets, pending-atomic dispatch (completed 2026-03-01)
+- [x] **Phase 21: Left Joystick Modulation Expansion** — Extended filterXMode / filterYMode choice lists, LFO freq/shape/level + arp gate length targets, pending-atomic dispatch
+ (completed 2026-03-01)
 - [ ] **Phase 22: LFO Recording** — Arm/Record/Playback state machine in LfoEngine, pre-distortion ring buffer, clear button, gray-out UI, Distort stays live
 - [ ] **Phase 23: Arpeggiator** — ArpEngine stepping through 4-voice chord, Rate/Order APVTS params, ppqPosition scheduling, bar-boundary DAW sync, step-reset on off
 - [ ] **Phase 24: Gamepad Option Mode 1** — Mode-1 face-button dispatch (Circle/Triangle/Square/X), R3 panic removal, face-button looper dispatch gated to mode 0
@@ -218,7 +219,11 @@ Plans:
   2. After arming and starting a looper record cycle, LFO output is captured for exactly one loop length; recording stops automatically and the LFO enters playback mode replaying the captured shape in sync with the looper
   3. During LFO playback mode, the Shape, Freq, Phase, and Level controls are visually grayed out and non-interactive; the Distort slider remains fully adjustable and audibly changes the playback output
   4. Pressing the Clear button returns the LFO to normal (unarmed) mode — all grayed-out controls become interactive again and the LFO resumes real-time generation
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 22-01-PLAN.md — LfoEngine DSP: RecState enum, ring buffer capture, playback branch
+- [ ] 22-02-PLAN.md — PluginProcessor: passthrough methods, edge detection, playbackPhase injection
+- [ ] 22-03-PLAN.md — PluginEditor: ARM/CLR buttons, blink, grayout, smoke-test checkpoint
 
 ### Phase 23: Arpeggiator
 **Goal**: Players can arpeggiate the current four-voice chord at a selected rate and order, synchronized to the DAW or looper, so the plugin produces melodic patterns without external MIDI tools
@@ -272,7 +277,7 @@ Plans:
 | 19. Sub Octave Per Voice | 2/2 | Complete    | 2026-03-01 | - |
 | 20. Random Trigger System Extensions | v1.5 | 3/3 | Complete | 2026-03-01 |
 | 21. Left Joystick Modulation Expansion | 2/2 | Complete    | 2026-03-01 | - |
-| 22. LFO Recording | v1.5 | 0/TBD | Not started | - |
+| 22. LFO Recording | v1.5 | 0/3 | Not started | - |
 | 23. Arpeggiator | v1.5 | 0/TBD | Not started | - |
 | 24. Gamepad Option Mode 1 | v1.5 | 0/TBD | Not started | - |
 | 25. Distribution | v1.5 | 0/TBD | Not started | - |
