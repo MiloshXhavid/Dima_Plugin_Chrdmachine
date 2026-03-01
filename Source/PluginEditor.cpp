@@ -903,6 +903,19 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         };
     }
 
+    // ── Per-voice SUB8 buttons (right 50% of HOLD strip, wired via APVTS) ─────
+    for (int v = 0; v < 4; ++v)
+    {
+        padSubOctBtn_[v].setButtonText("SUB8");
+        padSubOctBtn_[v].setClickingTogglesState(true);
+        padSubOctBtn_[v].setTooltip("Sub-octave: emit a note 12 semitones below the main pitch");
+        styleButton(padSubOctBtn_[v]);
+        subOctAttach_[v] = std::make_unique<juce::ButtonParameterAttachment>(
+            *proc_.apvts.getParameter("subOct" + juce::String(v)),
+            padSubOctBtn_[v]);
+        addAndMakeVisible(padSubOctBtn_[v]);
+    }
+
     // ── Chord intervals ───────────────────────────────────────────────────────
     styleKnob(transposeKnob_);   styleLabel(transposeLabel_,  "Transpose");
     styleKnob(thirdIntKnob_);    styleLabel(thirdIntLabel_,   "3rd Intv");
@@ -1797,7 +1810,10 @@ void PluginEditor::resized()
         {
             auto b = row.removeFromLeft(pw);
             pads[v]->setBounds(b);
-            padHoldBtn_[v].setBounds(b.removeFromTop(18).reduced(2, 2));
+            auto holdStrip = b.removeFromTop(18).reduced(2, 2);
+            auto holdLeft  = holdStrip.removeFromLeft(holdStrip.getWidth() / 2);
+            padHoldBtn_[v].setBounds(holdLeft);
+            padSubOctBtn_[v].setBounds(holdStrip);  // remainder = right 50%
             if (v < 3) row.removeFromLeft(3);
         }
     }
@@ -2529,6 +2545,28 @@ void PluginEditor::timerCallback()
     padRoot_.repaint(); padThird_.repaint(); padFifth_.repaint(); padTension_.repaint();
     padAll_.repaint();
     joystickPad_.repaint();
+
+    // ── SUB8 button coloring (30 Hz poll) ────────────────────────────────────
+    // bright orange = SUB8 enabled + gate open (note sounding)
+    // dim orange    = SUB8 enabled, gate closed
+    // darkgrey      = SUB8 disabled
+    for (int v = 0; v < 4; ++v)
+    {
+        const bool subEnabled = (*proc_.apvts.getRawParameterValue("subOct" + juce::String(v)) > 0.5f);
+        const bool gateOpen   = proc_.isGateOpen(v);
+
+        if (subEnabled && gateOpen)
+            padSubOctBtn_[v].setColour(juce::TextButton::buttonColourId,
+                                        juce::Colour(0xFFFF8C00)); // bright orange — sounding
+        else if (subEnabled)
+            padSubOctBtn_[v].setColour(juce::TextButton::buttonColourId,
+                                        juce::Colour(0xFFB36200)); // dim orange — enabled, not sounding
+        else
+            padSubOctBtn_[v].setColour(juce::TextButton::buttonColourId,
+                                        juce::Colours::darkgrey);  // inactive
+
+        padSubOctBtn_[v].repaint();
+    }
 
     // PLAY button: blinks when armed — three cases:
     //   1. DAW sync on + not playing  → blink to show "waiting for DAW play"

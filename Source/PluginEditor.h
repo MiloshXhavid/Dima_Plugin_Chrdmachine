@@ -193,6 +193,8 @@ private:
     TouchPlate       padRoot_, padThird_, padFifth_, padTension_;
     GlobalTouchPlate padAll_;
     std::array<juce::TextButton, 4> padHoldBtn_;
+    juce::TextButton padSubOctBtn_[4];
+    std::unique_ptr<juce::ButtonParameterAttachment> subOctAttach_[4];
 
     // ── Scale ─────────────────────────────────────────────────────────────────
     ScaleKeyboard scaleKeys_;
