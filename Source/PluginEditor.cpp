@@ -1738,6 +1738,32 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(lfoYEnabledBtn_);
     lfoYEnabledAtt_ = std::make_unique<ButtonAtt>(p.apvts, "lfoYEnabled", lfoYEnabledBtn_);
 
+    // ── LFO X Recording buttons ────────────────────────────────────────────────
+    lfoXArmBtn_.setButtonText("ARM");
+    lfoXArmBtn_.setClickingTogglesState(false);  // timerCallback drives toggle state
+    styleButton(lfoXArmBtn_);
+    addAndMakeVisible(lfoXArmBtn_);
+    lfoXArmBtn_.onClick = [this]() { proc_.armLfoX(); };
+
+    lfoXClearBtn_.setButtonText("CLR");
+    lfoXClearBtn_.setClickingTogglesState(false);
+    styleButton(lfoXClearBtn_);
+    addAndMakeVisible(lfoXClearBtn_);
+    lfoXClearBtn_.onClick = [this]() { proc_.clearLfoXRecording(); };
+
+    // ── LFO Y Recording buttons ────────────────────────────────────────────────
+    lfoYArmBtn_.setButtonText("ARM");
+    lfoYArmBtn_.setClickingTogglesState(false);
+    styleButton(lfoYArmBtn_);
+    addAndMakeVisible(lfoYArmBtn_);
+    lfoYArmBtn_.onClick = [this]() { proc_.armLfoY(); };
+
+    lfoYClearBtn_.setButtonText("CLR");
+    lfoYClearBtn_.setClickingTogglesState(false);
+    styleButton(lfoYClearBtn_);
+    addAndMakeVisible(lfoYClearBtn_);
+    lfoYClearBtn_.onClick = [this]() { proc_.clearLfoYRecording(); };
+
     // Capture current preset so the first timer tick doesn't misread a change.
     lastScalePreset_ = static_cast<int>(p.apvts.getRawParameterValue("scalePreset")->load());
 
@@ -2148,9 +2174,19 @@ void PluginEditor::resized()
         // Row 6: SYNC button (full width)
         lfoXSyncBtn_.setBounds(col.removeFromTop(22));
 
-        // Panel bounds: wraps from ON button top to SYNC button bottom
+        // Row 7: ARM + CLR row
+        col.removeFromTop(4);
+        {
+            auto row = col.removeFromTop(22);
+            const int btnW = (row.getWidth() - 4) / 2;
+            lfoXArmBtn_ .setBounds(row.removeFromLeft(btnW));
+            row.removeFromLeft(4);
+            lfoXClearBtn_.setBounds(row);
+        }
+
+        // Panel bounds: wraps from ON button top to CLR button bottom (including new ARM/CLR row)
         lfoXPanelBounds_ = lfoXEnabledBtn_.getBounds()
-                              .getUnion(lfoXSyncBtn_.getBounds())
+                              .getUnion(lfoXClearBtn_.getBounds())
                               .withX(lfoXCol.getX())
                               .withWidth(lfoXCol.getWidth())
                               .expanded(0, 10);
@@ -2211,9 +2247,19 @@ void PluginEditor::resized()
         // Row 6: SYNC button (full width)
         lfoYSyncBtn_.setBounds(col.removeFromTop(22));
 
-        // Panel bounds: wraps from ON button top to SYNC button bottom
+        // Row 7: ARM + CLR row
+        col.removeFromTop(4);
+        {
+            auto row = col.removeFromTop(22);
+            const int btnW = (row.getWidth() - 4) / 2;
+            lfoYArmBtn_ .setBounds(row.removeFromLeft(btnW));
+            row.removeFromLeft(4);
+            lfoYClearBtn_.setBounds(row);
+        }
+
+        // Panel bounds: wraps from ON button top to CLR button bottom (including new ARM/CLR row)
         lfoYPanelBounds_ = lfoYEnabledBtn_.getBounds()
-                              .getUnion(lfoYSyncBtn_.getBounds())
+                              .getUnion(lfoYClearBtn_.getBounds())
                               .withX(lfoYCol.getX())
                               .withWidth(lfoYCol.getWidth())
                               .expanded(0, 10);
@@ -2628,6 +2674,74 @@ void PluginEditor::timerCallback()
         loopRecBtn_.setToggleState(false, juce::dontSendNotification);
     }
     loopDeleteBtn_.setEnabled(!proc_.looperIsPlaying());
+
+    // ── LFO X recording UI ────────────────────────────────────────────────────
+    {
+        const LfoRecState xState = proc_.getLfoXRecState();
+
+        // ARM button blink / lit state
+        if (xState == LfoRecState::Unarmed)
+        {
+            lfoXArmBlinkCounter_ = 0;
+            lfoXArmBtn_.setToggleState(false, juce::dontSendNotification);
+        }
+        else if (xState == LfoRecState::Armed)
+        {
+            const bool on = ((++lfoXArmBlinkCounter_) / 5) % 2 == 0;
+            lfoXArmBtn_.setToggleState(on, juce::dontSendNotification);
+        }
+        else  // Recording or Playback — steady lit
+        {
+            lfoXArmBlinkCounter_ = 0;
+            lfoXArmBtn_.setToggleState(true, juce::dontSendNotification);
+        }
+
+        // ARM button enabled only when LFO X is ON
+        const bool lfoXOn = (*proc_.apvts.getRawParameterValue("lfoXEnabled") > 0.5f);
+        lfoXArmBtn_.setEnabled(lfoXOn);
+
+        // Control grayout during Playback
+        const bool xPlayback = (xState == LfoRecState::Playback);
+        lfoXShapeBox_   .setEnabled(!xPlayback);
+        lfoXRateSlider_ .setEnabled(!xPlayback);
+        lfoXPhaseSlider_.setEnabled(!xPlayback);
+        lfoXLevelSlider_.setEnabled(!xPlayback);
+        lfoXSyncBtn_    .setEnabled(!xPlayback);
+        // lfoXDistSlider_ always enabled (Distort stays live during playback)
+        // lfoXClearBtn_ always enabled (must be clickable to exit playback)
+    }
+
+    // ── LFO Y recording UI ────────────────────────────────────────────────────
+    {
+        const LfoRecState yState = proc_.getLfoYRecState();
+
+        if (yState == LfoRecState::Unarmed)
+        {
+            lfoYArmBlinkCounter_ = 0;
+            lfoYArmBtn_.setToggleState(false, juce::dontSendNotification);
+        }
+        else if (yState == LfoRecState::Armed)
+        {
+            const bool on = ((++lfoYArmBlinkCounter_) / 5) % 2 == 0;
+            lfoYArmBtn_.setToggleState(on, juce::dontSendNotification);
+        }
+        else
+        {
+            lfoYArmBlinkCounter_ = 0;
+            lfoYArmBtn_.setToggleState(true, juce::dontSendNotification);
+        }
+
+        const bool lfoYOn = (*proc_.apvts.getRawParameterValue("lfoYEnabled") > 0.5f);
+        lfoYArmBtn_.setEnabled(lfoYOn);
+
+        const bool yPlayback = (yState == LfoRecState::Playback);
+        lfoYShapeBox_   .setEnabled(!yPlayback);
+        lfoYRateSlider_ .setEnabled(!yPlayback);
+        lfoYPhaseSlider_.setEnabled(!yPlayback);
+        lfoYLevelSlider_.setEnabled(!yPlayback);
+        lfoYSyncBtn_    .setEnabled(!yPlayback);
+        // lfoYDistSlider_ and lfoYClearBtn_ always enabled
+    }
 
     // ── Gamepad button flash: RST (Square), DEL (Circle), PANIC (R3) ─────────
     if (proc_.flashLoopReset_.exchange(0, std::memory_order_relaxed) > 0)
