@@ -343,6 +343,7 @@ private:
     juce::Label       loopLengthLabel_;
     juce::Label       gamepadStatusLabel_;
     juce::Label       optionLabel_;       // "OPTION" indicator — green when preset-scroll active
+    int               batteryLevel_ { -2 }; // -2=no ctrl, -1=unknown, 0=empty, 1=low, 2=med, 3=full, 4=wired
     juce::Label       chordNameLabel_;    // chord name display (e.g. "Cmaj7"), bottom-right
     juce::TextButton  gamepadActiveBtn_;  // [GAMEPAD ON] / [GAMEPAD OFF] per-instance toggle
     juce::TextButton panicBtn_;   // [PANIC!] — one-shot MIDI all-notes-off on all 16 channels

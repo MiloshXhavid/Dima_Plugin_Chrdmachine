@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(ChordJoystick VERSION 2.0.0)
+project(ChordJoystick VERSION 1.5.0)
 
 # Static CRT — must precede all FetchContent calls so JUCE internals also get /MT
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -108,6 +108,7 @@ juce_add_binary_data(ChordJoystickFonts
 
 juce_add_plugin(ChordJoystick
     PRODUCT_NAME            "DIMEA CHORD JOYSTICK MK2"
+    COMPANY_NAME            "DIMEA"
     FORMATS                 VST3
     PLUGIN_MANUFACTURER_CODE "MxCJ"
     PLUGIN_CODE             "DCJM"

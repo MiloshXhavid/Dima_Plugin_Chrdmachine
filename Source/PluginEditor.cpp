@@ -2260,8 +2260,9 @@ void PluginEditor::resized()
         // Status labels — second row inside routing box, below the dropdowns
         const int labelY = ry + comboH + 2;
         constexpr int labelH = 14;
-        gamepadStatusLabel_.setBounds(rPanelX,             labelY, modeW,  labelH);
-        optionLabel_.setBounds       (rPanelX + modeW + 2, labelY, voiceW, labelH);
+        constexpr int kBattW = 30;   // reserved pixels for battery icon
+        gamepadStatusLabel_.setBounds(rPanelX,             labelY, modeW - kBattW, labelH);
+        optionLabel_.setBounds       (rPanelX + modeW + 2, labelY, voiceW,         labelH);
     }
 
     // Reference Y values — mirror left-column anchors (same constants as left column below)
@@ -2431,13 +2432,16 @@ void PluginEditor::resized()
 
         qBox.removeFromTop(8);   // clearance for "QUANTIZER" knockout label on top border
 
-        // Scale preset label + combo
-        scalePresetLabel_.setBounds(qBox.removeFromTop(14));
-        scalePresetBox_  .setBounds(qBox.removeFromTop(30));
+        // Scale preset label + combo — single row
+        {
+            auto scaleRow = qBox.removeFromTop(22);
+            scalePresetLabel_.setBounds(scaleRow.removeFromLeft(84));
+            scalePresetBox_  .setBounds(scaleRow);
+        }
         qBox.removeFromTop(4);
 
-        // Scale keyboard
-        scaleKeys_.setBounds(qBox.removeFromTop(84));
+        // Scale keyboard — taller now that label+combo share one row (saves 22px)
+        scaleKeys_.setBounds(qBox.removeFromTop(106));
         qBox.removeFromTop(8);   // gap between keyboard and sub-panels
 
         // Two sub-panels side by side: INTERVAL (left) | OCTAVE (right)
@@ -2848,39 +2852,79 @@ void PluginEditor::paint(juce::Graphics& g)
     };
     (void)drawSectionTitle;
 
-    // ── DIMEA logo — PNG, centred in zone between quantizer box and gamepad display ──
+    // ── DIMEA logo — PNG, filling zone between quantizer box and gamepad display ──
     if (logoImage_.isValid() && !quantizerBoxBounds_.isEmpty())
     {
         const int logoY1 = quantizerBoxBounds_.getBottom();
         const int logoY2 = gamepadDisplay_.getY();
         if (logoY2 > logoY1)
         {
-            const auto logoDest = juce::Rectangle<int>(dividerX_, logoY1,
-                                                       dividerX2_ - dividerX_, logoY2 - logoY1)
-                                      .toFloat();
+            const auto logoDest = juce::Rectangle<float>((float)dividerX_, (float)logoY1,
+                                                          (float)(dividerX2_ - dividerX_),
+                                                          (float)(logoY2 - logoY1));
 
-            g.setOpacity(0.90f);
-            g.drawImage(logoImage_, logoDest,
-                        juce::RectanglePlacement::centred);
+            // Scale to fill zone width, maintain aspect ratio, center vertically.
+            const float aspect = (float)logoImage_.getWidth() / (float)logoImage_.getHeight();
+            float drawW = logoDest.getWidth();
+            float drawH = drawW / aspect;
+            if (drawH > logoDest.getHeight())
+            {
+                drawH = logoDest.getHeight();
+                drawW = drawH * aspect;
+            }
+            const float drawX = logoDest.getX() + (logoDest.getWidth()  - drawW) * 0.5f;
+            const float drawY = logoDest.getY() + (logoDest.getHeight() - drawH) * 0.5f;
+            const auto imageRect = juce::Rectangle<float>(drawX, drawY, drawW, drawH);
+
+            // 1. Draw PNG (dim the baked-in slogan slightly so the bright overlay dominates)
+            g.setOpacity(0.85f);
+            g.drawImage(logoImage_, imageRect, juce::RectanglePlacement::stretchToFit);
             g.setOpacity(1.0f);
 
-            // Slogan overlay — positioned relative to where the image actually landed
-            const auto imgBounds = juce::RectanglePlacement(juce::RectanglePlacement::centred)
-                                      .appliedTo(juce::Rectangle<float>(0, 0,
-                                                     (float)logoImage_.getWidth(),
-                                                     (float)logoImage_.getHeight()),
-                                                 logoDest);
+            // 2. Seamless fade: top and bottom edges blend into background
+            const float fadeH = logoDest.getHeight() * 0.30f;
 
-            const float sloganTop  = imgBounds.getY() + imgBounds.getHeight() * 0.81f;
-            const float sloganH    = imgBounds.getHeight() * 0.13f;
-            const float fontSize   = juce::jlimit(8.0f, 11.5f, sloganH * 0.72f);
-            g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), fontSize, juce::Font::plain)
-                          .withExtraKerningFactor(0.14f));
-            g.setColour(juce::Colour(0xFF00D8FF).withAlpha(0.92f));
-            g.drawText("BRINGING HARMONY TO THE PEOPLE",
-                       juce::Rectangle<float>(imgBounds.getX(), sloganTop,
-                                              imgBounds.getWidth(), sloganH),
-                       juce::Justification::centred, false);
+            juce::ColourGradient topFade(Clr::bg, 0.0f, logoDest.getY(),
+                                         Clr::bg.withAlpha(0.0f), 0.0f, logoDest.getY() + fadeH,
+                                         false);
+            g.setGradientFill(topFade);
+            g.fillRect(juce::Rectangle<float>(logoDest.getX(), logoDest.getY(),
+                                              logoDest.getWidth(), fadeH));
+
+            juce::ColourGradient botFade(Clr::bg.withAlpha(0.0f), 0.0f, logoDest.getBottom() - fadeH,
+                                         Clr::bg, 0.0f, logoDest.getBottom(),
+                                         false);
+            g.setGradientFill(botFade);
+            g.fillRect(juce::Rectangle<float>(logoDest.getX(), logoDest.getBottom() - fadeH,
+                                              logoDest.getWidth(), fadeH));
+
+            // 3. Slogan overlay — drawn AFTER fades so it stays bright at the bottom edge.
+            //    Pixel-accurate position derived from PNG: slogan runs y=82.5%..88.8%,
+            //    x=2.7%..93.1%, horizontally centred in the image.
+            {
+                const float sloganTop = imageRect.getY() + imageRect.getHeight() * 0.820f;
+                const float sloganH   = imageRect.getHeight() * 0.090f;
+                const float fontSize  = juce::jlimit(7.0f, 11.0f, sloganH * 0.85f);
+
+                const auto sloganRect = juce::Rectangle<float>(
+                    imageRect.getX(), sloganTop, imageRect.getWidth(), sloganH);
+
+                const auto sloganFont = juce::Font(
+                    juce::Font::getDefaultSansSerifFontName(), fontSize, juce::Font::plain)
+                    .withExtraKerningFactor(0.28f);
+
+                // Glow pass — soft cyan halo that matches the divider line colour
+                g.setFont(sloganFont);
+                g.setColour(juce::Colour(0xFF00D8FF).withAlpha(0.25f));
+                g.drawText("BRINGING HARMONY TO THE PEOPLE",
+                           sloganRect.expanded(1.5f, 1.5f),
+                           juce::Justification::centred, false);
+
+                // Main pass — bright white, high contrast
+                g.setColour(juce::Colours::white.withAlpha(0.92f));
+                g.drawText("BRINGING HARMONY TO THE PEOPLE",
+                           sloganRect, juce::Justification::centred, false);
+            }
         }
     }
 
@@ -2954,6 +2998,53 @@ void PluginEditor::paint(juce::Graphics& g)
     drawLfoPanel(triggerBoxBounds_,    "TRIGGER");
     drawLfoPanel(modulationBoxBounds_, "MODULATION");
     drawLfoPanel(routingBoxBounds_,    "ROUTING");
+
+    // ── Battery icon — drawn right of gamepad status label ────────────────────
+    if (batteryLevel_ >= -1)
+    {
+        const auto lb  = gamepadStatusLabel_.getBounds();
+        const float bx = (float)(lb.getRight() + 4);
+        const float by = (float)(lb.getY() + (lb.getHeight() - 10) / 2);
+        constexpr float bw = 19.0f;   // body width
+        constexpr float bh = 10.0f;
+
+        juce::Colour bClr;
+        float fill = 0.0f;
+        switch (batteryLevel_)
+        {
+            case 0:  bClr = juce::Colour(0xFFFF3333); fill = 0.05f; break; // empty → red
+            case 1:  bClr = juce::Colour(0xFFFF8800); fill = 0.25f; break; // low   → orange
+            case 2:  bClr = juce::Colour(0xFFFFCC00); fill = 0.60f; break; // med   → yellow
+            case 3:  bClr = Clr::gateOn;              fill = 1.00f; break; // full  → green
+            case 4:  bClr = juce::Colour(0xFF00D8FF); fill = 1.00f; break; // wired → cyan
+            default: bClr = Clr::textDim;             fill = 0.0f;  break; // unknown
+        }
+
+        // Body outline + subtle bg
+        g.setColour(bClr.withAlpha(0.25f));
+        g.fillRoundedRectangle(bx, by, bw, bh, 2.0f);
+        g.setColour(bClr.withAlpha(0.75f));
+        g.drawRoundedRectangle(bx + 0.5f, by + 0.5f, bw - 1.0f, bh - 1.0f, 2.0f, 1.0f);
+
+        // Nib (positive terminal on right)
+        g.setColour(bClr.withAlpha(0.65f));
+        g.fillRoundedRectangle(bx + bw, by + bh * 0.3f, 3.0f, bh * 0.4f, 1.0f);
+
+        // Fill bar
+        if (fill > 0.0f)
+        {
+            g.setColour(bClr.withAlpha(0.9f));
+            g.fillRoundedRectangle(bx + 2.0f, by + 2.0f, (bw - 4.0f) * fill, bh - 4.0f, 1.5f);
+        }
+
+        // Unknown: small "?" centred
+        if (batteryLevel_ == -1)
+        {
+            g.setColour(Clr::textDim);
+            g.setFont(juce::Font(7.0f));
+            g.drawText("?", (int)bx, (int)by, (int)bw, (int)bh, juce::Justification::centred);
+        }
+    }
 
     // INTERVAL and OCTAVE sub-panels inside QUANTIZER box
     auto drawSubPanel = [&](juce::Rectangle<int> bounds, const juce::String& title)
@@ -3081,19 +3172,6 @@ void PluginEditor::paint(juce::Graphics& g)
         }
     }
 
-    // Scale preset panel — aligned to exact left/right edges of the trigger dropdown columns
-    if (scalePresetBox_.isVisible() && scaleKeys_.isVisible())
-    {
-        const juce::Rectangle<float> fb(
-            (float)scalePresetLabel_.getX(),
-            (float)scalePresetLabel_.getY() - 4,
-            (float)scalePresetLabel_.getWidth(),
-            (float)(scaleKeys_.getBottom() - scalePresetLabel_.getY()) + 6);
-        g.setColour(Clr::panel.brighter(0.18f));
-        g.fillRoundedRectangle(fb, 6.0f);
-        g.setColour(Clr::gateOn.withAlpha(0.35f));
-        g.drawRoundedRectangle(fb.reduced(0.5f), 6.0f, 1.5f);
-    }
 
     // Labels above controls — uses drawAbove helper (draws 12px above the component)
     g.setColour(Clr::textDim.brighter(0.2f));
@@ -3219,6 +3297,17 @@ void PluginEditor::timerCallback()
     {
         voiceChLabel_[v].setVisible(!isSingle);
         voiceChBox_[v].setVisible(!isSingle);
+    }
+
+    // Battery level — polled at 30 Hz; triggers repaint of routing box area
+    const int newBatt = proc_.getGamepad().isConnected()
+                            ? proc_.getGamepad().getBatteryLevel()
+                            : -2;
+    if (newBatt != batteryLevel_)
+    {
+        batteryLevel_ = newBatt;
+        if (!routingBoxBounds_.isEmpty())
+            repaint(routingBoxBounds_);
     }
 
     // Partial repaint for looper position bar (driven by this 30 Hz timer)

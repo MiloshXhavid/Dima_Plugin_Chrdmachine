@@ -82,6 +82,9 @@ public:
     // Whether a gamepad is connected and not soft-disconnected via PS button
     bool isConnected() const { return controller_ != nullptr && virtuallyConnected_; }
 
+    // Battery level: -2=no controller, -1=unknown, 0=empty, 1=low, 2=medium, 3=full, 4=wired
+    int getBatteryLevel() const;
+
     // Returns the SDL controller name string if connected, empty string if not.
     // Used by PluginEditor constructor for synchronous initial label update.
     juce::String getControllerName() const;

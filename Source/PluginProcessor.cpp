@@ -1339,7 +1339,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     {
         tp.sources[v]      = src[v];
         tp.heldPitches[v]  = heldPitch_[v];
-        tp.midiChannels[v] = voiceChs[v];
+        tp.midiChannels[v] = effectiveChannel(v);
     }
     tp.randomPopulation  = apvts.getRawParameterValue("randomPopulation")->load();
     tp.randomProbability = apvts.getRawParameterValue("randomProbability")->load();

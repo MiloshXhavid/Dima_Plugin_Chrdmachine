@@ -375,6 +375,16 @@ void GamepadInput::timerCallback()
     }
 }
 
+// ── Battery level ─────────────────────────────────────────────────────────────
+
+int GamepadInput::getBatteryLevel() const
+{
+    if (!controller_) return -2;
+    SDL_Joystick* joy = SDL_GameControllerGetJoystick(controller_);
+    if (!joy) return -2;
+    return (int)SDL_JoystickCurrentPowerLevel(joy);
+}
+
 // ── Consume helpers ───────────────────────────────────────────────────────────
 
 bool GamepadInput::consumeVoiceTrigger(int voice)
