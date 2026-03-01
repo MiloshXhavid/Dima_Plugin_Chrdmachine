@@ -56,7 +56,7 @@ Full details: Phase Details section below (Phases 12–16).
 - [x] **Phase 18: Single-Channel Routing** — singleChanMode / singleChanTarget APVTS params, effectiveChannel() helper, noteCount[16][128] reference counter, UI toggle + channel selector (completed 2026-03-01)
 - [x] **Phase 19: Sub Octave Per Voice** — subOct0..3 APVTS bools, -12 semitone parallel note, sentSubOctPitch snapshot, all emission + flush paths, R3+pad gamepad shortcut, per-pad UI toggle
  (completed 2026-03-01)
-- [ ] **Phase 20: Random Trigger System Extensions** — Free/Hold trigger modes, Population + Probability knobs, 1/64 subdivision, unified Gate Length param
+- [x] **Phase 20: Random Trigger System Extensions** — Free/Hold trigger modes, Population + Probability knobs, 1/64 subdivision, unified Gate Length param (completed 2026-03-01)
 - [ ] **Phase 21: Left Joystick Modulation Expansion** — Extended filterXMode / filterYMode choice lists, LFO freq/shape/level + arp gate length targets, pending-atomic dispatch
 - [ ] **Phase 22: LFO Recording** — Arm/Record/Playback state machine in LfoEngine, pre-distortion ring buffer, clear button, gray-out UI, Distort stays live
 - [ ] **Phase 23: Arpeggiator** — ArpEngine stepping through 4-voice chord, Rate/Order APVTS params, ppqPosition scheduling, bar-boundary DAW sync, step-reset on off
@@ -191,9 +191,9 @@ Plans:
   5. A single Gate Length knob (0–100% of subdivision) controls note hold duration for both Random and Arpeggiator sources; the knob is present in the UI and automatable
 **Plans**: 3 plans
 Plans:
-- [ ] 20-01-PLAN.md — TriggerSystem backend: RandomHold enum, double-roll probability, 1/64 subdivision, manual-gate sentinel
-- [ ] 20-02-PLAN.md — PluginProcessor APVTS params: randomPopulation, randomProbability, gateLength; ProcessParams forwarding; arp gate migration
-- [ ] 20-03-PLAN.md — PluginEditor UI: 4-option trigger combos, 5-option subdiv combos, Population + Probability knobs, smoke-test checkpoint
+- [x] 20-01-PLAN.md — TriggerSystem backend: RandomHold enum, double-roll probability, 1/64 subdivision, manual-gate sentinel (completed 2026-03-01)
+- [x] 20-02-PLAN.md — PluginProcessor APVTS params: randomPopulation, randomProbability, gateLength; ProcessParams forwarding; arp gate migration (completed 2026-03-01)
+- [x] 20-03-PLAN.md — PluginEditor UI: 4-option trigger combos, 5-option subdiv combos, Population + Probability knobs, smoke-test checkpoint (completed 2026-03-01)
 
 ### Phase 21: Left Joystick Modulation Expansion
 **Goal**: The left joystick X and Y axes can be pointed at LFO frequency, phase, level, or arp gate length in addition to the existing CC74/CC71 filter targets, so players can modulate expressively from the gamepad without touching the mouse
@@ -267,7 +267,7 @@ Plans:
 | 17. Bug Fixes | v1.5 | Complete    | 2026-02-28 | 2026-02-28 |
 | 18. Single-Channel Routing | v1.5 | 3/3 | Complete | 2026-03-01 |
 | 19. Sub Octave Per Voice | 2/2 | Complete    | 2026-03-01 | - |
-| 20. Random Trigger System Extensions | 2/3 | In Progress|  | - |
+| 20. Random Trigger System Extensions | v1.5 | 3/3 | Complete | 2026-03-01 |
 | 21. Left Joystick Modulation Expansion | v1.5 | 0/TBD | Not started | - |
 | 22. LFO Recording | v1.5 | 0/TBD | Not started | - |
 | 23. Arpeggiator | v1.5 | 0/TBD | Not started | - |

@@ -77,7 +77,7 @@ public:
         float          joystickGateTime  = 1.0f;   // seconds of stillness before gate closes
 
         // Random clock mode
-        bool           randomClockSync  = true;    // true = DAW-gated, false = free tempo
+        bool           randomClockSync  = false;   // true = DAW-gated, false = free tempo
         float          randomFreeTempo  = 120.0f;  // BPM for free mode (30..240)
     };
 

@@ -192,7 +192,7 @@ PluginProcessor::createParameterLayout()
 
     // Random clock mode
     layout.add(std::make_unique<juce::AudioParameterBool>(
-        "randomClockSync", "Random Clock Sync", true));
+        "randomClockSync", "Random Clock Sync", false));
 
     // Free-running tempo for random triggers
     layout.add(std::make_unique<juce::AudioParameterFloat>(

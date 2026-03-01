@@ -31,24 +31,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.5 — Phase 20: RND Trigger Extensions
+**Current focus:** v1.5 — Phase 21: Left Joystick Targets
 
 ## Current Position
 
-Phase: 20 of 25 (RND Trigger Extensions) — In progress
-Plan: 2 of 3 in Phase 20 complete
-Status: Plan 20-02 complete — PluginProcessor APVTS bridge updated; randomPopulation/randomProbability/gateLength registered and forwarded
-Last activity: 2026-03-01 — Plan 20-02 executed; APVTS params migrated; Plan 20-03 (PluginEditor UI) next
+Phase: 21 of 25 (Left Joystick Targets) — Not started
+Plan: Phase 20 complete (3/3 plans)
+Status: Phase 20 complete — UI expanded with 4-item trigger combos, 5-item subdiv combos, Population + Probability knobs, unified Gate Length; smoke test passed
+Last activity: 2026-03-01 — Phase 20 complete; randomClockSync defaults off; Phase 21 next
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
 v1.3 Polish [██████████] SHIPPED 2026-02-25
 v1.4 LFO    [██████████] SHIPPED 2026-02-26
-v1.5 Routing+Expression  [███       ] In progress
+v1.5 Routing+Expression  [████      ] In progress
   Phase 17  [██████████]   Bug Fixes              COMPLETE 2026-02-28
   Phase 18  [██████████]   Single-Channel Routing COMPLETE 2026-02-28
   Phase 19  [██████████]   Sub Octave Per Voice   COMPLETE 2026-03-01
-  Phase 20  [██████    ]   RND Trigger Extensions In progress (2/3 plans)
+  Phase 20  [██████████]   RND Trigger Extensions COMPLETE 2026-03-01
   Phase 21  [          ]   Left Joystick Targets  Not started
   Phase 22  [          ]   LFO Recording          Not started
   Phase 23  [          ]   Arpeggiator            Not started
@@ -101,6 +101,8 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 20-02]: arpGateTime param (5–100%) removed; unified gateLength (0.0–1.0) serves both Arp and Random gate-time — no /100 conversion needed, gateRatio reads directly
 - [Phase 20-02]: tp.joystickGateTime hardcoded to 1.0f constant — arpGateTime was its only source and is gone; dedicated param deferred to future milestone
 - [Phase 20-02]: trigSrcNames index 2 label changed from 'Random' to 'Random Free'; 'Random Hold' appended at index 3 — integer values unchanged for DAW session compat
+- [Phase 20-03]: randomClockSync defaults to false — free-tempo mode is more useful out-of-the-box; sync requires explicit opt-in
+- [Phase 20-03]: Widget reuse pattern for Population knob — randomDensityKnob_ widget kept, only attachment renamed/retargeted to randomPopulation
 
 ### Pending Todos
 
@@ -113,5 +115,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 20-02-PLAN.md — PluginProcessor APVTS bridge updated; randomPopulation/randomProbability/gateLength registered and forwarded
-Next step: Execute Plan 20-03 (PluginEditor UI — Probability knob, expanded combo boxes)
+Stopped at: Phase 20 complete — all 3 plans executed, smoke test passed, SUMMARY written
+Next step: Phase 21 (Left Joystick Modulation Expansion) — CONTEXT.md exists, ready to plan or discuss
