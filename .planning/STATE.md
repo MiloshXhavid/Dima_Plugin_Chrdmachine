@@ -74,10 +74,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-Phase: 24 of 25 (Gamepad Option Mode 1) — COMPLETE (3/3 plans)
-Plan: 24-03 complete — Deploy + DAW smoke test; all 7 OPT1 requirements verified with live PS controller in Ableton Live
-Status: Phase 24 COMPLETE — all requirements verified in DAW; ready for Phase 25 (Distribution)
-Last activity: 2026-03-01 — Phase 24 plan 03 complete (human checkpoint approved)
+Phase: 24.1 (LFO Joystick Visual Tracking and Center Offset) — In Progress (1/2 plans)
+Plan: 24.1-01 complete — PluginProcessor backend refactor: override floats, display atomics, SmoothedValue, base+offset dispatch
+Status: 24.1-02 pending — PluginEditor timerCallback poll + build + deploy + human verify
+Last activity: 2026-03-01 — Phase 24.1 plan 01 complete (build verified, no compiler errors)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -103,6 +103,10 @@ v1.5 Routing+Expression  [█████     ] In progress
 - Total execution time: not tracked
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 24.1 inserted after Phase 24: LFO joystick visual tracking and center offset (URGENT — pre-distribution fix)
 
 ### Decisions
 
@@ -180,5 +184,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 24-03-PLAN.md — Phase 24 Gamepad Option Mode 1 COMPLETE (all 7 OPT1 requirements verified with live PS controller in Ableton Live; human checkpoint approved)
-Next step: Phase 25 — Distribution (v1.5 installer, GitHub release, desktop backup)
+Stopped at: Completed 24.1-01-PLAN.md — override floats, display atomics, SmoothedValue added; base+offset dispatch replaces writeParam; build verified
+Next step: Phase 24.1 Plan 02 — timerCallback display poll, build, deploy, human verify with PS controller

@@ -303,7 +303,7 @@ Plans:
 | 22. LFO Recording | v1.5 | Complete    | 2026-03-01 | 2026-03-01 |
 | 23. Arpeggiator | v1.5 | Complete    | 2026-03-01 | 2026-03-01 |
 | 24. Gamepad Option Mode 1 | v1.5 | 3/3 | Complete | 2026-03-01 |
-| 24.1. LFO Joystick Visual Tracking | v1.5 | 0/2 | Not started | - |
+| 24.1. LFO Joystick Visual Tracking | 1/2 | In Progress|  | - |
 | 25. Distribution | v1.5 | 0/TBD | Not started | - |
 
 ---
