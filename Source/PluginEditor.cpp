@@ -1449,16 +1449,23 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     // Gamepad left-stick axis mode toggles — pill style: left=default, right=alt
     filterYModeBox_.addItem("Resonance (CC71)", 1);
-    filterYModeBox_.addItem("LFO Rate  (CC76)", 2);
-    filterYModeBox_.setTooltip("Left stick Y: Resonance or LFO Rate");
+    filterYModeBox_.addItem("LFO Rate (CC76)",  2);
+    filterYModeBox_.addItem("LFO-Y Freq",       3);
+    filterYModeBox_.addItem("LFO-Y Phase",      4);
+    filterYModeBox_.addItem("LFO-Y Level",      5);
+    filterYModeBox_.addItem("Gate Length",      6);
+    filterYModeBox_.setTooltip("Left stick Y: Resonance, LFO Rate, or LFO-Y target");
     styleCombo(filterYModeBox_);
     addAndMakeVisible(filterYModeBox_);
     filterYModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterYMode", filterYModeBox_);
 
-    filterXModeBox_.addItem("Cutoff    (CC74)", 1);
-    filterXModeBox_.addItem("VCF LFO   (CC12)", 2);
-    filterXModeBox_.addItem("Mod Wheel (CC1)",  3);
-    filterXModeBox_.setTooltip("Left stick X: what CC it controls");
+    filterXModeBox_.addItem("Cutoff (CC74)",  1);
+    filterXModeBox_.addItem("VCF LFO (CC12)", 2);
+    filterXModeBox_.addItem("LFO-X Freq",     3);
+    filterXModeBox_.addItem("LFO-X Phase",    4);
+    filterXModeBox_.addItem("LFO-X Level",    5);
+    filterXModeBox_.addItem("Gate Length",    6);
+    filterXModeBox_.setTooltip("Left stick X: Cutoff, VCF LFO, or LFO-X target");
     styleCombo(filterXModeBox_);
     addAndMakeVisible(filterXModeBox_);
     filterXModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterXMode", filterXModeBox_);
@@ -1861,9 +1868,9 @@ void PluginEditor::resized()
     // Left-stick axis mode combos — grouped under the FILTER MOD button
     // (greyed out when FILTER MOD is OFF)
     right.removeFromTop(12);
-    filterYModeBox_.setBounds(right.removeFromTop(22));
+    filterXModeBox_.setBounds(right.removeFromTop(22));  // X above Y (LJOY-03)
     right.removeFromTop(12);
-    filterXModeBox_.setBounds(right.removeFromTop(22));
+    filterYModeBox_.setBounds(right.removeFromTop(22));
 
     // Quantize trigger — all 4 controls in one row: [Off][Live][Post][subdiv]
     right.removeFromTop(20);
@@ -2678,6 +2685,35 @@ void PluginEditor::timerCallback()
         filterXOffsetKnob_.setEnabled(filterOn);
         filterYOffsetKnob_.setEnabled(filterOn);
         filterRecBtn_     .setEnabled(filterOn);
+    }
+
+    // ── Left Stick Atten label update per mode ────────────────────────────────
+    // Modes 0-1 are CC targets (show "Atten" + " %" suffix).
+    // Modes 2-5 are LFO/Gate targets (show unit label, no "%" suffix).
+    {
+        const int xMode = (int)*proc_.apvts.getRawParameterValue("filterXMode");
+        const juce::String xLabel = (xMode == 2) ? "Hz"
+                                  : (xMode == 3) ? "Phase"
+                                  : (xMode == 4) ? "Level"
+                                  : (xMode == 5) ? "Gate"
+                                  : "Atten";
+        if (filterXAttenLabel_.getText() != xLabel)
+            styleLabel(filterXAttenLabel_, xLabel);
+        const juce::String xSuffix = (xMode >= 2) ? "" : " %";
+        if (filterXAttenKnob_.getTextValueSuffix() != xSuffix)
+            filterXAttenKnob_.setTextValueSuffix(xSuffix);
+
+        const int yMode = (int)*proc_.apvts.getRawParameterValue("filterYMode");
+        const juce::String yLabel = (yMode == 2) ? "Hz"
+                                  : (yMode == 3) ? "Phase"
+                                  : (yMode == 4) ? "Level"
+                                  : (yMode == 5) ? "Gate"
+                                  : "Atten";
+        if (filterYAttenLabel_.getText() != yLabel)
+            styleLabel(filterYAttenLabel_, yLabel);
+        const juce::String ySuffix = (yMode >= 2) ? "" : " %";
+        if (filterYAttenKnob_.getTextValueSuffix() != ySuffix)
+            filterYAttenKnob_.setTextValueSuffix(ySuffix);
     }
 
     // ARP button: blinks while armed (ARP ON but waiting for DAW play press to launch),
