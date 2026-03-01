@@ -124,10 +124,16 @@ void TriggerSystem::processBlock(const ProcessParams& p)
     // ── Per-voice processing ─────────────────────────────────────────────────
     for (int v = 0; v < 4; ++v)
     {
-        const int           ch      = p.midiChannels[v];   // 1-based (JUCE MidiMessage convention)
-        const TriggerSource src     = p.sources[v];
+        const int           ch       = p.midiChannels[v];   // 1-based (JUCE MidiMessage convention)
+        const TriggerSource src      = p.sources[v];
         const TriggerSource prevSrcV = prevSrc_[v];
         bool trigger = false;
+
+        // Universal mode-switch: close any open gate the moment the source changes.
+        // Covers all transitions (non-random→random, random→non-random, joy→pad, etc.)
+        // so stale gates never outlive the mode they were opened in.
+        if (src != prevSrcV && gateOpen_[v].load())
+            fireNoteOff(v, ch - 1, 0, p);
 
         if (allTrig)
         {
@@ -227,20 +233,18 @@ void TriggerSystem::processBlock(const ProcessParams& p)
         }
         else if (src == TriggerSource::RandomHold)
         {
-            const bool padHeld = padPressed_[v].load();
+            const bool padHeld   = padPressed_[v].load();
+            const bool justFired = padJustFired_[v].exchange(false);  // consume rising-edge flag
             // Hard-cut: pad released mid-note -> immediate note-off
             if (!padHeld && gateOpen_[v].load())
             {
                 fireNoteOff(v, ch - 1, 0, p);
                 randomGateRemaining_[v] = 0;
             }
-            // Gate fires only if pad is held AND a subdivision tick occurred AND both rolls pass
-            else if (padHeld && randomFired[v])
+            // Touch (rising edge) -> fire immediately; auto gate length closes the note
+            else if (justFired)
             {
-                const float popProb  = hitsPerBarToProbability(p.randomPopulation, p.randomSubdiv[v]);
-                const float userProb = p.randomProbability;
-                if (nextRandom() < popProb && nextRandom() < userProb)
-                    trigger = true;
+                trigger = true;
             }
         }
 
@@ -288,17 +292,10 @@ void TriggerSystem::processBlock(const ProcessParams& p)
                 fireNoteOff(v, ch - 1, p.blockSize - 1, p);
             }
         }
-        // Clear countdown if mode is not a random source (prevents ghost note-off on mode switch).
-        // Also fires an immediate note-off when switching away from a random source while the gate
-        // is still open — prevents hanging notes when the user changes trigger mode mid-note.
+        // Clear random gate countdown when source is not a random type.
+        // The universal mode-switch noteOff above already closed any open gate on transition.
         if (src != TriggerSource::RandomFree && src != TriggerSource::RandomHold)
-        {
-            const bool wasRandom = (prevSrcV == TriggerSource::RandomFree
-                                 || prevSrcV == TriggerSource::RandomHold);
-            if (wasRandom && gateOpen_[v].load())
-                fireNoteOff(v, ch - 1, 0, p);
             randomGateRemaining_[v] = 0;
-        }
         prevSrc_[v] = src;
     }
 
