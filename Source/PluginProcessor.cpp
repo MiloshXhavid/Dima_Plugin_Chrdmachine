@@ -1147,9 +1147,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         tp.heldPitches[v]  = heldPitch_[v];
         tp.midiChannels[v] = voiceChs[v];
     }
-    tp.randomDensity      = apvts.getRawParameterValue(ParamID::randomDensity)->load();
-    tp.randomGateTime     = apvts.getRawParameterValue(ParamID::randomGateTime)->load();
-    tp.joystickGateTime   = apvts.getRawParameterValue("arpGateTime")->load() / 100.0f * 2.0f;
+    tp.randomPopulation  = apvts.getRawParameterValue("randomPopulation")->load();
+    tp.randomProbability = apvts.getRawParameterValue("randomProbability")->load();
+    tp.gateLength        = apvts.getRawParameterValue("gateLength")->load();
+    // joystickGateTime: seconds of stillness before Joystick-mode gate closes.
+    // arpGateTime was removed in Phase 20; use a fixed 1.0 s constant until a dedicated param is added.
+    tp.joystickGateTime   = 1.0f;
     // Per-voice random subdivisions (RandomSubdiv is a file-scope enum class in TriggerSystem.h)
     for (int v = 0; v < 4; ++v)
     {
