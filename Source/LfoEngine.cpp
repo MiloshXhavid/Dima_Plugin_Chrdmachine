@@ -17,6 +17,9 @@ void LfoEngine::reset()
     shHeld_         = 0.0f;
     prevCycle_      = -1;      // -1 sentinel ensures S&H fires on the very first block
     prevDawPlaying_ = false;
+    // Recording state is intentionally NOT reset here — reset() is called on
+    // transport stop, but per CONTEXT.md "Looper Stop → LFO keeps its current state".
+    // clearRecording() is called explicitly when looper clear fires.
 }
 
 // ─── process() ────────────────────────────────────────────────────────────────
@@ -107,15 +110,51 @@ float LfoEngine::process(const ProcessParams& p)
     // ── 7. Evaluate waveform ──────────────────────────────────────────────────
     float output = evaluateWaveform(p.waveform, static_cast<float>(normalizedPhase));
 
-    // ── 8. Distortion — additive LCG noise ───────────────────────────────────
+    // ── 9. Apply level / depth (moved before distortion so capture stores post-level value)
+    // recBuf_ stores post-level, pre-distortion values. This satisfies LFOREC-06:
+    // Distort is applied live and never recorded.
+    output *= p.level;
+
+    // ── Recording capture / Playback read ────────────────────────────────────
+    {
+        const int state = recState_.load(std::memory_order_relaxed);
+        if (state == static_cast<int>(LfoRecState::Recording))
+        {
+            // Write one value per processBlock call.
+            // Wraps at kRecBufSize (ring behavior after buffer is full).
+            recBuf_[captureWriteIdx_] = output;
+            captureWriteIdx_ = (captureWriteIdx_ + 1) % kRecBufSize;
+            ++capturedCount_;
+            // NOTE: state transition Recording→Playback is driven by processBlock()
+            // edge-detecting looper_.isRecording() false edge. Do NOT self-transition here.
+        }
+        else if (state == static_cast<int>(LfoRecState::Playback))
+        {
+            // playbackPhase is [0.0, 1.0) — set by processBlock from looper beat position.
+            // capturedCount_ is the number of valid samples written during recording.
+            // If nothing was captured (capturedCount_ == 0), output stays as live waveform
+            // (safe fallback — should not happen if processor logic is correct).
+            if (capturedCount_ > 0)
+            {
+                const int   validCount = std::min(capturedCount_, kRecBufSize);
+                const float fIdx       = p.playbackPhase * static_cast<float>(validCount);
+                const int   i0         = static_cast<int>(fIdx) % validCount;
+                const int   i1         = (i0 + 1) % validCount;
+                const float frac       = fIdx - static_cast<float>(static_cast<int>(fIdx));
+                output = recBuf_[i0] + frac * (recBuf_[i1] - recBuf_[i0]);
+                // Do NOT multiply output by p.level — recBuf_ already contains post-level values.
+            }
+        }
+        // Unarmed or Armed: output is the live waveform (no modification).
+    }
+
+    // ── 8. Distortion — additive LCG noise (always applied, including during Playback) ──
+    // distortion = 0 → bypass. This is the LIVE distortion application (LFOREC-06).
     // Applied to all waveforms EXCEPT Random (Random is already pure noise;
     // layering more noise on it is a no-op per CONTEXT.md).
-    // distortion = 0 → bypass, clean waveform output (exact, no noise).
     if (p.waveform != Waveform::Random && p.distortion > 0.0f)
         output += p.distortion * nextLcg();
 
-    // ── 9. Apply level / depth ────────────────────────────────────────────────
-    output *= p.level;
     return output;
 }
 
@@ -161,4 +200,35 @@ float LfoEngine::evaluateWaveform(Waveform w, float phi)
         default:
             return 0.0f;
     }
+}
+
+// ─── Recording state machine ───────────────────────────────────────────────────
+
+void LfoEngine::arm()
+{
+    // Unarmed→Armed or Playback→Armed (re-arm overwrites on next record cycle).
+    // Called from message thread via PluginProcessor passthrough.
+    recState_.store(static_cast<int>(LfoRecState::Armed), std::memory_order_relaxed);
+}
+
+void LfoEngine::clearRecording()
+{
+    // Any state→Unarmed. Does NOT zero recBuf_ (preserving old data is harmless).
+    recState_.store(static_cast<int>(LfoRecState::Unarmed), std::memory_order_relaxed);
+    captureWriteIdx_ = 0;
+    capturedCount_   = 0;
+}
+
+void LfoEngine::startCapture()
+{
+    // Armed→Recording. Resets write head. Called from audio thread only.
+    captureWriteIdx_ = 0;
+    capturedCount_   = 0;
+    recState_.store(static_cast<int>(LfoRecState::Recording), std::memory_order_relaxed);
+}
+
+void LfoEngine::stopCapture()
+{
+    // Recording→Playback. Called from audio thread only (processBlock falling edge).
+    recState_.store(static_cast<int>(LfoRecState::Playback), std::memory_order_relaxed);
 }
