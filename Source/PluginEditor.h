@@ -319,6 +319,7 @@ private:
 
     // ── LFO panels ─────────────────────────────────────────────────────────────
     juce::ComboBox   lfoXShapeBox_,    lfoYShapeBox_;
+    juce::ComboBox   lfoXCcDestBox_,   lfoYCcDestBox_;
     juce::Slider     lfoXRateSlider_,  lfoYRateSlider_;
     juce::Slider     lfoXPhaseSlider_, lfoYPhaseSlider_;
     juce::Slider     lfoXLevelSlider_, lfoYLevelSlider_;
@@ -376,6 +377,7 @@ private:
 
     // LFO X
     std::unique_ptr<ComboAtt>  lfoXShapeAtt_;
+    std::unique_ptr<ComboAtt>  lfoXCcDestAtt_;
     std::unique_ptr<SliderAtt> lfoXPhaseAtt_, lfoXLevelAtt_, lfoXDistAtt_;
     std::unique_ptr<ButtonAtt> lfoXSyncAtt_, lfoXEnabledAtt_;
     // Rate slider uses SliderParameterAttachment (swap on sync toggle)
@@ -383,9 +385,19 @@ private:
 
     // LFO Y
     std::unique_ptr<ComboAtt>  lfoYShapeAtt_;
+    std::unique_ptr<ComboAtt>  lfoYCcDestAtt_;
     std::unique_ptr<SliderAtt> lfoYPhaseAtt_, lfoYLevelAtt_, lfoYDistAtt_;
     std::unique_ptr<ButtonAtt> lfoYSyncAtt_, lfoYEnabledAtt_;
     std::unique_ptr<juce::SliderParameterAttachment> lfoYRateAtt_;
+
+    // LFO/gate slider drag-in-progress flags (prevent timerCallback overriding an active drag)
+    bool lfoXRateDragging_  = false;
+    bool lfoXPhaseDragging_ = false;
+    bool lfoXLevelDragging_ = false;
+    bool lfoYRateDragging_  = false;
+    bool lfoYPhaseDragging_ = false;
+    bool lfoYLevelDragging_ = false;
+    bool gateDragging_      = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

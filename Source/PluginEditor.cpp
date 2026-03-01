@@ -482,40 +482,58 @@ void TouchPlate::mouseUp(const juce::MouseEvent&)
 
 void TouchPlate::paint(juce::Graphics& g)
 {
-    const int src = static_cast<int>(
+    const int  src      = static_cast<int>(
         proc_.apvts.getRawParameterValue("triggerSource" + juce::String(voice_))->load());
-    const bool isPadMode = (src == 0 || src == 3);  // 0 = TouchPlate, 3 = RandomHold (also pad-driven)
-    const bool active    = isPadMode && proc_.isGateOpen(voice_);
-    const bool arpStep   = (proc_.getArpCurrentVoice() == voice_);
-    const bool looperOn  = proc_.isLooperVoiceActive(voice_);
+    const bool gateOpen = proc_.isGateOpen(voice_);
+    const bool arpStep  = (proc_.getArpCurrentVoice() == voice_);
+    const bool looperOn = proc_.isLooperVoiceActive(voice_);
+
+    // Per-source base and active colours
+    // 0 = Pad (TouchPlate), 1 = Joystick, 2 = RandomFree, 3 = RandomHold
+    juce::Colour baseClr, activeClr;
+    switch (src)
+    {
+        case 1:  // Joystick
+            baseClr   = juce::Colour(0xFF2D1B4E);
+            activeClr = juce::Colour(0xFFB06EFF);
+            break;
+        case 2:  // Random Free
+            baseClr   = juce::Colour(0xFF3D2000);
+            activeClr = juce::Colour(0xFFFF9800);
+            break;
+        case 3:  // Random Hold
+            baseClr   = juce::Colour(0xFF1A3D2A);
+            activeClr = Clr::gateOn;
+            break;
+        default: // 0 = Pad
+            baseClr   = Clr::gateOff;
+            activeClr = Clr::gateOn;
+            break;
+    }
 
     juce::Colour fillClr;
-    if (active)
-        fillClr = Clr::gateOn;                          // live pad held: bright green
-    else if (looperOn)
-        fillClr = Clr::gateOn;                          // looper playback: bright green
-    else if (arpStep)
-        fillClr = juce::Colour(0xFF00C8A8);             // arp step: cyan/teal
-    else if (isPadMode)
-        fillClr = Clr::gateOff;
+    if (arpStep)
+        fillClr = juce::Colour(0xFF00C8A8);     // arp step: cyan (overrides all)
+    else if (looperOn || gateOpen)
+        fillClr = activeClr;
     else
-        fillClr = Clr::gateOff.darker(0.3f);            // dimmed in JOY or RND mode
+        fillClr = baseClr;
 
     constexpr float padR = 4.0f;
     g.setColour(fillClr);
     g.fillRoundedRectangle(getLocalBounds().toFloat(), padR);
 
-    g.setColour(isPadMode ? Clr::text : Clr::textDim);
+    g.setColour(Clr::text);
     g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 13.0f, juce::Font::bold));
     g.drawText(label_, getLocalBounds(), juce::Justification::centred);
 
     juce::Colour borderClr;
-    if (active || looperOn)
-        borderClr = Clr::gateOn.brighter(0.35f);
-    else if (arpStep)
+    if (arpStep)
         borderClr = juce::Colour(0xFF00E8C8);
+    else if (looperOn || gateOpen)
+        borderClr = activeClr.brighter(0.35f);
     else
-        borderClr = (isPadMode ? Clr::accent : Clr::accent.darker(0.3f));
+        borderClr = baseClr.brighter(0.4f);
     g.setColour(borderClr);
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), padR, 1.5f);
 }
@@ -1081,11 +1099,11 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     styleLabel(randomSubdivLabel_, "SUBDIV");
     addAndMakeVisible(randomSubdivLabel_);
     {
-        const juce::StringArray subdivChoices { "1/4", "1/8", "1/16", "1/32", "1/64" };
+        const juce::StringArray subdivChoices { "4/1", "2/1", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" };
         for (int v = 0; v < 4; ++v)
         {
             randomSubdivBox_[v].addItemList(subdivChoices, 1);
-            randomSubdivBox_[v].setSelectedItemIndex(1, juce::dontSendNotification);
+            randomSubdivBox_[v].setSelectedItemIndex(5, juce::dontSendNotification);
             styleCombo(randomSubdivBox_[v]);
             addAndMakeVisible(randomSubdivBox_[v]);
             randomSubdivAtt_[v] = std::make_unique<juce::ComboBoxParameterAttachment>(
@@ -1533,6 +1551,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     styleLabel(arpGateTimeLabel_, "GATE LEN");
     addAndMakeVisible(arpGateTimeLabel_);
     arpGateTimeAtt_ = std::make_unique<SliderAtt>(p.apvts, "gateLength", arpGateTimeKnob_);
+    arpGateTimeKnob_.onDragStart = [this] { gateDragging_ = true;  };
+    arpGateTimeKnob_.onDragEnd   = [this] { gateDragging_ = false; };
 
     // ── LFO X panel ───────────────────────────────────────────────────────────
     // Shape ComboBox
@@ -1561,6 +1581,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(lfoXRateSlider_);
     if (auto* param = p.apvts.getParameter("lfoXRate"))
         lfoXRateAtt_ = std::make_unique<juce::SliderParameterAttachment>(*param, lfoXRateSlider_, nullptr);
+    lfoXRateSlider_.onDragStart = [this] { lfoXRateDragging_ = true;  };
+    lfoXRateSlider_.onDragEnd   = [this] { lfoXRateDragging_ = false; };
 
     // Phase slider
     lfoXPhaseSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -1571,6 +1593,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfoXPhaseSlider_.setTooltip("LFO X phase offset (0-360 degrees)");
     addAndMakeVisible(lfoXPhaseSlider_);
     lfoXPhaseAtt_ = std::make_unique<SliderAtt>(p.apvts, "lfoXPhase", lfoXPhaseSlider_);
+    lfoXPhaseSlider_.onDragStart = [this] { lfoXPhaseDragging_ = true;  };
+    lfoXPhaseSlider_.onDragEnd   = [this] { lfoXPhaseDragging_ = false; };
 
     // Level slider
     lfoXLevelSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -1581,6 +1605,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfoXLevelSlider_.setTooltip("LFO X level (0 = off, 1 = full range, 2 = double)");
     addAndMakeVisible(lfoXLevelSlider_);
     lfoXLevelAtt_ = std::make_unique<SliderAtt>(p.apvts, "lfoXLevel", lfoXLevelSlider_);
+    lfoXLevelSlider_.onDragStart = [this] { lfoXLevelDragging_ = true;  };
+    lfoXLevelSlider_.onDragEnd   = [this] { lfoXLevelDragging_ = false; };
 
     // Distortion slider
     lfoXDistSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -1591,6 +1617,23 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfoXDistSlider_.setTooltip("LFO X distortion (jitter/noise amount 0-1)");
     addAndMakeVisible(lfoXDistSlider_);
     lfoXDistAtt_ = std::make_unique<SliderAtt>(p.apvts, "lfoXDistortion", lfoXDistSlider_);
+
+    // CC Dest ComboBox
+    {
+        static const juce::StringArray ccDests { "Off","CC1 \xe2\x80\x93 Mod Wheel","CC2 \xe2\x80\x93 Breath",
+            "CC5 \xe2\x80\x93 Portamento","CC7 \xe2\x80\x93 Volume","CC10 \xe2\x80\x93 Pan",
+            "CC11 \xe2\x80\x93 Expression","CC12 \xe2\x80\x93 VCF LFO",
+            "CC16 \xe2\x80\x93 GenPurp 1","CC17 \xe2\x80\x93 GenPurp 2",
+            "CC71 \xe2\x80\x93 Resonance","CC72 \xe2\x80\x93 Release",
+            "CC73 \xe2\x80\x93 Attack","CC74 \xe2\x80\x93 Filter Cut","CC75 \xe2\x80\x93 Decay",
+            "CC76 \xe2\x80\x93 Vibrato Rate","CC77 \xe2\x80\x93 Vibrato Depth",
+            "CC91 \xe2\x80\x93 Reverb","CC93 \xe2\x80\x93 Chorus" };
+        lfoXCcDestBox_.addItemList(ccDests, 1);
+        styleCombo(lfoXCcDestBox_);
+        lfoXCcDestBox_.setTooltip("LFO X \xe2\x86\x92 MIDI CC output (on filter channel)");
+        addAndMakeVisible(lfoXCcDestBox_);
+        lfoXCcDestAtt_ = std::make_unique<ComboAtt>(p.apvts, "lfoXCcDest", lfoXCcDestBox_);
+    }
 
     // Sync button
     lfoXSyncBtn_.setButtonText("SYNC");
@@ -1663,6 +1706,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(lfoYRateSlider_);
     if (auto* param = p.apvts.getParameter("lfoYRate"))
         lfoYRateAtt_ = std::make_unique<juce::SliderParameterAttachment>(*param, lfoYRateSlider_, nullptr);
+    lfoYRateSlider_.onDragStart = [this] { lfoYRateDragging_ = true;  };
+    lfoYRateSlider_.onDragEnd   = [this] { lfoYRateDragging_ = false; };
 
     // Phase slider
     lfoYPhaseSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -1673,6 +1718,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfoYPhaseSlider_.setTooltip("LFO Y phase offset (0-360 degrees)");
     addAndMakeVisible(lfoYPhaseSlider_);
     lfoYPhaseAtt_ = std::make_unique<SliderAtt>(p.apvts, "lfoYPhase", lfoYPhaseSlider_);
+    lfoYPhaseSlider_.onDragStart = [this] { lfoYPhaseDragging_ = true;  };
+    lfoYPhaseSlider_.onDragEnd   = [this] { lfoYPhaseDragging_ = false; };
 
     // Level slider
     lfoYLevelSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -1683,6 +1730,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfoYLevelSlider_.setTooltip("LFO Y level (0 = off, 1 = full range, 2 = double)");
     addAndMakeVisible(lfoYLevelSlider_);
     lfoYLevelAtt_ = std::make_unique<SliderAtt>(p.apvts, "lfoYLevel", lfoYLevelSlider_);
+    lfoYLevelSlider_.onDragStart = [this] { lfoYLevelDragging_ = true;  };
+    lfoYLevelSlider_.onDragEnd   = [this] { lfoYLevelDragging_ = false; };
 
     // Distortion slider
     lfoYDistSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -1693,6 +1742,23 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfoYDistSlider_.setTooltip("LFO Y distortion (jitter/noise amount 0-1)");
     addAndMakeVisible(lfoYDistSlider_);
     lfoYDistAtt_ = std::make_unique<SliderAtt>(p.apvts, "lfoYDistortion", lfoYDistSlider_);
+
+    // CC Dest ComboBox
+    {
+        static const juce::StringArray ccDests { "Off","CC1 \xe2\x80\x93 Mod Wheel","CC2 \xe2\x80\x93 Breath",
+            "CC5 \xe2\x80\x93 Portamento","CC7 \xe2\x80\x93 Volume","CC10 \xe2\x80\x93 Pan",
+            "CC11 \xe2\x80\x93 Expression","CC12 \xe2\x80\x93 VCF LFO",
+            "CC16 \xe2\x80\x93 GenPurp 1","CC17 \xe2\x80\x93 GenPurp 2",
+            "CC71 \xe2\x80\x93 Resonance","CC72 \xe2\x80\x93 Release",
+            "CC73 \xe2\x80\x93 Attack","CC74 \xe2\x80\x93 Filter Cut","CC75 \xe2\x80\x93 Decay",
+            "CC76 \xe2\x80\x93 Vibrato Rate","CC77 \xe2\x80\x93 Vibrato Depth",
+            "CC91 \xe2\x80\x93 Reverb","CC93 \xe2\x80\x93 Chorus" };
+        lfoYCcDestBox_.addItemList(ccDests, 1);
+        styleCombo(lfoYCcDestBox_);
+        lfoYCcDestBox_.setTooltip("LFO Y \xe2\x86\x92 MIDI CC output (on filter channel)");
+        addAndMakeVisible(lfoYCcDestBox_);
+        lfoYCcDestAtt_ = std::make_unique<ComboAtt>(p.apvts, "lfoYCcDest", lfoYCcDestBox_);
+    }
 
     // Sync button
     lfoYSyncBtn_.setButtonText("SYNC");
@@ -2139,6 +2205,10 @@ void PluginEditor::resized()
         lfoXShapeBox_.setBounds(col.removeFromTop(22));
         col.removeFromTop(4);
 
+        // Row 1b: CC Dest ComboBox
+        lfoXCcDestBox_.setBounds(col.removeFromTop(22));
+        col.removeFromTop(4);
+
         // Row 2: Rate slider (left 34px = label space in paint())
         {
             auto row = col.removeFromTop(18);
@@ -2210,6 +2280,10 @@ void PluginEditor::resized()
 
         // Row 1: Shape ComboBox (full width)
         lfoYShapeBox_.setBounds(col.removeFromTop(22));
+        col.removeFromTop(4);
+
+        // Row 1b: CC Dest ComboBox
+        lfoYCcDestBox_.setBounds(col.removeFromTop(22));
         col.removeFromTop(4);
 
         // Row 2: Rate slider (left 34px = label space in paint())
@@ -2776,25 +2850,28 @@ void PluginEditor::timerCallback()
             switch (xMode)
             {
                 case 2:  // LFO-X Freq — only update in free mode (sync mode has no rate slider to track)
-                    if (!xSyncOn)
+                    if (!xSyncOn && !lfoXRateDragging_)
                         lfoXRateSlider_.setValue(
                             proc_.lfoXRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
                 case 3:  // LFO-X Phase
-                    lfoXPhaseSlider_.setValue(
-                        proc_.lfoXPhaseDisplay_.load(std::memory_order_relaxed),
-                        juce::dontSendNotification);
+                    if (!lfoXPhaseDragging_)
+                        lfoXPhaseSlider_.setValue(
+                            proc_.lfoXPhaseDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
                     break;
                 case 4:  // LFO-X Level
-                    lfoXLevelSlider_.setValue(
-                        proc_.lfoXLevelDisplay_.load(std::memory_order_relaxed),
-                        juce::dontSendNotification);
+                    if (!lfoXLevelDragging_)
+                        lfoXLevelSlider_.setValue(
+                            proc_.lfoXLevelDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
                     break;
                 case 5:  // Gate Length
-                    arpGateTimeKnob_.setValue(
-                        proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
-                        juce::dontSendNotification);
+                    if (!gateDragging_)
+                        arpGateTimeKnob_.setValue(
+                            proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
                     break;
                 default: break;
             }
@@ -2806,25 +2883,28 @@ void PluginEditor::timerCallback()
             switch (yMode)
             {
                 case 2:  // LFO-Y Freq
-                    if (!ySyncOn)
+                    if (!ySyncOn && !lfoYRateDragging_)
                         lfoYRateSlider_.setValue(
                             proc_.lfoYRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
                 case 3:  // LFO-Y Phase
-                    lfoYPhaseSlider_.setValue(
-                        proc_.lfoYPhaseDisplay_.load(std::memory_order_relaxed),
-                        juce::dontSendNotification);
+                    if (!lfoYPhaseDragging_)
+                        lfoYPhaseSlider_.setValue(
+                            proc_.lfoYPhaseDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
                     break;
                 case 4:  // LFO-Y Level
-                    lfoYLevelSlider_.setValue(
-                        proc_.lfoYLevelDisplay_.load(std::memory_order_relaxed),
-                        juce::dontSendNotification);
+                    if (!lfoYLevelDragging_)
+                        lfoYLevelSlider_.setValue(
+                            proc_.lfoYLevelDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
                     break;
                 case 5:  // Gate Length — Y also writes gateLengthDisplay_; last writer wins (known limitation)
-                    arpGateTimeKnob_.setValue(
-                        proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
-                        juce::dontSendNotification);
+                    if (!gateDragging_)
+                        arpGateTimeKnob_.setValue(
+                            proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
                     break;
                 default: break;
             }

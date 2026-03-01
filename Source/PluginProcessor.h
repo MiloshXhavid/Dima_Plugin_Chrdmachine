@@ -214,6 +214,10 @@ private:
     float lfoXRampOut_ = 0.0f;   // current ramped LFO X contribution
     float lfoYRampOut_ = 0.0f;   // current ramped LFO Y contribution
 
+    // LFO direct CC dedup — audio-thread only. -1 = force-send on next block.
+    int prevLfoCcX_ = -1;
+    int prevLfoCcY_ = -1;
+
     double sampleRate_ = 44100.0;
     std::atomic<float> effectiveBpm_ { 120.0f };
 

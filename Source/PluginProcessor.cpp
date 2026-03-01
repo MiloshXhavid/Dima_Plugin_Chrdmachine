@@ -179,15 +179,15 @@ PluginProcessor::createParameterLayout()
     addFloat("randomProbability", "Random Probability", 0.0f, 1.0f,  1.0f);
     addFloat("gateLength",        "Gate Length",        0.0f, 1.0f,  0.5f);
     {
-        const juce::StringArray subdivChoices { "1/4", "1/8", "1/16", "1/32", "1/64" };
+        const juce::StringArray subdivChoices { "4/1", "2/1", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" };
         layout.add(std::make_unique<juce::AudioParameterChoice>(
-            "randomSubdiv0", "Random Subdiv Root",    subdivChoices, 1));
+            "randomSubdiv0", "Random Subdiv Root",    subdivChoices, 5));  // default = 1/8
         layout.add(std::make_unique<juce::AudioParameterChoice>(
-            "randomSubdiv1", "Random Subdiv Third",   subdivChoices, 1));
+            "randomSubdiv1", "Random Subdiv Third",   subdivChoices, 5));
         layout.add(std::make_unique<juce::AudioParameterChoice>(
-            "randomSubdiv2", "Random Subdiv Fifth",   subdivChoices, 1));
+            "randomSubdiv2", "Random Subdiv Fifth",   subdivChoices, 5));
         layout.add(std::make_unique<juce::AudioParameterChoice>(
-            "randomSubdiv3", "Random Subdiv Tension", subdivChoices, 1));
+            "randomSubdiv3", "Random Subdiv Tension", subdivChoices, 5));
     }
 
     // Random clock mode
@@ -289,6 +289,18 @@ PluginProcessor::createParameterLayout()
         addChoice(ParamID::lfoXSubdiv, "LFO X Subdivision", subdivs, 2);  // default: 1/4
         addChoice(ParamID::lfoYSubdiv, "LFO Y Subdivision", subdivs, 2);  // default: 1/4
     }
+    {
+        const juce::StringArray ccDests { "Off","CC1 \xe2\x80\x93 Mod Wheel","CC2 \xe2\x80\x93 Breath",
+            "CC5 \xe2\x80\x93 Portamento","CC7 \xe2\x80\x93 Volume","CC10 \xe2\x80\x93 Pan",
+            "CC11 \xe2\x80\x93 Expression","CC12 \xe2\x80\x93 VCF LFO",
+            "CC16 \xe2\x80\x93 GenPurp 1","CC17 \xe2\x80\x93 GenPurp 2",
+            "CC71 \xe2\x80\x93 Resonance","CC72 \xe2\x80\x93 Release",
+            "CC73 \xe2\x80\x93 Attack","CC74 \xe2\x80\x93 Filter Cut","CC75 \xe2\x80\x93 Decay",
+            "CC76 \xe2\x80\x93 Vibrato Rate","CC77 \xe2\x80\x93 Vibrato Depth",
+            "CC91 \xe2\x80\x93 Reverb","CC93 \xe2\x80\x93 Chorus" };
+        layout.add(std::make_unique<juce::AudioParameterChoice>("lfoXCcDest","LFO X CC Dest",ccDests,0));
+        layout.add(std::make_unique<juce::AudioParameterChoice>("lfoYCcDest","LFO Y CC Dest",ccDests,0));
+    }
 
     // ── Sub Octave (Phase 19) ─────────────────────────────────────────────────
     addBool("subOct0", "Sub Oct Root",    false);
@@ -335,7 +347,7 @@ void PluginProcessor::prepareToPlay(double sr, int /*blockSize*/)
     lfoY_.reset();
     sampleCounter_ = 0;
     prevBeatCount_ = -1.0;
-    smoothedGateLength_.reset(sampleRate_, 0.05);  // 50ms linear ramp
+    smoothedGateLength_.reset(sampleRate_, 0.015);  // 15ms — removes zipper noise without sluggish feel
     smoothedGateLength_.setCurrentAndTargetValue(
         apvts.getRawParameterValue("gateLength")->load());
 }
@@ -441,6 +453,14 @@ void PluginProcessor::resetNoteCount() noexcept
         looperActiveSubPitch_[v] = -1;
         subOctSounding_[v].store(false, std::memory_order_relaxed);
     }
+}
+
+// ─── processBlock helpers ─────────────────────────────────────────────────────
+
+static int ccDestToNumber(int idx)
+{
+    static const int t[] = {-1,1,2,5,7,10,11,12,16,17,71,72,73,74,75,76,77,91,93};
+    return (idx >= 0 && idx < (int)std::size(t)) ? t[idx] : -1;
 }
 
 // ─── processBlock ─────────────────────────────────────────────────────────────
@@ -1608,6 +1628,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             midi.addEvent(juce::MidiMessage::controllerEvent(fCh, 76, 0), 0);
             prevCcCut_.store(0, std::memory_order_relaxed);
             prevCcRes_.store(0, std::memory_order_relaxed);
+            prevLfoCcX_ = prevLfoCcY_ = -1;
         }
 
         // Determine filter source — all gated by the filterMod on/off toggle.
@@ -1713,7 +1734,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             {
                 if (xMode >= 2 && xMode <= 5)
                 {
-                    const float stick = prevFilterX_ * (xAtten / 100.0f);  // -1..+1 attenuated
+                    // PS4 stick drift: apply centre deadzone before offset computation.
+                    // Values within ±kDeadzone are treated as 0 so the slider settles cleanly.
+                    constexpr float kDeadzone = 0.12f;
+                    const float rawX  = prevFilterX_;
+                    const float deadX = (std::abs(rawX) < kDeadzone) ? 0.0f : rawX;
+                    const float stick = deadX * (xAtten / 100.0f);  // -1..+1 attenuated
 
                     switch (xMode)
                     {
@@ -1764,7 +1790,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
                 if (yMode >= 2 && yMode <= 5)
                 {
-                    const float stick = prevFilterY_ * (yAtten / 100.0f);  // -1..+1 attenuated
+                    constexpr float kDeadzone = 0.12f;
+                    const float rawY  = prevFilterY_;
+                    const float deadY = (std::abs(rawY) < kDeadzone) ? 0.0f : rawY;
+                    const float stick = deadY * (yAtten / 100.0f);  // -1..+1 attenuated
 
                     switch (yMode)
                     {
@@ -1816,6 +1845,25 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 if (xMode != 2) lfoXSubdivMult_.store(1.0f, std::memory_order_relaxed);
                 if (yMode != 2) lfoYSubdivMult_.store(1.0f, std::memory_order_relaxed);
             }
+        }
+    }
+
+    // ── LFO direct CC output ──────────────────────────────────────────────────
+    {
+        const int fCh    = effectiveFilterChannel();
+        const bool xOn   = *apvts.getRawParameterValue("lfoXEnabled") > 0.5f;
+        const bool yOn   = *apvts.getRawParameterValue("lfoYEnabled") > 0.5f;
+        const int xCcNum = ccDestToNumber((int)*apvts.getRawParameterValue("lfoXCcDest"));
+        const int yCcNum = ccDestToNumber((int)*apvts.getRawParameterValue("lfoYCcDest"));
+        if (xOn && xCcNum >= 0)
+        {
+            const int v = juce::jlimit(0, 127, (int)std::roundf(64.0f + lfoXRampOut_ * 63.5f));
+            if (v != prevLfoCcX_) { midi.addEvent(juce::MidiMessage::controllerEvent(fCh, xCcNum, v), 0); prevLfoCcX_ = v; }
+        }
+        if (yOn && yCcNum >= 0)
+        {
+            const int v = juce::jlimit(0, 127, (int)std::roundf(64.0f + lfoYRampOut_ * 63.5f));
+            if (v != prevLfoCcY_) { midi.addEvent(juce::MidiMessage::controllerEvent(fCh, yCcNum, v), 0); prevLfoCcY_ = v; }
         }
     }
 
