@@ -233,18 +233,22 @@ void TriggerSystem::processBlock(const ProcessParams& p)
         }
         else if (src == TriggerSource::RandomHold)
         {
-            const bool padHeld   = padPressed_[v].load();
-            const bool justFired = padJustFired_[v].exchange(false);  // consume rising-edge flag
-            // Hard-cut: pad released mid-note -> immediate note-off
+            const bool padHeld = padPressed_[v].load();
+            padJustFired_[v].exchange(false);  // consume edge flag — RandomHold does not use it
+
+            // Pad released mid-note → hard cut
             if (!padHeld && gateOpen_[v].load())
             {
                 fireNoteOff(v, ch - 1, 0, p);
                 randomGateRemaining_[v] = 0;
             }
-            // Touch (rising edge) -> fire immediately; auto gate length closes the note
-            else if (justFired)
+            // Pad held → random clock gates through (same probability model as RandomFree)
+            else if (padHeld && randomFired[v])
             {
-                trigger = true;
+                const float popProb  = hitsPerBarToProbability(p.randomPopulation, p.randomSubdiv[v]);
+                const float userProb = p.randomProbability;
+                if (nextRandom() < popProb && nextRandom() < userProb)
+                    trigger = true;
             }
         }
 
@@ -282,21 +286,14 @@ void TriggerSystem::processBlock(const ProcessParams& p)
 
         // Auto note-off countdown for RandomFree / RandomHold sources
         // The -1 sentinel (manual open gate) is correctly skipped by the > 0 guard.
-        // RandomHold: while the pad is physically held the gate stays open;
-        // the timer is paused so the note sustains for as long as the pad is held.
-        // Pad release fires note-off immediately (handled above).
         if ((src == TriggerSource::RandomFree || src == TriggerSource::RandomHold)
             && gateOpen_[v].load() && randomGateRemaining_[v] > 0)
         {
-            const bool padSustain = (src == TriggerSource::RandomHold && padPressed_[v].load());
-            if (!padSustain)
+            randomGateRemaining_[v] -= p.blockSize;
+            if (randomGateRemaining_[v] <= 0)
             {
-                randomGateRemaining_[v] -= p.blockSize;
-                if (randomGateRemaining_[v] <= 0)
-                {
-                    randomGateRemaining_[v] = 0;
-                    fireNoteOff(v, ch - 1, p.blockSize - 1, p);
-                }
+                randomGateRemaining_[v] = 0;
+                fireNoteOff(v, ch - 1, p.blockSize - 1, p);
             }
         }
         // Clear random gate countdown when source is not a random type.

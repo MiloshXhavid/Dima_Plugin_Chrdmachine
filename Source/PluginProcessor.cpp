@@ -744,7 +744,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         prevIsDawPlaying_ = isDawPlaying;
         if (justStopped)
         {
-            // Explicit per-pitch note-offs for trigger and arp voices before generic sweep.
+            // Explicit per-pitch note-offs for ALL tracked sources before the generic sweep.
+            // resetNoteCount() zeroes counts, so these must fire BEFORE that call to ensure
+            // the looper stop detection (which runs after us) still sees valid counts.
             for (int v = 0; v < 4; ++v)
             {
                 const int pitch = trigger_.getActivePitch(v);
@@ -752,6 +754,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     midi.addEvent(juce::MidiMessage::noteOff(sentChannel_[v], pitch, (uint8_t)0), 0);
                 if (subHeldPitch_[v] >= 0)
                     midi.addEvent(juce::MidiMessage::noteOff(sentChannel_[v], subHeldPitch_[v], (uint8_t)0), 0);
+                // Looper notes: send explicit note-off here so they're covered even if
+                // the looper stop detection's noteCount guard fires after the reset.
+                if (looperActivePitch_[v] >= 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(looperActiveCh_[v], looperActivePitch_[v], (uint8_t)0), 0);
+                if (looperActiveSubPitch_[v] >= 0)
+                    midi.addEvent(juce::MidiMessage::noteOff(looperActiveCh_[v], looperActiveSubPitch_[v], (uint8_t)0), 0);
             }
             if (arpActivePitch_ >= 0)
                 midi.addEvent(juce::MidiMessage::noteOff(arpActiveCh_, arpActivePitch_, (uint8_t)0), 0);
@@ -879,10 +887,17 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         }
         trigger_.resetAllGates();
         looperActivePitch_.fill(-1);
+        std::fill(std::begin(looperActiveSubPitch_), std::end(looperActiveSubPitch_), -1);
+        arpActivePitch_ = -1;
+        arpActiveVoice_ = -1;
+        arpNoteOffRemaining_ = 0.0;
         resetNoteCount();
         prevCcCut_.store(-1, std::memory_order_relaxed);
         prevCcRes_.store(-1, std::memory_order_relaxed);
         flashPanic_.fetch_add(1, std::memory_order_relaxed);
+        // Return immediately — panic is a hard MIDI cutoff.
+        // Nothing may fire notes in the remainder of this block.
+        return;
     }
 
     // ── Single-Channel mode/target change detection ───────────────────────────
