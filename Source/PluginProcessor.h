@@ -171,6 +171,12 @@ public:
     std::atomic<float> modulatedJoyX_ { 0.0f  };
     std::atomic<float> modulatedJoyY_ { -1.0f };
 
+    // Subdivision multiplier for LFO sync mode when stick targets LFO Freq (mode index 2).
+    // Written in filter dispatch block; read in LFO ProcessParams block.
+    // 1.0f = no modification (default). Range: 0.25–4.0.
+    std::atomic<float> lfoXSubdivMult_ { 1.0f };
+    std::atomic<float> lfoYSubdivMult_ { 1.0f };
+
     // ── APVTS ─────────────────────────────────────────────────────────────────
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

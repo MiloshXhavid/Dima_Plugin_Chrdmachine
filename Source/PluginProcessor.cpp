@@ -214,10 +214,12 @@ PluginProcessor::createParameterLayout()
         juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 64.0f));
     addInt  (ParamID::filterMidiCh, "Filter MIDI Channel",  1, 16, 1);
     {
-        juce::StringArray yModes { "Resonance", "LFO Rate" };
-        juce::StringArray xModes { "Cutoff",    "VCF LFO",  "Mod Wheel" };
-        addChoice("filterYMode", "Left Stick Y Mode", yModes, 0);  // 0=CC71 Res, 1=CC76 LFO Rate, 2=CC64 Sustain
-        addChoice("filterXMode", "Left Stick X Mode", xModes, 0);  // 0=CC74 Cut, 1=CC12 VCF LFO, 2=CC1 Mod
+        juce::StringArray xModes { "Cutoff (CC74)", "VCF LFO (CC12)", "LFO-X Freq",
+                                    "LFO-X Phase",  "LFO-X Level",    "Gate Length" };
+        juce::StringArray yModes { "Resonance (CC71)", "LFO Rate (CC76)", "LFO-Y Freq",
+                                    "LFO-Y Phase",     "LFO-Y Level",     "Gate Length" };
+        addChoice("filterXMode", "Left Stick X Mode", xModes, 0);  // 0=CC74, 1=CC12, 2=LFO-X Freq, 3=Phase, 4=Level, 5=Gate
+        addChoice("filterYMode", "Left Stick Y Mode", yModes, 0);  // 0=CC71, 1=CC76, 2=LFO-Y Freq, 3=Phase, 4=Level, 5=Gate
     }
 
     // ── MIDI routing ──────────────────────────────────────────────────────────
