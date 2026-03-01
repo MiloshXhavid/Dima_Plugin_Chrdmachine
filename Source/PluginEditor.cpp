@@ -42,9 +42,9 @@ static int snapIntervalToScale(int iv, uint16_t mask, int transpose)
 // ─── Chord name helper ───────────────────────────────────────────────────────
 // Thin JUCE wrapper around computeChordNameStr (see ChordNameHelper.h).
 
-static juce::String computeChordName(const int pitches[4], int transposePc)
+static juce::String computeChordName(const int pitches[4])
 {
-    return juce::String(computeChordNameStr(pitches, transposePc));
+    return juce::String(computeChordNameStr(pitches));
 }
 
 // ─── PixelLookAndFeel implementation ─────────────────────────────────────────
@@ -2886,11 +2886,11 @@ void PluginEditor::timerCallback()
         bpmDisplayLabel_.setText(juce::String(bpm, 1) + " BPM", juce::dontSendNotification);
     }
 
-    // Update OPTION indicator — dim=off, green=octaves mode, red=interval mode
+    // Update OPTION indicator — dim=off, green=arp mode, red=interval mode
     {
         const int optMode = proc_.getGamepad().getOptionMode();
         const juce::String newText = (optMode == 0) ? "OPTION"
-                                   : (optMode == 1) ? "OCTAVE"
+                                   : (optMode == 1) ? "ARP"
                                    :                  "INTRVL";
         const juce::Colour newCol  = (optMode == 0) ? Clr::textDim
                                    : (optMode == 1) ? Clr::gateOn
@@ -2898,6 +2898,47 @@ void PluginEditor::timerCallback()
         if (optionLabel_.getText() != newText)
             optionLabel_.setText(newText, juce::dontSendNotification);
         optionLabel_.setColour(juce::Label::textColourId, newCol);
+
+        // Per-mode control highlight — only update when optMode changes (avoids 30Hz redundant repaints)
+        if (optMode != lastHighlightMode_)
+        {
+            lastHighlightMode_ = optMode;
+
+            // Mode 1 highlight colour (green tint) / Mode 2 highlight colour (muted blue) / no highlight
+            const auto highlightM1 = Clr::gateOn.withAlpha(0.18f);
+            const auto highlightM2 = juce::Colour(0x2d5588cc);   // muted blue at ~18% alpha
+            const auto noHighlight  = juce::Colour(0x00000000);  // transparent = default
+
+            // Mode 1 controls: arp section labels + octave knob labels
+            juce::Label* mode1Labels[] = {
+                &arpSubdivLabel_,
+                &arpOrderLabel_,
+                &rootOctLabel_,
+                &thirdOctLabel_,
+                &fifthOctLabel_,
+                &tensionOctLabel_,
+            };
+            const auto m1Colour = (optMode == 1) ? highlightM1 : noHighlight;
+            for (auto* lbl : mode1Labels)
+            {
+                lbl->setColour(juce::Label::backgroundColourId, m1Colour);
+                lbl->repaint();
+            }
+
+            // Mode 2 controls: transpose label + interval knob labels
+            juce::Label* mode2Labels[] = {
+                &transposeLabel_,
+                &thirdIntLabel_,
+                &fifthIntLabel_,
+                &tensionIntLabel_,
+            };
+            const auto m2Colour = (optMode == 2) ? highlightM2 : noHighlight;
+            for (auto* lbl : mode2Labels)
+            {
+                lbl->setColour(juce::Label::backgroundColourId, m2Colour);
+                lbl->repaint();
+            }
+        }
     }
 
     // Poll controller connection so the status label stays accurate even when the
@@ -3091,8 +3132,7 @@ void PluginEditor::timerCallback()
     // text hasn't changed, so there is no unnecessary repaint cost.
     {
         const auto pitches = proc_.getCurrentPitches();
-        const int transposePc = (int)proc_.apvts.getRawParameterValue("globalTranspose")->load();
-        chordNameLabel_.setText(computeChordName(pitches.data(), transposePc), juce::dontSendNotification);
+        chordNameLabel_.setText(computeChordName(pitches.data()), juce::dontSendNotification);
     }
 
 }

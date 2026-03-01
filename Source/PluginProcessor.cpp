@@ -501,10 +501,17 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             gamepad_.consumeAllNotesTrigger();
         }
 
-        if (gamepad_.consumeLooperStartStop()) looper_.startStop();
-        if (gamepad_.consumeLooperRecord())    looper_.record();
-        if (gamepad_.consumeLooperReset())   { looper_.reset();       flashLoopReset_.fetch_add(1,  std::memory_order_relaxed); }
-        if (gamepad_.consumeLooperDelete())  { looper_.deleteLoop();  flashLoopDelete_.fetch_add(1, std::memory_order_relaxed); }
+        // D-pad: mode 0=BPM/looper, mode 1=octaves (green), mode 2=transpose+intervals (red)
+        const int optMode = gamepad_.getOptionMode();
+
+        // Gate looper face-button consume: in Mode 1, face buttons are arp dispatch (not looper)
+        if (optMode != 1)
+        {
+            if (gamepad_.consumeLooperStartStop()) looper_.startStop();
+            if (gamepad_.consumeLooperRecord())    looper_.record();
+            if (gamepad_.consumeLooperReset())   { looper_.reset();       flashLoopReset_.fetch_add(1,  std::memory_order_relaxed); }
+            if (gamepad_.consumeLooperDelete())  { looper_.deleteLoop();  flashLoopDelete_.fetch_add(1, std::memory_order_relaxed); }
+        }
         if (gamepad_.consumeRightStickTrigger())
         {
             // R3 + held pad (L1/L2/R1/R2): toggle subOctN for that voice.
@@ -525,8 +532,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             (void)anyHeld;
         }
 
-        // D-pad: mode 0=BPM/looper, mode 1=octaves (green), mode 2=transpose+intervals (red)
-        const int optMode = gamepad_.getOptionMode();
         if (optMode == 1)
         {
             // Mode 1 — octaves: up=rootOct  down=3rdOct  left=tenOct  right=5thOct
@@ -536,6 +541,42 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             { const int d = gamepad_.consumeOptionDpadDelta(1); if (d) stepClampingParam(apvts, "thirdOctave",   0, 12, d); }
             { const int d = gamepad_.consumeOptionDpadDelta(2); if (d) stepClampingParam(apvts, "tensionOctave", 0, 12, d); }
             { const int d = gamepad_.consumeOptionDpadDelta(3); if (d) stepClampingParam(apvts, "fifthOctave",   0, 12, d); }
+
+            // Mode 1 face-button arp dispatch (OPT1-01 through OPT1-04)
+            // Circle → toggle arpEnabled; Triangle → step arpSubdiv; Square → step arpOrder; Cross → toggle randomClockSync
+            if (gamepad_.consumeArpCircle())
+            {
+                auto* arpParam = dynamic_cast<juce::AudioParameterBool*>(
+                    apvts.getParameter("arpEnabled"));
+                if (arpParam != nullptr)
+                {
+                    const bool wasOn = arpParam->get();
+                    arpParam->setValueNotifyingHost(wasOn ? 0.0f : 1.0f);
+                    if (!wasOn)  // just turned ON
+                    {
+                        // DAW sync active: existing arpWaitingForPlay_ arm logic fires automatically
+                        // when arpOn reads true at the arp block — no extra action needed here.
+                        // Looper stopped (non-DAW-sync): reset to beat 0 then start playback.
+                        if (!looper_.isSyncToDaw() && !looper_.isPlaying())
+                        {
+                            looper_.reset();
+                            looper_.startStop();
+                            // Note: both calls happen BEFORE looper_.process() call later in this block.
+                            // looper_.process() integrates both commands atomically.
+                        }
+                        // If looper already playing: no looper side-effects.
+                    }
+                }
+            }
+            { const int d = gamepad_.consumeArpRateDelta();  if (d) stepWrappingParam(apvts, "arpSubdiv", 0, 5, d); }
+            { const int d = gamepad_.consumeArpOrderDelta(); if (d) stepWrappingParam(apvts, "arpOrder",  0, 6, d); }
+            if (gamepad_.consumeRndSyncToggle())
+            {
+                auto* rndParam = dynamic_cast<juce::AudioParameterBool*>(
+                    apvts.getParameter("randomClockSync"));
+                if (rndParam != nullptr)
+                    rndParam->setValueNotifyingHost(rndParam->get() ? 0.0f : 1.0f);
+            }
         }
         else if (optMode == 2)
         {

@@ -246,6 +246,9 @@ private:
     // Initialised to current value in constructor so loading a saved state never triggers.
     int lastScalePreset_ = -1;
 
+    // Last-seen optMode for per-mode control highlight — only re-applies when mode changes
+    int lastHighlightMode_ { -1 };
+
     // Flash counters for gamepad button feedback (decremented by timer)
     int resetFlashCounter_    = 0;
     int deleteFlashCounter_   = 0;
