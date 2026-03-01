@@ -44,14 +44,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.5 — Phase 22: LFO Recording (22-02 complete)
+**Current focus:** v1.5 — Phase 22: LFO Recording (COMPLETE)
 
 ## Current Position
 
-Phase: 22 of 25 (LFO Recording) — In progress
-Plan: 22-02 complete (2/? plans)
-Status: Phase 22 plan 02 COMPLETE — PluginProcessor wired as LFO recording authority: edge detection, passthrough methods, playbackPhase injection
-Last activity: 2026-03-01 — Phase 22 plan 02 complete
+Phase: 22 of 25 (LFO Recording) — COMPLETE
+Plan: 22-03 complete (3/3 plans)
+Status: Phase 22 COMPLETE — ARM/CLR buttons wired in PluginEditor with blink, grayout, and 5 post-checkpoint refinement fixes; all 9 DAW verification checks passed
+Last activity: 2026-03-01 — Phase 22 plan 03 complete
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -63,7 +63,7 @@ v1.5 Routing+Expression  [████      ] In progress
   Phase 19  [██████████]   Sub Octave Per Voice   COMPLETE 2026-03-01
   Phase 20  [██████████]   RND Trigger Extensions COMPLETE 2026-03-01
   Phase 21  [██████████]   Left Joystick Targets  COMPLETE 2026-03-01
-  Phase 22  [██        ]   LFO Recording          In progress (22-02 done)
+  Phase 22  [██████████]   LFO Recording          COMPLETE 2026-03-01
   Phase 23  [          ]   Arpeggiator            Not started
   Phase 24  [          ]   Gamepad Option Mode 1  Not started
   Phase 25  [          ]   Distribution           Not started
@@ -72,7 +72,7 @@ v1.5 Routing+Expression  [████      ] In progress
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 44 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 13 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02 + 20-03 + 21-01 + 21-02 + 22-01 + 22-02])
+- Total plans completed: 45 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 14 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02 + 20-03 + 21-01 + 21-02 + 22-01 + 22-02 + 22-03])
 - Average duration: not tracked per plan
 - Total execution time: not tracked
 
@@ -129,6 +129,11 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 22-02]: Edge detection block inserted after looper_.process() return, before chord params — state transitions fire before LFO is processed in same block
 - [Phase 22-02]: playbackPhase computed inside each LFO enabled branch independently to avoid computation when LFO is disabled
 - [Phase 22-02]: loopOut.looperReset has two independent consumers: note-off handler (existing) + new clearRecording dispatch — both fire from same flag without conflict
+- [Phase 22-03]: ARM toggle-cancel: second press while Armed returns to Unarmed (calls clearRecording) — toggle model preferred over fire-and-forget
+- [Phase 22-03]: Immediate capture guard: ARM pressed during active looper playback starts capture immediately, no edge-detect delay
+- [Phase 22-03]: setAlpha() required alongside setEnabled(false) for JUCE TextButton visual grayout in project's custom LookAndFeel
+- [Phase 22-03]: LFO disable clears ARM/recording state — prevents invisible stuck-armed state when Enabled toggle is turned off mid-session
+- [Phase 22-03]: 8x sub-block interpolated LFO capture writes per processBlock call — prevents aliased/blocky playback shapes at typical buffer sizes
 
 ### Pending Todos
 
@@ -141,5 +146,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 22-02-PLAN.md — PluginProcessor LFO recording wiring (edge detection, passthrough methods, playbackPhase)
-Next step: Phase 22 plan 03 — LFO recording UI (ARM/CLR buttons, state polling in timerCallback)
+Stopped at: Completed 22-03-PLAN.md — Phase 22 LFO Recording COMPLETE (ARM/CLR UI, blink, grayout, 5 refinement fixes, 9/9 DAW checks passed)
+Next step: Phase 23 — Arpeggiator (23-01-PLAN.md ready)
