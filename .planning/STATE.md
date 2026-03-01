@@ -31,23 +31,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.5 — Phase 18: Single-Channel Routing
+**Current focus:** v1.5 — Phase 19: Sub Octave Per Voice
 
 ## Current Position
 
-Phase: 18 of 25 (Single-Channel Routing) — IN PROGRESS
-Plan: 2 of 3 in Phase 18 complete; next is Plan 18-03 (Visual Verification)
-Status: Phase 18 Plan 02 complete — Routing UI panel built and wired; Plan 03 (visual verify) next
-Last activity: 2026-02-28 — Plan 18-02 complete (routingModeBox_, singleChanTargetBox_, voiceChBox_[4] with APVTS attachments; timerCallback visibility toggle)
+Phase: 19 of 25 (Sub Octave Per Voice) — IN PROGRESS
+Plan: 1 of 2 in Phase 19 complete; next is Plan 19-02 (UI Buttons)
+Status: Phase 19 Plan 01 complete — Sub-octave APVTS backend implemented; Plan 02 (UI buttons + smoke test) next
+Last activity: 2026-03-01 — Plan 19-01 complete (subOct0..3 APVTS params, snapshot arrays, noteCount_ dedup emission, mid-note toggle, looper gate path, resetNoteCount extension, R3 combo)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
 v1.3 Polish [██████████] SHIPPED 2026-02-25
 v1.4 LFO    [██████████] SHIPPED 2026-02-26
-v1.5 Routing+Expression  [█         ] In progress
+v1.5 Routing+Expression  [██        ] In progress
   Phase 17  [██████████]   Bug Fixes              COMPLETE 2026-02-28
-  Phase 18  [██████    ]   Single-Channel Routing In progress (2/3 plans)
-  Phase 19  [          ]   Sub Octave Per Voice   Not started
+  Phase 18  [██████████]   Single-Channel Routing COMPLETE 2026-02-28
+  Phase 19  [█████     ]   Sub Octave Per Voice   In progress (1/2 plans)
   Phase 20  [          ]   RND Trigger Extensions Not started
   Phase 21  [          ]   Left Joystick Targets  Not started
   Phase 22  [          ]   LFO Recording          Not started
@@ -59,7 +59,7 @@ v1.5 Routing+Expression  [█         ] In progress
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 36 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 5 [Phase 17 complete + 18-01 + 18-02])
+- Total plans completed: 37 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 6 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01])
 - Average duration: not tracked per plan
 - Total execution time: not tracked
 
@@ -86,6 +86,11 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 18-01]: processBlockBypassed uses sentChannel_ snapshots and calls resetNoteCount() on bypass activation
 - [Phase 18-02]: Used full juce::APVTS::ComboBoxAttachment type in header (not ComboAtt alias) — alias declared later in same class, causing MSVC C2923
 - [Phase 18-02]: singleChanTargetBox_ and voiceChBox_ grid share same vertical band in resized(); timerCallback setVisible() toggles exclusivity
+- [Phase 19-01]: std::atomic<bool> used directly for subOctSounding_ (not typedef/alias) — avoids MSVC C2923 (same lesson as Phase 18-02)
+- [Phase 19-01]: resetNoteCount() extended to reset sub arrays — single insertion point covers all 7 flush call sites
+- [Phase 19-01]: Looper stop/reset paths need sub note-offs emitted before resetNoteCount() call (not covered by plan; auto-fixed Rule 2)
+- [Phase 19-01]: R3 alone = no-op; panic removed from gamepad; UI panicBtn_ handles panic going forward
+- [Phase 19-01]: Looper sub-octave uses live SUB8 param at emission time — not baked into loop — consistent with single-channel routing pattern
 
 ### Pending Todos
 
@@ -97,6 +102,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-28
-Stopped at: Completed 18-02-PLAN.md (Routing UI panel — routingModeBox_, singleChanTargetBox_, voiceChBox_[4]; timerCallback visibility toggle)
-Next step: Execute Phase 18 Plan 03 (Visual Verification)
+Last session: 2026-03-01
+Stopped at: Completed 19-01-PLAN.md (Sub-octave backend — APVTS params, snapshot arrays, noteCount_ dedup emission, mid-note toggle loop, looper gate path, resetNoteCount extension, R3 gamepad combo)
+Next step: Execute Phase 19 Plan 02 (Sub-Octave UI Buttons + Smoke Test)

@@ -261,7 +261,7 @@ Plans:
 | 16. Distribution | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 17. Bug Fixes | v1.5 | Complete    | 2026-02-28 | 2026-02-28 |
 | 18. Single-Channel Routing | v1.5 | 3/3 | Complete | 2026-03-01 |
-| 19. Sub Octave Per Voice | v1.5 | 0/2 | Planned | - |
+| 19. Sub Octave Per Voice | 1/2 | In Progress|  | - |
 | 20. Random Trigger System Extensions | v1.5 | 0/TBD | Not started | - |
 | 21. Left Joystick Modulation Expansion | v1.5 | 0/TBD | Not started | - |
 | 22. LFO Recording | v1.5 | 0/TBD | Not started | - |
