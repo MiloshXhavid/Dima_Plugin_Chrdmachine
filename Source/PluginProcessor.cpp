@@ -335,6 +335,9 @@ void PluginProcessor::prepareToPlay(double sr, int /*blockSize*/)
     lfoY_.reset();
     sampleCounter_ = 0;
     prevBeatCount_ = -1.0;
+    smoothedGateLength_.reset(sampleRate_, 0.05);  // 50ms linear ramp
+    smoothedGateLength_.setCurrentAndTargetValue(
+        apvts.getRawParameterValue("gateLength")->load());
 }
 
 void PluginProcessor::releaseResources()
@@ -712,7 +715,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             xp.syncMode     = *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f;
             xp.ppqPosition  = ppqPos;
             xp.isDawPlaying = isDawPlaying;
-            xp.rateHz       = *apvts.getRawParameterValue(ParamID::lfoXRate);
+            xp.rateHz       = (lfoXRateOverride_  >= 0.0f) ? lfoXRateOverride_
+                                                           : *apvts.getRawParameterValue(ParamID::lfoXRate);
             {
                 const bool xSyncOn  = *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f;
                 const int  xCurMode = (int)apvts.getRawParameterValue("filterXMode")->load();
@@ -724,9 +728,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             xp.maxCycleBeats = 16.0;
             xp.waveform     = static_cast<Waveform>(
                 (int)*apvts.getRawParameterValue(ParamID::lfoXWaveform));
-            xp.phaseShift   = *apvts.getRawParameterValue(ParamID::lfoXPhase) / 360.0f;
+            xp.phaseShift   = ((lfoXPhaseOverride_ >= 0.0f) ? lfoXPhaseOverride_
+                                                             : *apvts.getRawParameterValue(ParamID::lfoXPhase))
+                              / 360.0f;
             xp.distortion   = *apvts.getRawParameterValue(ParamID::lfoXDistortion);
-            xp.level        = xLevel;
+            xp.level        = (lfoXLevelOverride_ >= 0.0f) ? lfoXLevelOverride_
+                                                            : xLevel;
             // Inject looper playback position for LFO recording playback sync.
             // Only meaningful when recState == Playback; ignored in all other states.
             {
@@ -748,7 +755,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             yp.syncMode     = *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f;
             yp.ppqPosition  = ppqPos;
             yp.isDawPlaying = isDawPlaying;
-            yp.rateHz       = *apvts.getRawParameterValue(ParamID::lfoYRate);
+            yp.rateHz       = (lfoYRateOverride_  >= 0.0f) ? lfoYRateOverride_
+                                                           : *apvts.getRawParameterValue(ParamID::lfoYRate);
             {
                 const bool ySyncOn  = *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f;
                 const int  yCurMode = (int)apvts.getRawParameterValue("filterYMode")->load();
@@ -760,9 +768,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             yp.maxCycleBeats = 16.0;
             yp.waveform     = static_cast<Waveform>(
                 (int)*apvts.getRawParameterValue(ParamID::lfoYWaveform));
-            yp.phaseShift   = *apvts.getRawParameterValue(ParamID::lfoYPhase) / 360.0f;
+            yp.phaseShift   = ((lfoYPhaseOverride_ >= 0.0f) ? lfoYPhaseOverride_
+                                                             : *apvts.getRawParameterValue(ParamID::lfoYPhase))
+                              / 360.0f;
             yp.distortion   = *apvts.getRawParameterValue(ParamID::lfoYDistortion);
-            yp.level        = yLevel;
+            yp.level        = (lfoYLevelOverride_ >= 0.0f) ? lfoYLevelOverride_
+                                                            : yLevel;
             // Inject looper playback position for LFO recording playback sync.
             // Only meaningful when recState == Playback; ignored in all other states.
             {
@@ -1312,7 +1323,21 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     }
     tp.randomPopulation  = apvts.getRawParameterValue("randomPopulation")->load();
     tp.randomProbability = apvts.getRawParameterValue("randomProbability")->load();
-    tp.gateLength        = apvts.getRawParameterValue("gateLength")->load();
+    // ── Gate Length smoothing ─────────────────────────────────────────────
+    // When joystick is routed to gate length, gateLengthDisplay_ holds base+offset.
+    // When not joystick-routed, read APVTS directly.
+    // Either way, ramp through SmoothedValue to eliminate zipper noise.
+    {
+        const int xGateMode = static_cast<int>(apvts.getRawParameterValue("filterXMode")->load());
+        const int yGateMode = static_cast<int>(apvts.getRawParameterValue("filterYMode")->load());
+        const bool gateFromJoystick = (xGateMode == 5 || yGateMode == 5);
+        const float targetGate = gateFromJoystick
+            ? gateLengthDisplay_.load(std::memory_order_relaxed)
+            : apvts.getRawParameterValue("gateLength")->load();
+        smoothedGateLength_.setTargetValue(targetGate);
+        smoothedGateLength_.skip(blockSize);
+    }
+    tp.gateLength        = smoothedGateLength_.getCurrentValue();
     // joystickGateTime: seconds of stillness before Joystick-mode gate closes.
     // arpGateTime was removed in Phase 20; use a fixed 1.0 s constant until a dedicated param is added.
     tp.joystickGateTime   = 1.0f;
@@ -1417,7 +1442,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const int orderIdx = juce::jlimit(0, 6,
             static_cast<int>(*apvts.getRawParameterValue(ParamID::arpOrder)));
 
-        const double gateRatio = apvts.getRawParameterValue("gateLength")->load();
+        const double gateRatio = smoothedGateLength_.getCurrentValue();
         // Manual mode (gateRatio == 0.0): gateBeats = 0.0, arpNoteOffRemaining_ stays 0
         // → no gate-time note-off; step boundary provides implicit note-off via the cut-at-next-step path.
         const double gateBeats = subdivBeats * gateRatio;
@@ -1678,89 +1703,116 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             }
 
             // ── LFO / Gate Length dispatch (indices 2–5) ──────────────────────────
+            // Reset all override floats unconditionally — only the active mode sets them.
+            // This ensures that when the dropdown switches away from an LFO target, the
+            // LFO params block reverts to APVTS immediately (no stale override).
+            lfoXRateOverride_ = lfoXPhaseOverride_ = lfoXLevelOverride_ = -1.0f;
+            lfoYRateOverride_ = lfoYPhaseOverride_ = lfoYLevelOverride_ = -1.0f;
+
             if (stickUpdated)
             {
-                auto writeParam = [&](const juce::String& id, float val)
-                {
-                    if (auto* raw = apvts.getRawParameterValue(id))
-                        raw->store(val, std::memory_order_relaxed);
-                };
-
                 if (xMode >= 2 && xMode <= 5)
                 {
-                    const float stickVal = prevFilterX_;         // -1..+1, already updated above
-                    const float atten    = xAtten / 100.0f;      // 0..1
-                    const float norm     = (stickVal * atten + 1.0f) * 0.5f;  // 0..1
+                    const float stick = prevFilterX_ * (xAtten / 100.0f);  // -1..+1 attenuated
 
                     switch (xMode)
                     {
-                        case 2: // LFO-X Freq
+                        case 2:  // LFO-X Freq
                         {
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f;
                             if (syncOn)
                             {
-                                // Subdivision scaling: stick -1 → 0.25x, center → 1.0x, +1 → 4.0x
-                                const float mult = std::pow(4.0f, stickVal * atten);
+                                // Sync: existing centre-relative mult approach; no display atomic needed.
+                                const float mult = std::pow(4.0f, stick);
                                 lfoXSubdivMult_.store(mult, std::memory_order_relaxed);
                             }
                             else
                             {
-                                // Direct Hz: stick -1..+1 * atten maps to 0.01..20 Hz
-                                const float hz = 0.01f + norm * (20.0f - 0.01f);
-                                writeParam(ParamID::lfoXRate, hz);
+                                const float base   = apvts.getRawParameterValue(ParamID::lfoXRate)->load();
+                                const float actual = juce::jlimit(0.01f, 20.0f, base + stick * 9.995f);
+                                lfoXRateDisplay_.store(actual, std::memory_order_relaxed);
+                                lfoXRateOverride_ = actual;  // consumed by LFO block next processBlock
                             }
                             break;
                         }
-                        case 3: // LFO-X Phase (0..360 degrees)
-                            writeParam(ParamID::lfoXPhase, norm * 360.0f);
+                        case 3:  // LFO-X Phase (0–360°)
+                        {
+                            const float base   = apvts.getRawParameterValue(ParamID::lfoXPhase)->load();
+                            const float actual = juce::jlimit(0.0f, 360.0f, base + stick * 180.0f);
+                            lfoXPhaseDisplay_.store(actual, std::memory_order_relaxed);
+                            lfoXPhaseOverride_ = actual;
                             break;
-                        case 4: // LFO-X Level (0..1)
-                            writeParam(ParamID::lfoXLevel, norm);
+                        }
+                        case 4:  // LFO-X Level (0–1)
+                        {
+                            const float base   = apvts.getRawParameterValue(ParamID::lfoXLevel)->load();
+                            const float actual = juce::jlimit(0.0f, 1.0f, base + stick * 0.5f);
+                            lfoXLevelDisplay_.store(actual, std::memory_order_relaxed);
+                            lfoXLevelOverride_ = actual;
                             break;
-                        case 5: // Gate Length (0..1)
-                            writeParam(ParamID::gateLength, norm);
+                        }
+                        case 5:  // Gate Length (0–1) — no LFO override; smoothedGateLength_ reads display
+                        {
+                            const float base   = apvts.getRawParameterValue(ParamID::gateLength)->load();
+                            const float actual = juce::jlimit(0.0f, 1.0f, base + stick * 0.5f);
+                            gateLengthDisplay_.store(actual, std::memory_order_relaxed);
                             break;
+                        }
                         default: break;
                     }
                 }
 
                 if (yMode >= 2 && yMode <= 5)
                 {
-                    const float stickVal = prevFilterY_;         // -1..+1
-                    const float atten    = yAtten / 100.0f;      // 0..1
-                    const float norm     = (stickVal * atten + 1.0f) * 0.5f;  // 0..1
+                    const float stick = prevFilterY_ * (yAtten / 100.0f);  // -1..+1 attenuated
 
                     switch (yMode)
                     {
-                        case 2: // LFO-Y Freq
+                        case 2:  // LFO-Y Freq
                         {
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f;
                             if (syncOn)
                             {
-                                const float mult = std::pow(4.0f, stickVal * atten);
+                                const float mult = std::pow(4.0f, stick);
                                 lfoYSubdivMult_.store(mult, std::memory_order_relaxed);
                             }
                             else
                             {
-                                const float hz = 0.01f + norm * (20.0f - 0.01f);
-                                writeParam(ParamID::lfoYRate, hz);
+                                const float base   = apvts.getRawParameterValue(ParamID::lfoYRate)->load();
+                                const float actual = juce::jlimit(0.01f, 20.0f, base + stick * 9.995f);
+                                lfoYRateDisplay_.store(actual, std::memory_order_relaxed);
+                                lfoYRateOverride_ = actual;
                             }
                             break;
                         }
-                        case 3: // LFO-Y Phase (0..360 degrees)
-                            writeParam(ParamID::lfoYPhase, norm * 360.0f);
+                        case 3:  // LFO-Y Phase (0–360°)
+                        {
+                            const float base   = apvts.getRawParameterValue(ParamID::lfoYPhase)->load();
+                            const float actual = juce::jlimit(0.0f, 360.0f, base + stick * 180.0f);
+                            lfoYPhaseDisplay_.store(actual, std::memory_order_relaxed);
+                            lfoYPhaseOverride_ = actual;
                             break;
-                        case 4: // LFO-Y Level (0..1)
-                            writeParam(ParamID::lfoYLevel, norm);
+                        }
+                        case 4:  // LFO-Y Level (0–1)
+                        {
+                            const float base   = apvts.getRawParameterValue(ParamID::lfoYLevel)->load();
+                            const float actual = juce::jlimit(0.0f, 1.0f, base + stick * 0.5f);
+                            lfoYLevelDisplay_.store(actual, std::memory_order_relaxed);
+                            lfoYLevelOverride_ = actual;
                             break;
-                        case 5: // Gate Length (0..1)
-                            writeParam(ParamID::gateLength, norm);
+                        }
+                        case 5:  // Gate Length (0–1)
+                        {
+                            const float base   = apvts.getRawParameterValue(ParamID::gateLength)->load();
+                            const float actual = juce::jlimit(0.0f, 1.0f, base + stick * 0.5f);
+                            gateLengthDisplay_.store(actual, std::memory_order_relaxed);
                             break;
+                        }
                         default: break;
                     }
                 }
 
-                // When switching away from sync-mode LFO Freq target, reset subdivision multiplier
+                // When not in sync-mode LFO Freq target, reset subdivision multiplier
                 if (xMode != 2) lfoXSubdivMult_.store(1.0f, std::memory_order_relaxed);
                 if (yMode != 2) lfoYSubdivMult_.store(1.0f, std::memory_order_relaxed);
             }
