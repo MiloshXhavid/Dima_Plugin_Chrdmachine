@@ -998,7 +998,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     {
         trigSrc_[i].addItem("Pad",      1);
         trigSrc_[i].addItem("Joystick", 2);
-        trigSrc_[i].addItem("Random",   3);
+        trigSrc_[i].addItem("Rnd Free", 3);  // was "Random" — label rename only; saved index 2 loads correctly
+        trigSrc_[i].addItem("Rnd Hold", 4);  // new item appended at index 3
         styleCombo(trigSrc_[i]);
         styleLabel(trigSrcLabel_[i], trigLabels[i]);
         addAndMakeVisible(trigSrc_[i]);
@@ -1042,19 +1043,33 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     randomDensityKnob_.setSliderStyle(juce::Slider::RotaryVerticalDrag);
     randomDensityKnob_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 14);
     randomDensityKnob_.setNumDecimalPlacesToDisplay(0);
-    randomDensityKnob_.setTooltip("Notes per bar (1–8)");
+    randomDensityKnob_.setTooltip("Max gates per bar (1–64) — Population");
     randomDensityKnob_.setColour(juce::Slider::rotarySliderFillColourId,   Clr::highlight);
     randomDensityKnob_.setColour(juce::Slider::rotarySliderOutlineColourId, Clr::accent);
     randomDensityKnob_.setColour(juce::Slider::thumbColourId,              Clr::text);
     randomDensityKnob_.setColour(juce::Slider::textBoxTextColourId,        Clr::textDim);
     randomDensityKnob_.setColour(juce::Slider::textBoxOutlineColourId,     juce::Colours::transparentBlack);
     addAndMakeVisible(randomDensityKnob_);
-    randomDensityAtt_ = std::make_unique<SliderAtt>(p.apvts, "randomDensity", randomDensityKnob_);
+    randomPopulationAtt_ = std::make_unique<SliderAtt>(p.apvts, "randomPopulation", randomDensityKnob_);
+
+    // ── Probability knob ─────────────────────────────────────────────────────────
+    randomProbabilityKnob_.setSliderStyle(juce::Slider::RotaryVerticalDrag);
+    randomProbabilityKnob_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 14);
+    randomProbabilityKnob_.setNumDecimalPlacesToDisplay(2);
+    randomProbabilityKnob_.setTooltip("Per-slot fire chance (0=never, 1=always) — Probability");
+    randomProbabilityKnob_.setColour(juce::Slider::rotarySliderFillColourId,   Clr::highlight);
+    randomProbabilityKnob_.setColour(juce::Slider::rotarySliderOutlineColourId, Clr::accent);
+    randomProbabilityKnob_.setColour(juce::Slider::thumbColourId,              Clr::text);
+    randomProbabilityKnob_.setColour(juce::Slider::textBoxTextColourId,        Clr::textDim);
+    randomProbabilityKnob_.setColour(juce::Slider::textBoxOutlineColourId,     juce::Colours::transparentBlack);
+    addAndMakeVisible(randomProbabilityKnob_);
+    randomProbabilityAtt_ = std::make_unique<juce::SliderParameterAttachment>(
+        *p.apvts.getParameter("randomProbability"), randomProbabilityKnob_);
 
     styleLabel(randomSubdivLabel_, "SUBDIV");
     addAndMakeVisible(randomSubdivLabel_);
     {
-        const juce::StringArray subdivChoices { "1/4", "1/8", "1/16", "1/32" };
+        const juce::StringArray subdivChoices { "1/4", "1/8", "1/16", "1/32", "1/64" };
         for (int v = 0; v < 4; ++v)
         {
             randomSubdivBox_[v].addItemList(subdivChoices, 1);
@@ -1075,8 +1090,8 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     randomGateTimeKnob_.setColour(juce::Slider::textBoxTextColourId,       Clr::textDim);
     randomGateTimeKnob_.setColour(juce::Slider::textBoxOutlineColourId,    juce::Colours::transparentBlack);
     addAndMakeVisible(randomGateTimeKnob_);
-    randomGateTimeKnobAtt_ = std::make_unique<juce::SliderParameterAttachment>(
-        *p.apvts.getParameter("randomGateTime"), randomGateTimeKnob_);
+    gateLengthAtt_ = std::make_unique<juce::SliderParameterAttachment>(
+        *p.apvts.getParameter("gateLength"), randomGateTimeKnob_);
 
     // Sync toggle — compact rectangular button like the looper mode buttons
     randomSyncButton_.setButtonText("RND SYNC");
@@ -1502,15 +1517,15 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     arpGateTimeKnob_.setSliderStyle(juce::Slider::LinearHorizontal);
     arpGateTimeKnob_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    arpGateTimeKnob_.setRange(5.0, 100.0, 1.0);
+    arpGateTimeKnob_.setRange(0.0, 1.0, 0.01);
     arpGateTimeKnob_.setColour(juce::Slider::thumbColourId,       Clr::highlight);
     arpGateTimeKnob_.setColour(juce::Slider::trackColourId,       Clr::accent);
     arpGateTimeKnob_.setColour(juce::Slider::backgroundColourId,  Clr::gateOff);
-    arpGateTimeKnob_.setTooltip("Arp gate time — how long each note sounds (5-100% of step)");
+    arpGateTimeKnob_.setTooltip("Gate Length — fraction of subdivision (0=manual/open gate, 1=full step)");
     addAndMakeVisible(arpGateTimeKnob_);
-    styleLabel(arpGateTimeLabel_, "GATE%");
+    styleLabel(arpGateTimeLabel_, "GATE LEN");
     addAndMakeVisible(arpGateTimeLabel_);
-    arpGateTimeAtt_ = std::make_unique<SliderAtt>(p.apvts, "arpGateTime", arpGateTimeKnob_);
+    arpGateTimeAtt_ = std::make_unique<SliderAtt>(p.apvts, "gateLength", arpGateTimeKnob_);
 
     // ── LFO X panel ───────────────────────────────────────────────────────────
     // Shape ComboBox
@@ -1977,20 +1992,23 @@ void PluginEditor::resized()
 
         left.removeFromTop(14);
 
-        // Random controls row — [DENS] | [GATE] | [RND SYNC] | [FREE BPM knob]
+        // Random controls row — [POP] | [PROB] | [GATE] | [RND SYNC] | [FREE BPM knob]
         {
             auto rndRow = left.removeFromTop(60);
-            randomDensityKnob_ .setBounds(rndRow.removeFromLeft(cw));
-            randomGateTimeKnob_.setBounds(rndRow.removeFromLeft(cw));
+            const int cw5 = rndRow.getWidth() / 5;  // 5-column layout for random strip
+            randomDensityKnob_     .setBounds(rndRow.removeFromLeft(cw5));   // POPULATION
+            randomProbabilityKnob_ .setBounds(rndRow.removeFromLeft(cw5));   // PROBABILITY (new)
+            randomGateTimeKnob_    .setBounds(rndRow.removeFromLeft(cw5));   // GATE LEN
             // Compact rectangular button, centred in its column and same height as looper mode buttons
-            randomSyncButton_  .setBounds(rndRow.removeFromLeft(cw).withSizeKeepingCentre(cw - 6, 26));
-            randomFreeTempoKnob_.setBounds(rndRow);                    // FREE BPM, 4th col
+            randomSyncButton_      .setBounds(rndRow.removeFromLeft(cw5).withSizeKeepingCentre(cw5 - 6, 26));
+            randomFreeTempoKnob_   .setBounds(rndRow);                       // FREE BPM, 5th col
         }
 
-        // BPM display: under FREE BPM knob (4th column)
+        // BPM display: under FREE BPM knob (5th column in the random 5-col layout)
         {
             auto bpmRow = left.removeFromTop(16);
-            bpmRow.removeFromLeft(cw * 3);          // skip DENS + GATE + SYNC columns
+            const int skipW = (bpmRow.getWidth() * 4) / 5;  // skip POP + PROB + GATE + SYNC columns
+            bpmRow.removeFromLeft(skipW);
             bpmDisplayLabel_.setBounds(bpmRow);
         }
     }
@@ -2425,8 +2443,9 @@ void PluginEditor::paint(juce::Graphics& g)
             g.drawText(t, c.getX(), c.getY() - 12, c.getWidth(), 12,
                        juce::Justification::centred);
     };
-    drawAbove(randomDensityKnob_,   "RND DENS");
-    drawAbove(randomGateTimeKnob_,  "RND GATE");
+    drawAbove(randomDensityKnob_,      "POPULATION");
+    drawAbove(randomProbabilityKnob_,  "PROBABILITY");
+    drawAbove(randomGateTimeKnob_,     "GATE LEN");
     drawAbove(randomFreeTempoKnob_, "FREE BPM");
     drawAbove(filterYModeBox_,      "LEFT Y");
     drawAbove(filterXModeBox_,      "LEFT X");
