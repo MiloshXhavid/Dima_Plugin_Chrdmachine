@@ -35,10 +35,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-Phase: 21 of 25 (Left Joystick Targets) — Not started
-Plan: Phase 20 complete (3/3 plans)
-Status: Phase 20 complete — UI expanded with 4-item trigger combos, 5-item subdiv combos, Population + Probability knobs, unified Gate Length; smoke test passed
-Last activity: 2026-03-01 — Phase 20 complete; randomClockSync defaults off; Phase 21 next
+Phase: 21 of 25 (Left Joystick Targets) — In progress
+Plan: 21-01 complete (1/3 plans)
+Status: Phase 21 plan 01 complete — APVTS extended to 6-item filterXMode/filterYMode, processBlock dispatch for LFO/Gate targets, subdivMult atomics wired
+Last activity: 2026-03-01 — Phase 21 plan 01 executed; plan 21-02 (UI wiring) next
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -49,7 +49,7 @@ v1.5 Routing+Expression  [████      ] In progress
   Phase 18  [██████████]   Single-Channel Routing COMPLETE 2026-02-28
   Phase 19  [██████████]   Sub Octave Per Voice   COMPLETE 2026-03-01
   Phase 20  [██████████]   RND Trigger Extensions COMPLETE 2026-03-01
-  Phase 21  [          ]   Left Joystick Targets  Not started
+  Phase 21  [███       ]   Left Joystick Targets  In progress (1/3 plans)
   Phase 22  [          ]   LFO Recording          Not started
   Phase 23  [          ]   Arpeggiator            Not started
   Phase 24  [          ]   Gamepad Option Mode 1  Not started
@@ -59,7 +59,7 @@ v1.5 Routing+Expression  [████      ] In progress
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 40 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 9 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02])
+- Total plans completed: 41 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 10 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02 + 20-03 + 21-01])
 - Average duration: not tracked per plan
 - Total execution time: not tracked
 
@@ -103,6 +103,10 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 20-02]: trigSrcNames index 2 label changed from 'Random' to 'Random Free'; 'Random Hold' appended at index 3 — integer values unchanged for DAW session compat
 - [Phase 20-03]: randomClockSync defaults to false — free-tempo mode is more useful out-of-the-box; sync requires explicit opt-in
 - [Phase 20-03]: Widget reuse pattern for Population knob — randomDensityKnob_ widget kept, only attachment renamed/retargeted to randomPopulation
+- [Phase 21-01]: filterXMode index 2 repurposed from Mod Wheel (CC1) to LFO-X Freq — saved presets at index 2 load as LFO-X Freq (accepted; Mod Wheel target removed)
+- [Phase 21-01]: Sync LFO Freq target uses std::pow(4.0f, stick*atten) — exponential 0.25x–4x subdivision multiplier stored in lfoXSubdivMult_/lfoYSubdivMult_ atomics
+- [Phase 21-01]: LFO/Gate dispatch gated on stickUpdated only (not baseChanged) — base knob irrelevant for non-CC modes
+- [Phase 21-01]: CC emit blocks guarded to xMode<=1 / yMode<=1 — modes 2-5 never emit MIDI CC
 
 ### Pending Todos
 
@@ -115,5 +119,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Phase 20 complete — all 3 plans executed, smoke test passed, SUMMARY written
-Next step: Phase 21 (Left Joystick Modulation Expansion) — CONTEXT.md exists, ready to plan or discuss
+Stopped at: Phase 21 plan 01 complete — APVTS backend extended for 6-item left-stick targets
+Next step: Phase 21 plan 02 — UI wiring for 6-item filterXMode/filterYMode combo boxes in PluginEditor

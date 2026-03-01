@@ -68,10 +68,10 @@
 
 ### Left Joystick Modulation
 
-- [ ] **LJOY-01**: Left Joystick X dropdown offers: Filter Cutoff (CC74), Filter Resonance (CC71), LFO-X Frequency, LFO-X Phase, LFO-X Level, Gate Length
-- [ ] **LJOY-02**: Left Joystick Y dropdown offers the same set with LFO-Y variants: Filter Cutoff (CC74), Filter Resonance (CC71), LFO-Y Frequency, LFO-Y Phase, LFO-Y Level, Gate Length
+- [x] **LJOY-01**: Left Joystick X dropdown offers: Filter Cutoff (CC74), Filter Resonance (CC71), LFO-X Frequency, LFO-X Phase, LFO-X Level, Gate Length
+- [x] **LJOY-02**: Left Joystick Y dropdown offers the same set with LFO-Y variants: Filter Cutoff (CC74), Filter Resonance (CC71), LFO-Y Frequency, LFO-Y Phase, LFO-Y Level, Gate Length
 - [ ] **LJOY-03**: Left Joystick X dropdown appears before Left Joystick Y in the UI
-- [ ] **LJOY-04**: LFO Frequency target is suppressed (stick has no effect) when that LFO's Sync mode is active
+- [x] **LJOY-04**: LFO Frequency target is suppressed (stick has no effect) when that LFO's Sync mode is active
 
 ### LFO Recording
 
@@ -185,10 +185,10 @@
 | RND-05 | Phase 20 | Complete |
 | RND-06 | Phase 20 | Complete |
 | RND-07 | Phase 20 | Complete |
-| LJOY-01 | Phase 21 | Pending |
-| LJOY-02 | Phase 21 | Pending |
+| LJOY-01 | Phase 21 | Complete |
+| LJOY-02 | Phase 21 | Complete |
 | LJOY-03 | Phase 21 | Pending |
-| LJOY-04 | Phase 21 | Pending |
+| LJOY-04 | Phase 21 | Complete |
 | LFOREC-01 | Phase 22 | Pending |
 | LFOREC-02 | Phase 22 | Pending |
 | LFOREC-03 | Phase 22 | Pending |

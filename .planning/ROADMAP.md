@@ -271,7 +271,7 @@ Plans:
 | 18. Single-Channel Routing | v1.5 | 3/3 | Complete | 2026-03-01 |
 | 19. Sub Octave Per Voice | 2/2 | Complete    | 2026-03-01 | - |
 | 20. Random Trigger System Extensions | v1.5 | 3/3 | Complete | 2026-03-01 |
-| 21. Left Joystick Modulation Expansion | v1.5 | 0/TBD | Not started | - |
+| 21. Left Joystick Modulation Expansion | 1/2 | In Progress|  | - |
 | 22. LFO Recording | v1.5 | 0/TBD | Not started | - |
 | 23. Arpeggiator | v1.5 | 0/TBD | Not started | - |
 | 24. Gamepad Option Mode 1 | v1.5 | 0/TBD | Not started | - |
