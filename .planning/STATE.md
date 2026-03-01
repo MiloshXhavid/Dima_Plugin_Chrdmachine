@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-Phase: 19 of 25 (Sub Octave Per Voice) — IN PROGRESS (awaiting smoke test)
-Plan: 2 of 2 in Phase 19 complete (code); smoke test checkpoint next
-Status: Phase 19 Plans 01+02 complete (code) — SUB8 UI buttons deployed; awaiting DAW smoke test verification
-Last activity: 2026-03-01 — Plan 19-02 complete (padSubOctBtn_ split, ButtonParameterAttachment, timerCallback coloring, Release built + deployed)
+Phase: 19 of 25 (Sub Octave Per Voice) — COMPLETE
+Plan: 2 of 2 in Phase 19 complete; smoke test APPROVED
+Status: Phase 19 fully complete — all SUBOCT-01..04 requirements verified in DAW smoke test
+Last activity: 2026-03-01 — Plan 19-02 smoke test approved; occasional stuck note (intermittent, low severity) deferred to future milestone
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -34,7 +34,7 @@ v1.4 LFO    [██████████] SHIPPED 2026-02-26
 v1.5 Routing+Expression  [██        ] In progress
   Phase 17  [██████████]   Bug Fixes              COMPLETE 2026-02-28
   Phase 18  [██████████]   Single-Channel Routing COMPLETE 2026-02-28
-  Phase 19  [██████████]   Sub Octave Per Voice   COMPLETE (pending smoke test)
+  Phase 19  [██████████]   Sub Octave Per Voice   COMPLETE 2026-03-01
   Phase 20  [          ]   RND Trigger Extensions Not started
   Phase 21  [          ]   Left Joystick Targets  Not started
   Phase 22  [          ]   LFO Recording          Not started
@@ -80,6 +80,7 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 19-01]: Looper sub-octave uses live SUB8 param at emission time — not baked into loop — consistent with single-channel routing pattern
 - [Phase 19-02]: ButtonParameterAttachment used for SUB8 (not manual onClick) — handles preset save/load automatically; HOLD uses manual onClick because it drives proc_.padHold_ directly
 - [Phase 19-02]: holdStrip.reduced(2,2) applied before 50/50 split so both HOLD and SUB8 share equal margins
+- [Phase 19-02]: Occasional stuck note (intermittent, low severity) observed during smoke test — deferred to future milestone; does not block SUBOCT completion
 
 ### Pending Todos
 
@@ -92,5 +93,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 19-02-PLAN.md (SUB8 UI — padSubOctBtn_ split, ButtonParameterAttachment, timerCallback coloring; Release deployed; smoke test checkpoint pending)
-Next step: Smoke test Phase 19 in DAW — verify SUBOCT-01..04 requirements, then advance to Phase 20
+Stopped at: Completed 19-02-PLAN.md — smoke test approved; Phase 19 fully complete
+Next step: Begin Phase 20 (RND Trigger Extensions)
