@@ -53,7 +53,7 @@ Full details: Phase Details section below (Phases 12–16).
 **Milestone Goal:** Add single-channel MIDI routing, per-voice sub octave, expanded random trigger system, left-stick modulation targets, LFO recording, arpeggiator, gamepad Option Mode 1 arp control, and fix the looper anchor + BT crash bugs.
 
 - [x] **Phase 17: Bug Fixes** — Looper anchor drift fixed (loopStartPpq_ += loopLen) + SDL2 BT reconnect crash eliminated (deferred-open + instance-ID guard) — pluginval level 5 PASS, smoke tests PASS (completed 2026-02-28)
-- [ ] **Phase 18: Single-Channel Routing** — singleChanMode / singleChanTarget APVTS params, effectiveChannel() helper, noteCount[16][128] reference counter, UI toggle + channel selector
+- [x] **Phase 18: Single-Channel Routing** — singleChanMode / singleChanTarget APVTS params, effectiveChannel() helper, noteCount[16][128] reference counter, UI toggle + channel selector (completed 2026-03-01)
 - [ ] **Phase 19: Sub Octave Per Voice** — subOct0..3 APVTS bools, -12 semitone parallel note, sentSubOctPitch snapshot, all emission + flush paths, R3+pad gamepad shortcut, per-pad UI toggle
 - [ ] **Phase 20: Random Trigger System Extensions** — Free/Hold trigger modes, Population + Probability knobs, 1/64 subdivision, unified Gate Length param
 - [ ] **Phase 21: Left Joystick Modulation Expansion** — Extended filterXMode / filterYMode choice lists, LFO freq/shape/level + arp gate length targets, pending-atomic dispatch
@@ -160,9 +160,9 @@ Plans:
   4. Looper playback in Single Channel mode sends notes on the currently selected channel even if the channel was different at record time
 **Plans**: 3 plans
 Plans:
-- [ ] 18-01-PLAN.md — PluginProcessor.h/cpp: singleChanMode + singleChanTarget APVTS params, effectiveChannel lambda, noteCount_[16][128] deduplication, channel snapshots, flush logic at all allNotesOff paths
-- [ ] 18-02-PLAN.md — PluginEditor.h/cpp: Routing panel with routingModeBox_, singleChanTargetBox_, voiceChBox_[4], APVTS attachments, resized() layout, timerCallback() show/hide
-- [ ] 18-03-PLAN.md — Deploy VST3 + manual smoke test checkpoint (all 5 ROUT requirements verified in DAW MIDI monitor)
+- [x] 18-01-PLAN.md — PluginProcessor.h/cpp: singleChanMode + singleChanTarget APVTS params, effectiveChannel lambda, noteCount_[16][128] deduplication, channel snapshots, flush logic at all allNotesOff paths (completed 2026-02-28)
+- [x] 18-02-PLAN.md — PluginEditor.h/cpp: Routing panel with routingModeBox_, singleChanTargetBox_, voiceChBox_[4], APVTS attachments, resized() layout, timerCallback() show/hide (completed 2026-02-28)
+- [x] 18-03-PLAN.md — Deploy VST3 + manual smoke test checkpoint (all 5 ROUT requirements verified in DAW MIDI monitor) (completed 2026-03-01)
 
 ### Phase 19: Sub Octave Per Voice
 **Goal**: Players can add a parallel bass note exactly one octave below any individual voice, controllable per-pad from both the UI and the gamepad, enabling bass-doubling without affecting the other voices
@@ -173,7 +173,10 @@ Plans:
   2. Releasing a pad with Sub Oct active sends a note-off for the sub-octave note at the exact pitch that was sent at note-on time — no stuck sub-octave notes even if the joystick moved between press and release
   3. Holding a pad button on the gamepad (R1/R2/L1/L2) and pressing R3 toggles Sub Oct for that voice — confirmed by the UI toggle updating visually
   4. Sub Oct state survives preset save and load — a preset saved with Sub Oct on for voice 1 reloads with Sub Oct on for voice 1
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 19-01-PLAN.md — Processor backend: APVTS params, note-on/off emission, mid-note toggle, looper gate sub path, R3 combo
+- [ ] 19-02-PLAN.md — UI: SUB8 button split, ButtonParameterAttachment, timerCallback coloring, smoke-test checkpoint
 
 ### Phase 20: Random Trigger System Extensions
 **Goal**: The random trigger source becomes expressive and composable — players can choose between continuous free-firing and held-pad burst modes, set a population ceiling and per-slot probability, access 1/64 subdivision, and gate length is available as a unified parameter shared with the arpeggiator
@@ -257,8 +260,8 @@ Plans:
 | 15. Gamepad Preset Control | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 16. Distribution | v1.4 | 2/2 | Complete | 2026-02-26 |
 | 17. Bug Fixes | v1.5 | Complete    | 2026-02-28 | 2026-02-28 |
-| 18. Single-Channel Routing | 2/3 | In Progress|  | - |
-| 19. Sub Octave Per Voice | v1.5 | 0/TBD | Not started | - |
+| 18. Single-Channel Routing | v1.5 | 3/3 | Complete | 2026-03-01 |
+| 19. Sub Octave Per Voice | v1.5 | 0/2 | Planned | - |
 | 20. Random Trigger System Extensions | v1.5 | 0/TBD | Not started | - |
 | 21. Left Joystick Modulation Expansion | v1.5 | 0/TBD | Not started | - |
 | 22. LFO Recording | v1.5 | 0/TBD | Not started | - |
