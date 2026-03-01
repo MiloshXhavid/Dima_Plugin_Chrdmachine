@@ -38,22 +38,33 @@ void TriggerSystem::triggerAllNotes()
 // Subdivision helper lambdas (file-scope statics, computed once)
 static auto subdivBeatsFor = [](RandomSubdiv s) -> double {
     switch (s) {
-        case RandomSubdiv::Quarter:         return 1.0;
-        case RandomSubdiv::Eighth:          return 0.5;
-        case RandomSubdiv::Sixteenth:       return 0.25;
-        case RandomSubdiv::ThirtySecond:    return 0.125;
-        case RandomSubdiv::SixtyFourthNote: return 0.0625;
+        case RandomSubdiv::QuadWhole:    return 16.0;
+        case RandomSubdiv::DblWhole:     return 8.0;
+        case RandomSubdiv::Whole:        return 4.0;
+        case RandomSubdiv::Half:         return 2.0;
+        case RandomSubdiv::Quarter:      return 1.0;
+        case RandomSubdiv::Eighth:       return 0.5;
+        case RandomSubdiv::Sixteenth:    return 0.25;
+        case RandomSubdiv::ThirtySecond: return 0.125;
+        case RandomSubdiv::SixtyFourth:  return 0.0625;
     }
-    return 0.5;
+    return 1.0;
 };
 
 static float hitsPerBarToProbability(float population, RandomSubdiv subdiv)
 {
-    const float subdivsPerBar = static_cast<float>(
-        subdiv == RandomSubdiv::Quarter         ?  4 :
-        subdiv == RandomSubdiv::Eighth          ?  8 :
-        subdiv == RandomSubdiv::Sixteenth       ? 16 :
-        subdiv == RandomSubdiv::ThirtySecond    ? 32 : 64);  // SixtyFourthNote = 64
+    float subdivsPerBar;
+    switch (subdiv) {
+        case RandomSubdiv::QuadWhole:    subdivsPerBar = 0.25f; break;
+        case RandomSubdiv::DblWhole:     subdivsPerBar = 0.5f;  break;
+        case RandomSubdiv::Whole:        subdivsPerBar = 1.0f;  break;
+        case RandomSubdiv::Half:         subdivsPerBar = 2.0f;  break;
+        case RandomSubdiv::Quarter:      subdivsPerBar = 4.0f;  break;
+        case RandomSubdiv::Eighth:       subdivsPerBar = 8.0f;  break;
+        case RandomSubdiv::Sixteenth:    subdivsPerBar = 16.0f; break;
+        case RandomSubdiv::ThirtySecond: subdivsPerBar = 32.0f; break;
+        default:                         subdivsPerBar = 64.0f; break;  // SixtyFourth
+    }
     return juce::jlimit(0.0f, 1.0f, population / subdivsPerBar);
 }
 

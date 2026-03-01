@@ -56,6 +56,7 @@ if(BUILD_TESTS)
         Tests/ChordEngineTests.cpp
         Tests/LooperEngineTests.cpp
         Tests/LfoEngineTests.cpp
+        Tests/ChordNameTests.cpp
     )
 
     set_target_properties(ChordJoystickTests PROPERTIES
@@ -105,7 +106,7 @@ juce_add_binary_data(ChordJoystickFonts
 )
 
 juce_add_plugin(ChordJoystick
-    PRODUCT_NAME            "Dima_Chord_Joy_MK2"
+    PRODUCT_NAME            "DIMEA CHORD JOYSTICK MK2"
     FORMATS                 VST3
     PLUGIN_MANUFACTURER_CODE "MxCJ"
     PLUGIN_CODE             "DCJM"

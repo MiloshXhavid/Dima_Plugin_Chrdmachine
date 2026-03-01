@@ -40,10 +40,46 @@ private:
     juce::Font pixelFont_ { 10.0f };
 };
 
+// ─── GamepadDisplayComponent ─────────────────────────────────────────────────
+// Flat PS5-style controller silhouette with real-time button highlight feedback.
+// Parent calls setGamepadState() from timerCallback() to update visuals.
+// Button bit positions (matching GamepadInput::getButtonHeldMask()):
+//   L1=0  L2=1  R1=2  R2=3  L3=4  R3=5
+//   Cross=6  Square=7  Triangle=8  Circle=9
+//   DpadUp=10  DpadDown=11  DpadLeft=12  DpadRight=13  Options=14  PS=15
+
+class GamepadDisplayComponent : public juce::Component,
+                                public juce::SettableTooltipClient
+{
+public:
+    void setGamepadState(uint32_t buttonMask, float leftX, float leftY,
+                         float rightX, float rightY, bool connected);
+    void paint(juce::Graphics& g) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
+
+    // bodyOffset_ = pixels from component top to the main body rectangle.
+    // Shoulder buttons (L2/R2/L1/R1) are drawn above this line in free space.
+    // Set by PluginEditor::resized() to align body with the GAMEPAD ON button row.
+    void setBodyOffset(int pixels) { bodyOffset_ = juce::jmax(24, pixels); repaint(); }
+
+private:
+    uint32_t buttonMask_ = 0;
+    float    leftX_      = 0.0f;
+    float    leftY_      = 0.0f;
+    float    rightX_     = 0.0f;
+    float    rightY_     = 0.0f;
+    bool     connected_  = false;
+    int      bodyOffset_ = 40;   // default matches old hardcoded value
+
+    juce::String computeRegionTooltip(int mx, int my) const;
+};
+
 // ─── JoystickPad ─────────────────────────────────────────────────────────────
 // Mouse-draggable XY pad that writes into processor.joystickX/Y
 
-class JoystickPad : public juce::Component
+class JoystickPad : public juce::Component,
+                    public juce::SettableTooltipClient
 {
 public:
     explicit JoystickPad(PluginProcessor& p);
@@ -345,6 +381,9 @@ private:
     // so timerCallback() can call clearRecording() and snap back to Unarmed.
     bool prevLfoXOn_ = true;
     bool prevLfoYOn_ = true;
+
+    // ── Gamepad display ───────────────────────────────────────────────────────
+    GamepadDisplayComponent gamepadDisplay_;
 
     // Panel bounds for section drawing — set in resized(), read in paint()
     juce::Rectangle<int> looperPanelBounds_;       // LOOPER section panel

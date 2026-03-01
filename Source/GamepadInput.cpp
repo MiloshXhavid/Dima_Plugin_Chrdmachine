@@ -172,7 +172,13 @@ void GamepadInput::timerCallback()
             }
         }
     }
-    if (!virtuallyConnected_) return;  // soft-disconnected: ignore all other input
+    if (!virtuallyConnected_)
+    {
+        buttonHeldMask_.store(0u, std::memory_order_relaxed);
+        leftStickXLive_.store(0.0f, std::memory_order_relaxed);
+        leftStickYLive_.store(0.0f, std::memory_order_relaxed);
+        return;
+    }
 
     // ── Right stick → pitch joystick (returns to center when released) ──────────
     // No sample-and-hold: when the stick enters the dead zone, pitchX/Y return to 0
@@ -193,6 +199,8 @@ void GamepadInput::timerCallback()
         filterX_.store(lastFilterX_, std::memory_order_relaxed);
         filterY_.store(lastFilterY_, std::memory_order_relaxed);
         filterYRaw_.store(rawX, std::memory_order_relaxed);  // 0 when in dead zone (no S&H)
+        leftStickXLive_.store(rawX, std::memory_order_relaxed);
+        leftStickYLive_.store(rawY, std::memory_order_relaxed);
     }
 
     // ── Voice triggers: L1/L2/R1/R2 (debounced) ──────────────────────────────
@@ -342,6 +350,28 @@ void GamepadInput::timerCallback()
                     pendingRndSyncToggle_.store(true, std::memory_order_relaxed);
             }
         }
+    }
+
+    // ── Button held-state bitmask for UI visualization ──────────────────────────
+    {
+        uint32_t mask = 0;
+        if (btnVoice_[0].prev)   mask |= (1u <<  0);  // L1
+        if (btnVoice_[1].prev)   mask |= (1u <<  1);  // L2
+        if (btnVoice_[2].prev)   mask |= (1u <<  2);  // R1
+        if (btnVoice_[3].prev)   mask |= (1u <<  3);  // R2
+        if (btnAllNotes_.prev)   mask |= (1u <<  4);  // L3
+        if (btnRightStick_.prev) mask |= (1u <<  5);  // R3
+        if (btnStartStop_.prev)  mask |= (1u <<  6);  // Cross
+        if (btnReset_.prev)      mask |= (1u <<  7);  // Square
+        if (btnRecord_.prev)     mask |= (1u <<  8);  // Triangle
+        if (btnDelete_.prev)     mask |= (1u <<  9);  // Circle
+        if (btnDpadUp_.prev)     mask |= (1u << 10);  // DpadUp
+        if (btnDpadDown_.prev)   mask |= (1u << 11);  // DpadDown
+        if (btnDpadLeft_.prev)   mask |= (1u << 12);  // DpadLeft
+        if (btnDpadRight_.prev)  mask |= (1u << 13);  // DpadRight
+        if (btnOption_.prev)     mask |= (1u << 14);  // Options
+        if (btnGuide_.prev)      mask |= (1u << 15);  // PS
+        buttonHeldMask_.store(mask, std::memory_order_relaxed);
     }
 }
 

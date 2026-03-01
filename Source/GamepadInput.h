@@ -86,6 +86,16 @@ public:
     // Used by PluginEditor constructor for synchronous initial label update.
     juce::String getControllerName() const;
 
+    // ── Button held-state bitmask (UI visualization — updated at 60 Hz) ─────────
+    // Bit positions: L1=0 L2=1 R1=2 R2=3 L3=4 R3=5 Cross=6 Square=7 Triangle=8
+    //               Circle=9 DpadUp=10 DpadDown=11 DpadLeft=12 DpadRight=13
+    //               Options=14 PS=15
+    uint32_t getButtonHeldMask() const { return buttonHeldMask_.load(std::memory_order_relaxed); }
+
+    // Left stick live position (-1..+1), no sample-and-hold. +X = right, +Y = up.
+    float getLeftStickXLive() const { return leftStickXLive_.load(std::memory_order_relaxed); }
+    float getLeftStickYLive() const { return leftStickYLive_.load(std::memory_order_relaxed); }
+
     // ── Dead zone setter ──────────────────────────────────────────────────────
     // Called from processBlock via PluginProcessor — sets dead zone threshold
     // from the joystickThreshold APVTS parameter (single source of truth).
@@ -201,4 +211,9 @@ private:
 
     bool sdlInitialised_    = false;  // guard: SdlContext::release() only if acquire() succeeded
     bool pendingReopenTick_ = false;  // deferred BT open: set on SDL_CONTROLLERDEVICEADDED, consumed after event loop
+
+    // ── UI visualization state ────────────────────────────────────────────────
+    std::atomic<uint32_t> buttonHeldMask_ {0};
+    std::atomic<float>    leftStickXLive_ {0.0f};
+    std::atomic<float>    leftStickYLive_ {0.0f};
 };
