@@ -206,8 +206,8 @@ Plans:
   4. Switching a stick target from CC74 to any LFO parameter stops CC74 from being emitted — no leftover CC messages on the old target after a target change
 **Plans**: 2 plans
 Plans:
-- [ ] 21-01-PLAN.md — Processor backend: extend APVTS 6-item choice params, lfoXSubdivMult_/lfoYSubdivMult_ atomics, processBlock LFO/Gate dispatch, subdivision multiplier wiring
-- [ ] 21-02-PLAN.md — UI: 6-item ComboBoxes, X-above-Y layout swap, timerCallback Atten label relabeling, smoke-test checkpoint
+- [x] 21-01-PLAN.md — Processor backend: extend APVTS 6-item choice params, lfoXSubdivMult_/lfoYSubdivMult_ atomics, processBlock LFO/Gate dispatch, subdivision multiplier wiring
+- [x] 21-02-PLAN.md — UI: 6-item ComboBoxes, X-above-Y layout swap, timerCallback Atten label relabeling, smoke-test checkpoint
 
 ### Phase 22: LFO Recording
 **Goal**: Players can capture one loop cycle of live LFO output into the LFO and replay it in perfect sync with the looper — enabling repeatable LFO shapes from live performance without programming — while Distort stays adjustable during playback

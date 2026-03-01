@@ -31,14 +31,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.5 — Phase 21: Left Joystick Targets
+**Current focus:** v1.5 — Phase 22: LFO Recording (Phase 21 complete)
 
 ## Current Position
 
-Phase: 21 of 25 (Left Joystick Targets) — In progress
-Plan: 21-02 complete (2/3 plans)
-Status: Phase 21 plan 02 complete — UI wiring: 6-item filterX/Y ComboBoxes, X-above-Y layout, Atten label relabeling in timerCallback; checkpoint:human-verify pending
-Last activity: 2026-03-01 — Phase 21 plan 02 executed; plan 21-03 (smoke test / validation) next
+Phase: 21 of 25 (Left Joystick Targets) — COMPLETE
+Plan: 21-02 verified and complete (2/2 plans)
+Status: Phase 21 COMPLETE — 6-item left-stick targets wired end-to-end (APVTS + processBlock + UI); checkpoint:human-verify approved
+Last activity: 2026-03-01 — Phase 21 plan 02 checkpoint approved; phase complete
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -49,7 +49,7 @@ v1.5 Routing+Expression  [████      ] In progress
   Phase 18  [██████████]   Single-Channel Routing COMPLETE 2026-02-28
   Phase 19  [██████████]   Sub Octave Per Voice   COMPLETE 2026-03-01
   Phase 20  [██████████]   RND Trigger Extensions COMPLETE 2026-03-01
-  Phase 21  [██████    ]   Left Joystick Targets  In progress (2/3 plans)
+  Phase 21  [██████████]   Left Joystick Targets  COMPLETE 2026-03-01
   Phase 22  [          ]   LFO Recording          Not started
   Phase 23  [          ]   Arpeggiator            Not started
   Phase 24  [          ]   Gamepad Option Mode 1  Not started
@@ -120,6 +120,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-01
-Stopped at: Phase 21 plan 02 complete — UI wiring for 6-item left-stick combo boxes; awaiting checkpoint:human-verify
-Next step: Phase 21 plan 03 — smoke test / validation; deploy VST3 and verify all 6 targets in DAW
+Last session: 2026-03-01 (checkpoint approved)
+Stopped at: Phase 21 COMPLETE — checkpoint:human-verify approved; all 6 left-stick targets verified in DAW
+Next step: Phase 22 — LFO Recording
