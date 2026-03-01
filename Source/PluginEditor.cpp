@@ -2758,6 +2758,79 @@ void PluginEditor::timerCallback()
         // lfoYDistSlider_ and lfoYClearBtn_ always enabled
     }
 
+    // ── LFO / Gate Length joystick display tracking ────────────────────────
+    // Reads display atomics published by the audio thread dispatch block.
+    // Updates slider thumbs visually without writing to APVTS (no feedback loop).
+    // Guarded by xPlayback / yPlayback — grayed-out sliders do not receive updates.
+    {
+        const bool xPlayback = (proc_.getLfoXRecState() == LfoRecState::Playback);
+        const bool yPlayback = (proc_.getLfoYRecState() == LfoRecState::Playback);
+        const int  xMode     = static_cast<int>(proc_.apvts.getRawParameterValue("filterXMode")->load());
+        const int  yMode     = static_cast<int>(proc_.apvts.getRawParameterValue("filterYMode")->load());
+        const bool xSyncOn   = proc_.apvts.getRawParameterValue("lfoXSync")->load() > 0.5f;
+        const bool ySyncOn   = proc_.apvts.getRawParameterValue("lfoYSync")->load() > 0.5f;
+
+        // X axis targets
+        if (!xPlayback)
+        {
+            switch (xMode)
+            {
+                case 2:  // LFO-X Freq — only update in free mode (sync mode has no rate slider to track)
+                    if (!xSyncOn)
+                        lfoXRateSlider_.setValue(
+                            proc_.lfoXRateDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
+                    break;
+                case 3:  // LFO-X Phase
+                    lfoXPhaseSlider_.setValue(
+                        proc_.lfoXPhaseDisplay_.load(std::memory_order_relaxed),
+                        juce::dontSendNotification);
+                    break;
+                case 4:  // LFO-X Level
+                    lfoXLevelSlider_.setValue(
+                        proc_.lfoXLevelDisplay_.load(std::memory_order_relaxed),
+                        juce::dontSendNotification);
+                    break;
+                case 5:  // Gate Length
+                    arpGateTimeKnob_.setValue(
+                        proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
+                        juce::dontSendNotification);
+                    break;
+                default: break;
+            }
+        }
+
+        // Y axis targets
+        if (!yPlayback)
+        {
+            switch (yMode)
+            {
+                case 2:  // LFO-Y Freq
+                    if (!ySyncOn)
+                        lfoYRateSlider_.setValue(
+                            proc_.lfoYRateDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
+                    break;
+                case 3:  // LFO-Y Phase
+                    lfoYPhaseSlider_.setValue(
+                        proc_.lfoYPhaseDisplay_.load(std::memory_order_relaxed),
+                        juce::dontSendNotification);
+                    break;
+                case 4:  // LFO-Y Level
+                    lfoYLevelSlider_.setValue(
+                        proc_.lfoYLevelDisplay_.load(std::memory_order_relaxed),
+                        juce::dontSendNotification);
+                    break;
+                case 5:  // Gate Length — Y also writes gateLengthDisplay_; last writer wins (known limitation)
+                    arpGateTimeKnob_.setValue(
+                        proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
+                        juce::dontSendNotification);
+                    break;
+                default: break;
+            }
+        }
+    }
+
     // ── Gamepad button flash: RST (Square), DEL (Circle), PANIC (R3) ─────────
     if (proc_.flashLoopReset_.exchange(0, std::memory_order_relaxed) > 0)
         resetFlashCounter_ = 5;   // ~167ms at 30Hz
