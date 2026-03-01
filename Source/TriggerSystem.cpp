@@ -124,8 +124,9 @@ void TriggerSystem::processBlock(const ProcessParams& p)
     // ── Per-voice processing ─────────────────────────────────────────────────
     for (int v = 0; v < 4; ++v)
     {
-        const int         ch  = p.midiChannels[v];   // 1-based (JUCE MidiMessage convention)
-        const TriggerSource src = p.sources[v];
+        const int           ch      = p.midiChannels[v];   // 1-based (JUCE MidiMessage convention)
+        const TriggerSource src     = p.sources[v];
+        const TriggerSource prevSrcV = prevSrc_[v];
         bool trigger = false;
 
         if (allTrig)
@@ -287,10 +288,18 @@ void TriggerSystem::processBlock(const ProcessParams& p)
                 fireNoteOff(v, ch - 1, p.blockSize - 1, p);
             }
         }
-        // Clear countdown if mode is not a random source (prevents ghost note-off on mode switch)
-        // Also clears the -1 sentinel when switching away from manual-gate mode.
+        // Clear countdown if mode is not a random source (prevents ghost note-off on mode switch).
+        // Also fires an immediate note-off when switching away from a random source while the gate
+        // is still open — prevents hanging notes when the user changes trigger mode mid-note.
         if (src != TriggerSource::RandomFree && src != TriggerSource::RandomHold)
+        {
+            const bool wasRandom = (prevSrcV == TriggerSource::RandomFree
+                                 || prevSrcV == TriggerSource::RandomHold);
+            if (wasRandom && gateOpen_[v].load())
+                fireNoteOff(v, ch - 1, 0, p);
             randomGateRemaining_[v] = 0;
+        }
+        prevSrc_[v] = src;
     }
 
     // joystickTrig_ is kept for external callers (notifyJoystickMoved) but the
@@ -319,6 +328,7 @@ void TriggerSystem::resetAllGates()
         randomPhase_[v]         = 0.0;
         prevSubdivIndex_[v]     = -1;
         randomGateRemaining_[v] = 0;
+        prevSrc_[v]             = TriggerSource::TouchPlate;
 
     }
     allTrigger_.store(false);

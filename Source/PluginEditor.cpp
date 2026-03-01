@@ -1081,18 +1081,6 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         }
     }
 
-    randomGateTimeKnob_.setSliderStyle(juce::Slider::RotaryVerticalDrag);
-    randomGateTimeKnob_.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 40, 14);
-    randomGateTimeKnob_.setTooltip("Gate length: 0=short, 1=full subdivision");
-    randomGateTimeKnob_.setColour(juce::Slider::rotarySliderFillColourId,  Clr::highlight);
-    randomGateTimeKnob_.setColour(juce::Slider::rotarySliderOutlineColourId, Clr::accent);
-    randomGateTimeKnob_.setColour(juce::Slider::thumbColourId,             Clr::text);
-    randomGateTimeKnob_.setColour(juce::Slider::textBoxTextColourId,       Clr::textDim);
-    randomGateTimeKnob_.setColour(juce::Slider::textBoxOutlineColourId,    juce::Colours::transparentBlack);
-    addAndMakeVisible(randomGateTimeKnob_);
-    gateLengthAtt_ = std::make_unique<juce::SliderParameterAttachment>(
-        *p.apvts.getParameter("gateLength"), randomGateTimeKnob_);
-
     // Sync toggle — compact rectangular button like the looper mode buttons
     randomSyncButton_.setButtonText("RND SYNC");
     randomSyncButton_.setClickingTogglesState(true);
@@ -1992,22 +1980,21 @@ void PluginEditor::resized()
 
         left.removeFromTop(14);
 
-        // Random controls row — [POP] | [PROB] | [GATE] | [RND SYNC] | [FREE BPM knob]
+        // Random controls row — [POP] | [PROB] | [RND SYNC] | [FREE BPM knob]
         {
             auto rndRow = left.removeFromTop(60);
-            const int cw5 = rndRow.getWidth() / 5;  // 5-column layout for random strip
-            randomDensityKnob_     .setBounds(rndRow.removeFromLeft(cw5));   // POPULATION
-            randomProbabilityKnob_ .setBounds(rndRow.removeFromLeft(cw5));   // PROBABILITY (new)
-            randomGateTimeKnob_    .setBounds(rndRow.removeFromLeft(cw5));   // GATE LEN
+            const int cw4 = rndRow.getWidth() / 4;  // 4-column layout for random strip
+            randomDensityKnob_     .setBounds(rndRow.removeFromLeft(cw4));   // POPULATION
+            randomProbabilityKnob_ .setBounds(rndRow.removeFromLeft(cw4));   // PROBABILITY
             // Compact rectangular button, centred in its column and same height as looper mode buttons
-            randomSyncButton_      .setBounds(rndRow.removeFromLeft(cw5).withSizeKeepingCentre(cw5 - 6, 26));
-            randomFreeTempoKnob_   .setBounds(rndRow);                       // FREE BPM, 5th col
+            randomSyncButton_      .setBounds(rndRow.removeFromLeft(cw4).withSizeKeepingCentre(cw4 - 6, 26));
+            randomFreeTempoKnob_   .setBounds(rndRow);                       // FREE BPM, 4th col
         }
 
-        // BPM display: under FREE BPM knob (5th column in the random 5-col layout)
+        // BPM display: under FREE BPM knob (4th column in the random 4-col layout)
         {
             auto bpmRow = left.removeFromTop(16);
-            const int skipW = (bpmRow.getWidth() * 4) / 5;  // skip POP + PROB + GATE + SYNC columns
+            const int skipW = (bpmRow.getWidth() * 3) / 4;  // skip POP + PROB + SYNC columns
             bpmRow.removeFromLeft(skipW);
             bpmDisplayLabel_.setBounds(bpmRow);
         }
@@ -2445,7 +2432,6 @@ void PluginEditor::paint(juce::Graphics& g)
     };
     drawAbove(randomDensityKnob_,      "POPULATION");
     drawAbove(randomProbabilityKnob_,  "PROBABILITY");
-    drawAbove(randomGateTimeKnob_,     "GATE LEN");
     drawAbove(randomFreeTempoKnob_, "FREE BPM");
     drawAbove(filterYModeBox_,      "LEFT Y");
     drawAbove(filterXModeBox_,      "LEFT X");

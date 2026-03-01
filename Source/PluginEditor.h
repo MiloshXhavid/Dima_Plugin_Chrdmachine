@@ -223,9 +223,7 @@ private:
     juce::Label    randomDensityLabel_;
     std::array<juce::ComboBox, 4>                                    randomSubdivBox_;
     std::array<std::unique_ptr<juce::ComboBoxParameterAttachment>, 4> randomSubdivAtt_;
-    juce::Slider                                                     randomGateTimeKnob_;
-    juce::Slider                                                     randomProbabilityKnob_;   // new — attaches to "randomProbability" APVTS param
-    std::unique_ptr<juce::SliderParameterAttachment>                  gateLengthAtt_;
+    juce::Slider                                                     randomProbabilityKnob_;   // attaches to "randomProbability" APVTS param
     std::unique_ptr<juce::SliderParameterAttachment>                  randomProbabilityAtt_;
     juce::Label    randomSubdivLabel_;
     juce::TextButton                                                 randomSyncButton_;

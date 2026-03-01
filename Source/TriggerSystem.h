@@ -116,6 +116,7 @@ private:
     std::array<int64_t,  4> prevSubdivIndex_     {-1,-1,-1,-1}; // ppq subdivision index last seen
     std::array<int,      4> randomGateRemaining_ {};           // samples until auto note-off
     bool                    wasPlaying_          = false;      // for transport restart detection
+    std::array<TriggerSource, 4> prevSrc_        {};           // previous source per voice (mode-switch transition detection)
 
     double   prevJoystickX_   = 0.0;
     double   prevJoystickY_   = 0.0;
