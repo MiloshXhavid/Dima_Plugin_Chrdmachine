@@ -107,8 +107,8 @@ juce_add_binary_data(ChordJoystickFonts
 )
 
 juce_add_plugin(ChordJoystick
-    PRODUCT_NAME            "DIMEA CHORD JOYSTICK MK2"
-    COMPANY_NAME            "DIMEA"
+    PRODUCT_NAME            "Joystick Chord Control (β-test)"
+    COMPANY_NAME            "Dimea Arcade"
     FORMATS                 VST3
     PLUGIN_MANUFACTURER_CODE "MxCJ"
     PLUGIN_CODE             "DCJM"

@@ -2827,7 +2827,7 @@ void PluginEditor::paint(juce::Graphics& g)
     // Title: pixel font for branding, but bright/readable
     g.setFont(pixelFont_.withHeight(11.0f));
     g.setColour(Clr::text);
-    g.drawText("DIMEA CHORD JOYSTICK MK2", header, juce::Justification::centred);
+    g.drawText("Joystick Chord Control (\xce\xb2-test)", header, juce::Justification::centred);
 
     // Outer border
     g.setColour(Clr::accent.brighter(0.5f));
