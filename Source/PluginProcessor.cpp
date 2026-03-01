@@ -602,6 +602,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     // ── LFO Recording state machine — edge detection (Phase 22) ──────────────
     {
         const bool looperNowRecording = looper_.isRecording();
+        const bool looperNowPlaying   = looper_.isPlaying();
 
         // Rising edge: looper just started recording → start capture on armed LFOs
         if (!prevLooperRecording_ && looperNowRecording)
@@ -618,6 +619,17 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 lfoX_.stopCapture();
             if (lfoY_.getRecState() == LfoRecState::Recording)
                 lfoY_.stopCapture();
+        }
+
+        // Immediate capture: if ARM is pressed while looper is already in playback
+        // (not recording), start capture on the very next processBlock rather than
+        // waiting for a new record cycle.
+        if (looperNowPlaying && !looperNowRecording)
+        {
+            if (lfoX_.getRecState() == LfoRecState::Armed)
+                lfoX_.startCapture();
+            if (lfoY_.getRecState() == LfoRecState::Armed)
+                lfoY_.startCapture();
         }
 
         prevLooperRecording_ = looperNowRecording;
