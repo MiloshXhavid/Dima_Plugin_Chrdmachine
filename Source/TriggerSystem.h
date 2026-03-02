@@ -7,12 +7,23 @@
 enum class TriggerSource { TouchPlate = 0, Joystick = 1, RandomFree = 2, RandomHold = 3 };
 
 // Random subdivision options (beats per bar, denominator)
+// Interleaved: straight + triplet pairs sorted slowest→fastest
 enum class RandomSubdiv {
-    // Straight (indices 0–8)
-    QuadWhole = 0, DblWhole = 1, Whole = 2, Half = 3,
-    Quarter = 4, Eighth = 5, Sixteenth = 6, ThirtySecond = 7, SixtyFourth = 8,
-    // Triplets (indices 9–14)
-    WholeT = 9, HalfT = 10, QuarterT = 11, EighthT = 12, SixteenthT = 13, ThirtySecondT = 14
+    QuadWhole       = 0,   // 4/1  (no triplet pair)
+    DblWhole        = 1,   // 2/1  (no triplet pair)
+    Whole           = 2,   // 1/1
+    WholeT          = 3,   // 1/1T
+    Half            = 4,   // 1/2
+    HalfT           = 5,   // 1/2T
+    Quarter         = 6,   // 1/4
+    QuarterT        = 7,   // 1/4T
+    Eighth          = 8,   // 1/8
+    EighthT         = 9,   // 1/8T
+    Sixteenth       = 10,  // 1/16
+    SixteenthT      = 11,  // 1/16T
+    ThirtySecond    = 12,  // 1/32
+    ThirtySecondT   = 13,  // 1/32T
+    SixtyFourth     = 14   // 1/64 (no triplet pair)
 };
 
 // ─── TriggerSystem ────────────────────────────────────────────────────────────
