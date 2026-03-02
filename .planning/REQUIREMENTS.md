@@ -135,14 +135,14 @@
 
 ### Defaults
 
-- [ ] **DEF-01**: Third octave knob displays "4" by default on fresh install / preset clear
-- [ ] **DEF-02**: Fifth octave knob displays "4" by default on fresh install / preset clear
-- [ ] **DEF-03**: Tension octave knob displays "3" by default on fresh install / preset clear
-- [ ] **DEF-04**: Scale preset defaults to Natural Minor on fresh install / preset clear
+- [x] **DEF-01**: Third octave knob displays "4" by default on fresh install / preset clear
+- [x] **DEF-02**: Fifth octave knob displays "4" by default on fresh install / preset clear
+- [x] **DEF-03**: Tension octave knob displays "3" by default on fresh install / preset clear
+- [x] **DEF-04**: Scale preset defaults to Natural Minor on fresh install / preset clear
 
 ### Bug Fix
 
-- [ ] **BUG-03**: Remove `else noteCount_[ch][pitch] = 0` defensive clamp from all 5 note-off paths in PluginProcessor (live note-off, looper note-off, looper sub-octave off, live sub-octave off, arp choke) — eliminates stuck notes when any two voices produce the same pitch in Single Channel mode
+- [x] **BUG-03**: Remove `else noteCount_[ch][pitch] = 0` defensive clamp from all 5 note-off paths in PluginProcessor (live note-off, looper note-off, looper sub-octave off, live sub-octave off, arp choke) — eliminates stuck notes when any two voices produce the same pitch in Single Channel mode
 
 ### Triplet Subdivisions
 
@@ -168,6 +168,10 @@
 - [ ] **DIST-06**: Full plugin copy backed up to Desktop
 
 ## Future Requirements (v2+)
+
+### Mono Synth Compatibility
+
+- **BUG-04**: Single Channel mode has a "Mono Choke" toggle — when enabled, any new note-on first sends note-off for all currently active pitches on that channel before firing the new note-on; prevents stuck notes on mono synths when multiple pads are triggered simultaneously
 
 ### LFO Extensions
 
@@ -259,11 +263,11 @@
 | OPT1-07 | Phase 24 | Complete |
 | DIST-03 | Phase 25 | Complete |
 | DIST-04 | Phase 25 | Complete |
-| DEF-01 | Phase 26 | Pending |
-| DEF-02 | Phase 26 | Pending |
-| DEF-03 | Phase 26 | Pending |
-| DEF-04 | Phase 26 | Pending |
-| BUG-03 | Phase 26 | Pending |
+| DEF-01 | Phase 26 | Complete |
+| DEF-02 | Phase 26 | Complete |
+| DEF-03 | Phase 26 | Complete |
+| DEF-04 | Phase 26 | Complete |
+| BUG-03 | Phase 26 | Complete |
 | TRIP-01 | Phase 27 | Pending |
 | TRIP-02 | Phase 27 | Pending |
 | RND-08 | Phase 28 | Pending |
@@ -275,6 +279,7 @@
 | LOOP-04 | Phase 29 | Pending |
 | DIST-05 | Phase 30 | Pending |
 | DIST-06 | Phase 30 | Pending |
+| BUG-04 | Future | Pending |
 
 **Coverage:**
 - v1.4 requirements: 21 total — mapped to phases: 21 (Phase 12: 8, Phase 13: 5, Phase 14: 3, Phase 15: 2, Phase 16: 3) — unmapped: 0 ✓
@@ -283,4 +288,4 @@
 
 ---
 *Requirements defined: 2026-02-26 (v1.4), 2026-02-28 (v1.5), 2026-03-02 (v1.6)*
-*Last updated: 2026-03-02 — v1.6 roadmap created; DIST-05/DIST-06 minted; all 16 v1.6 reqs mapped to Phases 26-30*
+*Last updated: 2026-03-02 — v1.6 roadmap created; DIST-05/DIST-06 minted; all 16 v1.6 reqs mapped to Phases 26-30; BUG-04 (mono choke) added as future requirement*
