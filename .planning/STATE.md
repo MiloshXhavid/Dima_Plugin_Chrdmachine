@@ -83,14 +83,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.5 — Phase 25: Distribution — plan 01 complete (installer + smoke test approved), plan 02 pending
+**Current focus:** v1.5 — Phase 25: Distribution — COMPLETE (both plans done), v1.5 shipped
 
 ## Current Position
 
-Phase: 25 (Distribution) — In Progress (1/2 plans complete)
-Plan: 25-01 COMPLETE — installer script v1.5, DIMEA-ChordJoystickMK2-v1.5-Setup.exe compiled + smoke test approved
-Status: Ready for 25-02 (git tag v1.5, GitHub pre-release, desktop backup)
-Last activity: 2026-03-02 — Phase 25 plan 01 complete (smoke test approved)
+Phase: 25 (Distribution) — COMPLETE (2/2 plans complete)
+Plan: 25-02 COMPLETE — v1.5 git tag pushed, GitHub pre-release published, desktop backup created
+Status: v1.5 milestone complete — pre-release live at github.com/MiloshXhavid/Dima_Plugin_Chrdmachine/releases/tag/v1.5
+Last activity: 2026-03-02 — Phase 25 plan 02 complete (GitHub pre-release + desktop backup)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -106,13 +106,13 @@ v1.5 Routing+Expression  [█████████ ] In progress
   Phase 23  [██████████]   Arpeggiator            COMPLETE 2026-03-01
   Phase 24  [██████████]   Gamepad Option Mode 1  COMPLETE 2026-03-01
   Phase 24.1[██████████]   LFO Joystick Tracking  COMPLETE 2026-03-02
-  Phase 25  [█████     ]   Distribution           In progress (25-01 complete)
+  Phase 25  [██████████]   Distribution           COMPLETE 2026-03-02
 ```
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 51 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 20 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02 + 20-03 + 21-01 + 21-02 + 22-01 + 22-02 + 22-03 + 23-01 + 23-02 + 24-01 + 24-02 + 24-03 + 25-01])
+- Total plans completed: 52 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 21 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02 + 20-03 + 21-01 + 21-02 + 22-01 + 22-02 + 22-03 + 23-01 + 23-02 + 24-01 + 24-02 + 24-03 + 25-01 + 25-02])
 - Average duration: not tracked per plan
 - Total execution time: not tracked
 
@@ -193,6 +193,9 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 25-distribution]: LicenseFile removed from installer — no license agreement step shown to users
 - [Phase 25-01]: SmartScreen disclaimer placed on installer welcome page via Inno Setup [Messages] WelcomeLabel1/WelcomeLabel2 — no separate info page needed
 - [Phase 25-01]: DIMEA CHORD JOYSTICK MK2.vst3 bundle from Mar 1 23:32 build used for installer source — CMakeLists.txt was rebranded after Phase 24.1, so new cmake build would produce wrong bundle name; existing bundle contains all required Phase 24.1 code
+- [Phase 25-02]: Release created as pre-release (--prerelease flag) so v1.4 retains Latest status on GitHub
+- [Phase 25-02]: Desktop backup uses build output VST3 bundle (not system VST3 path) — guaranteed to match installer contents
+- [Phase 25-02]: Source archive created from v1.5 git tag using git archive — reproducible at exact shipped commit
 
 ### Pending Todos
 
@@ -205,5 +208,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 25-01-PLAN.md — smoke test approved, SUMMARY.md created
-Next step: Execute 25-02-PLAN.md — git tag v1.5, push to plugin remote, create GitHub pre-release, desktop backup
+Stopped at: Completed 25-02-PLAN.md — GitHub pre-release v1.5 published, desktop backup created, v1.5 milestone COMPLETE
+Next step: v1.5 milestone complete — ready for /gsd:new-milestone for v1.6 or promote pre-release to Latest manually
