@@ -1799,7 +1799,10 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     styleLabel(randomSubdivLabel_, "RND SYNC");
     addAndMakeVisible(randomSubdivLabel_);
     {
-        const juce::StringArray subdivChoices { "4/1", "2/1", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64" };
+        const juce::StringArray subdivChoices {
+            "4/1", "2/1", "1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64",  // 0–8 straight
+            "1/1T", "1/2T", "1/4T", "1/8T", "1/16T", "1/32T"                   // 9–14 triplet
+        };
         for (int v = 0; v < 4; ++v)
         {
             randomSubdivBox_[v].addItemList(subdivChoices, 1);
@@ -2029,12 +2032,18 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     }
 
     // ── Quantize subdivision dropdown ─────────────────────────────────────────
-    quantizeSubdivBox_.addItem("1/4",  1);
-    quantizeSubdivBox_.addItem("1/8",  2);
-    quantizeSubdivBox_.addItem("1/16", 3);
-    quantizeSubdivBox_.addItem("1/32", 4);
+    quantizeSubdivBox_.addItem("1/4",   1);
+    quantizeSubdivBox_.addItem("1/8",   2);
+    quantizeSubdivBox_.addItem("1/16",  3);
+    quantizeSubdivBox_.addItem("1/32",  4);
+    quantizeSubdivBox_.addItem("1/1T",  5);
+    quantizeSubdivBox_.addItem("1/2T",  6);
+    quantizeSubdivBox_.addItem("1/4T",  7);
+    quantizeSubdivBox_.addItem("1/8T",  8);
+    quantizeSubdivBox_.addItem("1/16T", 9);
+    quantizeSubdivBox_.addItem("1/32T", 10);
     styleCombo(quantizeSubdivBox_);
-    quantizeSubdivBox_.setTooltip("Quantize Grid  -  subdivision used for live and post quantisation (1/4 to 1/32)");
+    quantizeSubdivBox_.setTooltip("Quantize Grid  -  subdivision used for live and post quantisation (1/4 to 1/32T)");
     addAndMakeVisible(quantizeSubdivBox_);
     quantizeSubdivAtt_ = std::make_unique<ComboAtt>(p.apvts, "quantizeSubdiv", quantizeSubdivBox_);
 
