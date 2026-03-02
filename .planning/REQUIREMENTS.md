@@ -122,7 +122,7 @@
 ### Distribution
 
 - [x] **DIST-03**: GitHub v1.5 release created with built installer binary and release notes
-- [ ] **DIST-04**: Full plugin copy backed up to Desktop
+- [x] **DIST-04**: Full plugin copy backed up to Desktop
 
 ## Future Requirements (v2+)
 
@@ -215,7 +215,7 @@
 | OPT1-06 | Phase 24 | Complete |
 | OPT1-07 | Phase 24 | Complete |
 | DIST-03 | Phase 25 | Complete |
-| DIST-04 | Phase 25 | Pending |
+| DIST-04 | Phase 25 | Complete |
 
 **Coverage:**
 - v1.4 requirements: 21 total — mapped to phases: 21 (Phase 12: 8, Phase 13: 5, Phase 14: 3, Phase 15: 2, Phase 16: 3) — unmapped: 0 ✓

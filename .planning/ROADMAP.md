@@ -307,7 +307,7 @@ Plans:
 | 23. Arpeggiator | v1.5 | Complete    | 2026-03-01 | 2026-03-01 |
 | 24. Gamepad Option Mode 1 | v1.5 | 3/3 | Complete | 2026-03-01 |
 | 24.1. LFO Joystick Visual Tracking | 2/2 | Complete | 2026-03-02 | 2026-03-02 |
-| 25. Distribution | 2/2 | Complete   | 2026-03-02 | - |
+| 25. Distribution | 2/2 | Complete    | 2026-03-02 | - |
 
 ---
 *v1.0 shipped 2026-02-23 — 7 phases, 17 plans*
