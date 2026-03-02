@@ -194,7 +194,7 @@ private:
 
     // Config: read on audio thread, written from PluginProcessor (APVTS-driven)
     std::atomic<int> quantizeMode_   { 0 };  // 0=Off, 1=Live, 2=Post
-    std::atomic<int> quantizeSubdiv_ { 1 };  // 0=1/4, 1=1/8, 2=1/16, 3=1/32, 4=1/1T, 5=1/2T, 6=1/4T, 7=1/8T, 8=1/16T, 9=1/32T
+    std::atomic<int> quantizeSubdiv_ { 1 };  // 0=1/1T, 1=1/2T, 2=1/4, 3=1/4T, 4=1/8, 5=1/8T, 6=1/16, 7=1/16T, 8=1/32, 9=1/32T
 
     // Per-voice last note-on beats (audio-thread-only — no atomic needed)
     double lastSnappedOnBeat_[4] = { 0.0, 0.0, 0.0, 0.0 };

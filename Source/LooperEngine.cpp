@@ -23,17 +23,17 @@ double quantizeSubdivToGridSize(int subdivIdx) noexcept
 {
     switch (subdivIdx)
     {
-        case 0: return 1.0;         // 1/4 note
-        case 1: return 0.5;         // 1/8 note
-        case 2: return 0.25;        // 1/16 note
-        case 3: return 0.125;       // 1/32 note
-        case 4: return 8.0/3.0;    // 1/1T
-        case 5: return 4.0/3.0;    // 1/2T
-        case 6: return 2.0/3.0;    // 1/4T
-        case 7: return 1.0/3.0;    // 1/8T
-        case 8: return 1.0/6.0;    // 1/16T
-        case 9: return 1.0/12.0;   // 1/32T
-        default: return 0.5;        // safe fallback: 1/8
+        case 0: return 8.0/3.0;   // 1/1T
+        case 1: return 4.0/3.0;   // 1/2T
+        case 2: return 1.0;       // 1/4
+        case 3: return 2.0/3.0;   // 1/4T
+        case 4: return 0.5;       // 1/8
+        case 5: return 1.0/3.0;   // 1/8T
+        case 6: return 0.25;      // 1/16
+        case 7: return 1.0/6.0;   // 1/16T
+        case 8: return 0.125;     // 1/32
+        case 9: return 1.0/12.0;  // 1/32T
+        default: return 0.5;      // safe fallback: 1/8
     }
 }
 
