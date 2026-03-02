@@ -207,11 +207,11 @@ PluginProcessor::createParameterLayout()
         ParamID::filterYAtten, "Filter Resonance Attenuator",
         juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 99.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::filterXOffset, "Filter Cutoff Base",
-        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 64.0f));
+        ParamID::filterXOffset, "MOD FIX X",
+        juce::NormalisableRange<float>(-50.0f, 50.0f, 1.0f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::filterYOffset, "Filter Resonance Base",
-        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 64.0f));
+        ParamID::filterYOffset, "MOD FIX Y",
+        juce::NormalisableRange<float>(-50.0f, 50.0f, 1.0f), 0.0f));
     addInt  (ParamID::filterMidiCh, "Filter MIDI Channel",  1, 16, 1);
     {
         juce::StringArray xModes { "Cutoff (CC74)", "VCF LFO (CC12)", "LFO-X Freq",
@@ -1222,6 +1222,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         if (isOn)
         {
             anyNoteOnThisBlock = true;
+            voiceTriggerFlash_[voice].fetch_add(1, std::memory_order_relaxed);
 
             // Snapshot the chord for the display label on deliberate triggers
             // (touchplate, gamepad button, random gate) but NOT on continuous
@@ -1694,8 +1695,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 prevBaseX_ = xOffset;
                 prevBaseY_ = yOffset;
 
-                const int ccCut = juce::jlimit(0, 127, (int)std::roundf(xOffset + prevFilterX_ * 63.5f * (xAtten / 100.0f)));
-                const int ccRes = juce::jlimit(0, 127, (int)std::roundf(yOffset + prevFilterY_ * 63.5f * (yAtten / 100.0f)));
+                // xOffset/yOffset are now -50..+50 centered at 0; add to MIDI centre 64.
+                const int ccCut = juce::jlimit(0, 127, (int)std::roundf(64.0f + xOffset + prevFilterX_ * 63.5f * (xAtten / 100.0f)));
+                const int ccRes = juce::jlimit(0, 127, (int)std::roundf(64.0f + yOffset + prevFilterY_ * 63.5f * (yAtten / 100.0f)));
 
                 if (xMode <= 1)  // CC targets only
                 {
@@ -1721,6 +1723,21 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 }
                 filterCutDisplay_.store(static_cast<float>(ccCut), std::memory_order_relaxed);
                 filterResDisplay_.store(static_cast<float>(ccRes), std::memory_order_relaxed);
+            }
+
+            // ── MOD FIX + live-stick display atomics (UI colour feedback) ─────────
+            // Uses live stick (not S&H) so knob returns to offset when stick centered.
+            {
+                const float lx = gamepad_.getLeftStickXLive();
+                const float ly = gamepad_.getLeftStickYLive();
+                leftStickXDisplay_.store(lx, std::memory_order_relaxed);
+                leftStickYDisplay_.store(ly, std::memory_order_relaxed);
+                filterXOffsetDisplay_.store(
+                    juce::jlimit(-50.0f, 50.0f, xOffset + lx * 63.5f * (xAtten / 100.0f)),
+                    std::memory_order_relaxed);
+                filterYOffsetDisplay_.store(
+                    juce::jlimit(-50.0f, 50.0f, yOffset + ly * 63.5f * (yAtten / 100.0f)),
+                    std::memory_order_relaxed);
             }
 
             // ── LFO / Gate Length dispatch (indices 2–5) ──────────────────────────

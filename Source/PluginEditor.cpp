@@ -53,7 +53,7 @@ void PixelLookAndFeel::drawRotarySlider(juce::Graphics& g,
     int x, int y, int width, int height,
     float sliderPosProportional,
     float rotaryStartAngle, float rotaryEndAngle,
-    juce::Slider& /*slider*/)
+    juce::Slider& slider)
 {
     const float cx = x + width  * 0.5f;
     const float cy = y + height * 0.5f;
@@ -72,6 +72,34 @@ void PixelLookAndFeel::drawRotarySlider(juce::Graphics& g,
     }
     const float endAngle = rotaryStartAngle
         + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
+
+    // Detect bipolar knobs (min == -max, e.g. MOD FIX -50..+50).
+    // For these, draw the arc from noon (centre angle) to current position,
+    // coloured red (positive) or blue (negative).
+    const float sMin = (float)slider.getMinimum();
+    const float sMax = (float)slider.getMaximum();
+    const bool isBipolar = (sMin < 0.0f && sMax > 0.0f &&
+                            std::abs(sMin + sMax) < 0.01f);
+    if (isBipolar)
+    {
+        const float centreAngle = (rotaryStartAngle + rotaryEndAngle) * 0.5f;
+        const float val = (float)slider.getValue();
+        if (std::abs(val) > 0.5f)
+        {
+            const bool positive   = val > 0.0f;
+            const float arcStart  = positive ? centreAngle : endAngle;
+            const float arcEnd    = positive ? endAngle    : centreAngle;
+            const juce::Colour arcClr = positive
+                ? juce::Colour(0xFFE03030)   // red
+                : juce::Colour(0xFF3060FF);  // blue
+            juce::Path fillArc;
+            fillArc.addArc(cx - trackR, cy - trackR, trackR * 2.0f, trackR * 2.0f,
+                           arcStart, arcEnd, true);
+            g.setColour(arcClr.withAlpha(0.90f));
+            g.strokePath(fillArc, thinStroke);
+        }
+    }
+    else
     {
         juce::Path fillArc;
         fillArc.addArc(cx - trackR, cy - trackR, trackR * 2.0f, trackR * 2.0f,
@@ -235,13 +263,13 @@ void PixelLookAndFeel::drawComboBox(juce::Graphics& g, int width, int height,
 void PixelLookAndFeel::drawLinearSlider(juce::Graphics& g,
     int x, int y, int width, int height,
     float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
-    juce::Slider::SliderStyle style, juce::Slider& /*slider*/)
+    juce::Slider::SliderStyle style, juce::Slider& slider)
 {
     if (style != juce::Slider::LinearHorizontal)
     {
         // Fall back for any vertical linear sliders (none expected but be safe)
         LookAndFeel_V4::drawLinearSlider(g, x, y, width, height,
-            sliderPos, 0.0f, 0.0f, style, *reinterpret_cast<juce::Slider*>(nullptr));
+            sliderPos, 0.0f, 0.0f, style, slider);
         return;
     }
 
@@ -252,8 +280,8 @@ void PixelLookAndFeel::drawLinearSlider(juce::Graphics& g,
     g.setColour(Clr::gateOff);
     g.fillRect(juce::Rectangle<float>((float)x, trackY, (float)width, trackH));
 
-    // Filled portion
-    g.setColour(Clr::accent);
+    // Filled portion — trackColourId allows joystick red/blue tinting from timerCallback
+    g.setColour(slider.findColour(juce::Slider::trackColourId));
     g.fillRect(juce::Rectangle<float>((float)x, trackY, sliderPos - x, trackH));
 
     // Thumb (3px wide white rect)
@@ -618,6 +646,116 @@ void GamepadDisplayComponent::paint(juce::Graphics& g)
 JoystickPad::JoystickPad(PluginProcessor& p) : proc_(p)
 {
     setMouseCursor(juce::MouseCursor::CrosshairCursor);
+    particles_.reserve(128);
+    startTimerHz(60);
+}
+
+void JoystickPad::timerCallback()
+{
+    // ── Update particles ─────────────────────────────────────────────────────
+    for (auto& p : particles_)
+    {
+        p.x  += p.vx;
+        p.y  += p.vy;
+        p.vy += 0.045f;          // subtle gravity for gold dust
+        p.vx *= 0.97f;
+        p.vy *= 0.97f;
+        p.life -= p.decay;
+        p.size *= 0.975f;
+    }
+    particles_.erase(std::remove_if(particles_.begin(), particles_.end(),
+        [](const JoyParticle& p){ return p.life <= 0.0f || p.size < 0.3f; }),
+        particles_.end());
+
+    // ── Compute cursor pixel position ────────────────────────────────────────
+    const float w = (float)getWidth();
+    const float h = (float)getHeight();
+    if (w < 1.0f || h < 1.0f) return;
+
+    const bool lfoXActive = *proc_.apvts.getRawParameterValue("lfoXEnabled") > 0.5f;
+    const bool lfoYActive = *proc_.apvts.getRawParameterValue("lfoYEnabled") > 0.5f;
+    const float dispX = (lfoXActive || lfoYActive)
+        ? proc_.modulatedJoyX_.load(std::memory_order_relaxed)
+        : proc_.joystickX.load(std::memory_order_relaxed);
+    const float dispY = (lfoXActive || lfoYActive)
+        ? proc_.modulatedJoyY_.load(std::memory_order_relaxed)
+        : proc_.joystickY.load(std::memory_order_relaxed);
+
+    constexpr float dotR = 7.0f, brdr = 2.0f;
+    const float cx = juce::jlimit(dotR + brdr, w - dotR - brdr, (dispX + 1.0f) * 0.5f * w);
+    const float cy = juce::jlimit(dotR + brdr, h - dotR - brdr, (1.0f - (dispY + 1.0f) * 0.5f) * h);
+
+    // ── Spawn gold movement particles ─────────────────────────────────────────
+    if (prevCx_ > -999.0f)
+    {
+        const float dx    = cx - prevCx_;
+        const float dy    = cy - prevCy_;
+        const float speed = std::sqrt(dx * dx + dy * dy);
+        if (speed > 1.2f)
+            spawnGoldParticles(cx, cy, dx, dy, speed);
+    }
+    prevCx_ = cx;
+    prevCy_ = cy;
+
+    // ── Poll voice note-on bursts ─────────────────────────────────────────────
+    static const juce::Colour kVoiceClr[4] = {
+        juce::Colour(0xFF00E676),  // Voice 0: green
+        juce::Colour(0xFF3DD8FF),  // Voice 1: cyan
+        juce::Colour(0xFFB06EFF),  // Voice 2: purple
+        juce::Colour(0xFFFF9800),  // Voice 3: orange
+    };
+    for (int v = 0; v < 4; ++v)
+    {
+        if (proc_.voiceTriggerFlash_[v].exchange(0, std::memory_order_relaxed) > 0)
+            spawnBurst(cx, cy, kVoiceClr[v], 20);
+    }
+
+    repaint();
+}
+
+void JoystickPad::spawnGoldParticles(float cx, float cy, float dx, float dy, float speed)
+{
+    static juce::Random rng;
+    const int count = juce::jmin(6, (int)(speed * 0.55f));
+    const juce::Colour gold(0xFFFFCC44);
+    const float angle0 = std::atan2(-dy, -dx);  // trail behind movement
+    for (int i = 0; i < count; ++i)
+    {
+        if (particles_.size() >= 120) break;
+        JoyParticle p;
+        p.x     = cx + rng.nextFloat() * 3.0f - 1.5f;
+        p.y     = cy + rng.nextFloat() * 3.0f - 1.5f;
+        const float a = angle0 + (rng.nextFloat() - 0.5f) * 1.8f;
+        const float s = rng.nextFloat() * 0.9f + 0.2f;
+        p.vx    = std::cos(a) * s;
+        p.vy    = std::sin(a) * s;
+        p.life  = 1.0f;
+        p.decay = 1.0f / (0.28f * 60.0f);
+        p.size  = rng.nextFloat() * 1.0f + 0.7f;
+        p.color = gold;
+        particles_.push_back(p);
+    }
+}
+
+void JoystickPad::spawnBurst(float cx, float cy, juce::Colour color, int count)
+{
+    static juce::Random rng;
+    for (int i = 0; i < count; ++i)
+    {
+        if (particles_.size() >= 120) break;
+        JoyParticle p;
+        p.x     = cx + rng.nextFloat() * 5.0f - 2.5f;
+        p.y     = cy + rng.nextFloat() * 5.0f - 2.5f;
+        const float a = rng.nextFloat() * juce::MathConstants<float>::twoPi;
+        const float s = rng.nextFloat() * 2.2f + 0.8f;
+        p.vx    = std::cos(a) * s;
+        p.vy    = std::sin(a) * s;
+        p.life  = 1.0f;
+        p.decay = 1.0f / (0.48f * 60.0f);
+        p.size  = rng.nextFloat() * 1.4f + 1.0f;
+        p.color = color;
+        particles_.push_back(p);
+    }
 }
 
 void JoystickPad::updateFromMouse(const juce::MouseEvent& e)
@@ -731,6 +869,19 @@ void JoystickPad::paint(juce::Graphics& g)
                                   (displayX + 1.0f) * 0.5f * b.getWidth()  + b.getX());
     const float cy = juce::jlimit(b.getY() + dotR + brdr, b.getBottom() - dotR - brdr,
                                   (1.0f - (displayY + 1.0f) * 0.5f) * b.getHeight() + b.getY());
+
+    // ── Particles (clipped to pad bounds, no spill) ───────────────────────────
+    {
+        juce::Graphics::ScopedSaveState ss(g);
+        g.reduceClipRegion(getLocalBounds());
+        for (const auto& p : particles_)
+        {
+            if (p.life <= 0.0f) continue;
+            const float alpha = std::sqrt(p.life) * 0.88f;
+            g.setColour(p.color.withAlpha(alpha));
+            g.fillEllipse(p.x - p.size, p.y - p.size, p.size * 2.0f, p.size * 2.0f);
+        }
+    }
 
     // Static centre reference — same shape as cursor, always visible
     {
@@ -1481,15 +1632,19 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     // ── Filter CC base — resting CC when stick is centred ──────────────────
     styleKnob(filterXOffsetKnob_); filterXOffsetKnob_.setTextValueSuffix("");
-    styleLabel(filterXOffsetLabel_, "MOD SET X");
+    styleLabel(filterXOffsetLabel_, "MOD FIX X");
     styleKnob(filterYOffsetKnob_); filterYOffsetKnob_.setTextValueSuffix("");
-    styleLabel(filterYOffsetLabel_, "MOD SET Y");
-    filterXOffsetKnob_.setTooltip("Cutoff Base  -  CC74 value sent when left stick X is centred");
-    filterYOffsetKnob_.setTooltip("Resonance Base  -  CC71 value sent when left stick Y is centred");
+    styleLabel(filterYOffsetLabel_, "MOD FIX Y");
+    filterXOffsetKnob_.setTooltip("MOD FIX X  -  Center offset for left stick X (CC modes). Tracks joystick live. Resets to 0 when LFO mode is selected.");
+    filterYOffsetKnob_.setTooltip("MOD FIX Y  -  Center offset for left stick Y (CC modes). Tracks joystick live. Resets to 0 when LFO mode is selected.");
     addAndMakeVisible(filterXOffsetKnob_); addAndMakeVisible(filterXOffsetLabel_);
     addAndMakeVisible(filterYOffsetKnob_); addAndMakeVisible(filterYOffsetLabel_);
     filterXOffsetAtt_ = std::make_unique<SliderAtt>(p.apvts, "filterXOffset", filterXOffsetKnob_);
     filterYOffsetAtt_ = std::make_unique<SliderAtt>(p.apvts, "filterYOffset", filterYOffsetKnob_);
+    filterXOffsetKnob_.onDragStart = [this] { filterXOffsetDragging_ = true;  };
+    filterXOffsetKnob_.onDragEnd   = [this] { filterXOffsetDragging_ = false; };
+    filterYOffsetKnob_.onDragStart = [this] { filterYOffsetDragging_ = true;  };
+    filterYOffsetKnob_.onDragEnd   = [this] { filterYOffsetDragging_ = false; };
 
     styleLabel(filterXModeLabel_, "Left X");
     filterXModeLabel_.setJustificationType(juce::Justification::centredLeft);
@@ -1834,6 +1989,18 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     styleCombo(filterXModeBox_);
     addAndMakeVisible(filterXModeBox_);
     filterXModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterXMode", filterXModeBox_);
+    filterXModeBox_.onChange = [this]
+    {
+        if (filterXModeBox_.getSelectedItemIndex() >= 2)  // LFO / Gate modes — drop MOD FIX to 0
+            if (auto* px = proc_.apvts.getParameter("filterXOffset"))
+                px->setValueNotifyingHost(0.5f);  // 0.5 = centre of -50..+50 = value 0
+    };
+    filterYModeBox_.onChange = [this]
+    {
+        if (filterYModeBox_.getSelectedItemIndex() >= 2)
+            if (auto* py = proc_.apvts.getParameter("filterYOffset"))
+                py->setValueNotifyingHost(0.5f);
+    };
 
     // ── Filter Mod hint label (bottom-right) ─────────────────────────────────
     filterModHintLabel_.setText(
@@ -3504,6 +3671,13 @@ void PluginEditor::timerCallback()
                             proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
+                case 0:  // Cutoff (CC74) — MOD FIX X tracks live offset in -50..+50 range
+                case 1:  // VCF LFO (CC12)
+                    if (!filterXOffsetDragging_)
+                        filterXOffsetKnob_.setValue(
+                            proc_.filterXOffsetDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
+                    break;
                 default: break;
             }
         }
@@ -3537,7 +3711,43 @@ void PluginEditor::timerCallback()
                             proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
+                case 0:  // Resonance (CC71) — MOD FIX Y tracks live offset in -50..+50 range
+                case 1:  // LFO Rate (CC76)
+                    if (!filterYOffsetDragging_)
+                        filterYOffsetKnob_.setValue(
+                            proc_.filterYOffsetDisplay_.load(std::memory_order_relaxed),
+                            juce::dontSendNotification);
+                    break;
                 default: break;
+            }
+        }
+
+        // ── LFO fader red/blue tinting from live left stick ───────────────────
+        {
+            const float lx   = proc_.leftStickXDisplay_.load(std::memory_order_relaxed);
+            const float ly   = proc_.leftStickYDisplay_.load(std::memory_order_relaxed);
+            const float absX = std::abs(lx);
+            const float absY = std::abs(ly);
+            constexpr float kThresh = 0.05f;
+            const juce::Colour posClr(0xFFE03030);   // red
+            const juce::Colour negClr(0xFF3060FF);   // blue
+            const juce::Colour xTrk = (absX > kThresh)
+                ? Clr::accent.interpolatedWith(lx > 0 ? posClr : negClr, juce::jmin(absX, 1.0f))
+                : Clr::accent;
+            const juce::Colour yTrk = (absY > kThresh)
+                ? Clr::accent.interpolatedWith(ly > 0 ? posClr : negClr, juce::jmin(absY, 1.0f))
+                : Clr::accent;
+            if (xMode >= 2 && xMode <= 5)
+            {
+                lfoXRateSlider_ .setColour(juce::Slider::trackColourId, xTrk);
+                lfoXPhaseSlider_.setColour(juce::Slider::trackColourId, xTrk);
+                lfoXLevelSlider_.setColour(juce::Slider::trackColourId, xTrk);
+            }
+            if (yMode >= 2 && yMode <= 5)
+            {
+                lfoYRateSlider_ .setColour(juce::Slider::trackColourId, yTrk);
+                lfoYPhaseSlider_.setColour(juce::Slider::trackColourId, yTrk);
+                lfoYLevelSlider_.setColour(juce::Slider::trackColourId, yTrk);
             }
         }
     }

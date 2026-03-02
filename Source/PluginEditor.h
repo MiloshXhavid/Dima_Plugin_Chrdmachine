@@ -76,10 +76,12 @@ private:
 };
 
 // ─── JoystickPad ─────────────────────────────────────────────────────────────
-// Mouse-draggable XY pad that writes into processor.joystickX/Y
+// Mouse-draggable XY pad that writes into processor.joystickX/Y.
+// Owns a 60 Hz particle system for gold movement dust and per-voice note bursts.
 
 class JoystickPad : public juce::Component,
-                    public juce::SettableTooltipClient
+                    public juce::SettableTooltipClient,
+                    public juce::Timer
 {
 public:
     explicit JoystickPad(PluginProcessor& p);
@@ -88,10 +90,27 @@ public:
     void mouseDrag        (const juce::MouseEvent& e) override;
     void mouseUp          (const juce::MouseEvent& e) override;
     void mouseDoubleClick (const juce::MouseEvent& e) override;
+    void timerCallback()  override;
 
 private:
+    struct JoyParticle
+    {
+        float x, y;       // pixel position within pad
+        float vx, vy;     // velocity (pixels per frame)
+        float life;       // 1.0 = just born, 0.0 = dead
+        float decay;      // life reduction per frame
+        float size;       // radius in pixels
+        juce::Colour color;
+    };
+
     PluginProcessor& proc_;
     void updateFromMouse(const juce::MouseEvent& e);
+    void spawnGoldParticles(float cx, float cy, float dx, float dy, float speed);
+    void spawnBurst(float cx, float cy, juce::Colour color, int count);
+
+    std::vector<JoyParticle> particles_;
+    float prevCx_ = -9999.0f;
+    float prevCy_ = -9999.0f;
 };
 
 // ─── TouchPlate ───────────────────────────────────────────────────────────────
@@ -453,7 +472,9 @@ private:
     bool lfoYRateDragging_  = false;
     bool lfoYPhaseDragging_ = false;
     bool lfoYLevelDragging_ = false;
-    bool gateDragging_      = false;
+    bool gateDragging_           = false;
+    bool filterXOffsetDragging_  = false;
+    bool filterYOffsetDragging_  = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginEditor)
 };

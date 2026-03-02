@@ -198,6 +198,18 @@ public:
     std::atomic<float> lfoYLevelDisplay_ { 0.0f  };
     std::atomic<float> gateLengthDisplay_{ 0.5f  };
 
+    // MOD FIX knob display — uses live stick (not S&H) for stability.
+    // Holds xOffset + liveX * 63.5 * atten, clamped to -50..+50.
+    std::atomic<float> filterXOffsetDisplay_ { 0.0f };
+    std::atomic<float> filterYOffsetDisplay_ { 0.0f };
+
+    // Raw live left-stick values for UI colour feedback (LFO fader red/blue tint).
+    std::atomic<float> leftStickXDisplay_    { 0.0f };
+    std::atomic<float> leftStickYDisplay_    { 0.0f };
+
+    // Note-on flash per voice — incremented on note-on, consumed by JoystickPad timerCallback.
+    std::atomic<int>   voiceTriggerFlash_[4] {};
+
     // ── APVTS ─────────────────────────────────────────────────────────────────
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
