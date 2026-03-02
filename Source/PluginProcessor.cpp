@@ -1638,7 +1638,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const bool filterHasContent = looper_.hasFilterContent(); // any FilterX/Y events recorded
         const bool looperDriving = filterModOn && filterRecOn && filterHasContent
                                    && (loopOut.hasFilterX || loopOut.hasFilterY);
-        const bool liveGamepad   = filterModOn && gamepad_.isConnected() && gamepadActive_.load(std::memory_order_relaxed);
+        // liveGamepad is true when either a physical controller is active OR the user is
+        // mouse-dragging the left stick in the controller illustration (no controller needed).
+        const bool liveGamepad   = filterModOn && ((gamepad_.isConnected() && gamepadActive_.load(std::memory_order_relaxed))
+                                                   || gamepad_.isMouseFilterActive());
 
         // Base knobs are the primary modulator and send CC independently of the joystick.
         // Joystick/looper updates are still gated by liveGamepad||looperDriving, but
@@ -1728,8 +1731,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             // ── MOD FIX + live-stick display atomics (UI colour feedback) ─────────
             // Uses live stick (not S&H) so knob returns to offset when stick centered.
             {
-                const float lx = gamepad_.getLeftStickXLive();
-                const float ly = gamepad_.getLeftStickYLive();
+                const float lx = gamepad_.getLeftStickXDisplay();
+                const float ly = gamepad_.getLeftStickYDisplay();
                 leftStickXDisplay_.store(lx, std::memory_order_relaxed);
                 leftStickYDisplay_.store(ly, std::memory_order_relaxed);
                 filterXOffsetDisplay_.store(
@@ -1747,14 +1750,15 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             lfoXRateOverride_ = lfoXPhaseOverride_ = lfoXLevelOverride_ = -1.0f;
             lfoYRateOverride_ = lfoYPhaseOverride_ = lfoYLevelOverride_ = -1.0f;
 
-            // Use live stick position (not S&H) so the offset is sustained while the
-            // stick is held and returns to the slider base the moment it is released.
-            // Not gated by stickUpdated — runs every block while a gamepad is connected.
+            // Use display stick position so that mouse-drag overrides (from the controller
+            // illustration) are included alongside physical hardware values.
+            // getLeftStickXDisplay/YDisplay() returns the mouse override when the physical
+            // stick is still (below bypass threshold), otherwise returns the hardware value.
             if (liveGamepad)
             {
                 constexpr float kDeadzone = 0.12f;
-                const float liveX = gamepad_.getLeftStickXLive();
-                const float liveY = gamepad_.getLeftStickYLive();
+                const float liveX = gamepad_.getLeftStickXDisplay();
+                const float liveY = gamepad_.getLeftStickYDisplay();
 
                 if (xMode >= 2 && xMode <= 5)
                 {

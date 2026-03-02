@@ -275,16 +275,48 @@ void PixelLookAndFeel::drawLinearSlider(juce::Graphics& g,
 
     const float trackY  = y + height * 0.5f - 3.0f;
     const float trackH  = 6.0f;
+    const float trackL  = (float)x;
+    const float trackR  = (float)(x + width);
 
     // Background track
     g.setColour(Clr::gateOff);
-    g.fillRect(juce::Rectangle<float>((float)x, trackY, (float)width, trackH));
+    g.fillRect(juce::Rectangle<float>(trackL, trackY, (float)width, trackH));
 
-    // Filled portion — trackColourId allows joystick red/blue tinting from timerCallback
+    // Filled portion (value fill, 0 → thumb)
     g.setColour(slider.findColour(juce::Slider::trackColourId));
-    g.fillRect(juce::Rectangle<float>((float)x, trackY, sliderPos - x, trackH));
+    g.fillRect(juce::Rectangle<float>(trackL, trackY, sliderPos - trackL, trackH));
 
-    // Thumb (3px wide white rect)
+    // Modulation delta indicator: starts at the thumb, extends toward the stick direction.
+    // "modDelta" property is set by timerCallback only on the one slider being driven.
+    const double modDelta = (double)slider.getProperties().getWithDefault("modDelta", 0.0);
+    if (modDelta != 0.0)
+    {
+        const juce::Colour posClr(0xFFE03030);   // red  — positive / rightward
+        const juce::Colour negClr(0xFF3060FF);   // blue — negative / leftward
+        // Scale: ±1 stick → half the track width indicator
+        const float maxW  = (float)width * 0.5f;
+        const float deltaW = juce::jlimit(-maxW, maxW, (float)(modDelta * maxW));
+        if (deltaW > 0.0f)
+        {
+            const float capped = juce::jmin(deltaW, trackR - sliderPos);
+            if (capped > 0.0f)
+            {
+                g.setColour(posClr.withAlpha(0.75f));
+                g.fillRect(juce::Rectangle<float>(sliderPos, trackY, capped, trackH));
+            }
+        }
+        else
+        {
+            const float capped = juce::jmin(-deltaW, sliderPos - trackL);
+            if (capped > 0.0f)
+            {
+                g.setColour(negClr.withAlpha(0.75f));
+                g.fillRect(juce::Rectangle<float>(sliderPos - capped, trackY, capped, trackH));
+            }
+        }
+    }
+
+    // Thumb (3px wide white rect) — drawn last so it sits on top of the delta bar
     g.setColour(Clr::text);
     g.fillRect(juce::Rectangle<float>(sliderPos - 1.5f, (float)y, 3.0f, (float)height));
 }
@@ -317,6 +349,11 @@ juce::Font PixelLookAndFeel::getTextButtonFont(juce::TextButton& button, int but
 // GamepadDisplayComponent
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Sticks must exceed this threshold (post-dead-zone) to be treated as
+// "intentionally active" for mouse-bypass. Sits above typical PS4 jitter
+// that can hover slightly above the hardware dead zone when the stick is still.
+static constexpr float kStickBypassThreshold = 0.15f;
+
 void GamepadDisplayComponent::setGamepadState(uint32_t mask, float lx, float ly,
                                                float rx, float ry, bool connected)
 {
@@ -327,17 +364,133 @@ void GamepadDisplayComponent::setGamepadState(uint32_t mask, float lx, float ly,
     leftX_  = lx;  leftY_  = ly;
     rightX_ = rx;  rightY_ = ry;
     connected_ = connected;
+
+    // Update bypass flags. Values passed in are already post-dead-zone,
+    // so zero means within dead zone. We use a higher threshold to
+    // ignore PS4 drift that lingers just above the dead zone.
+    physicalRightStickActive_ = connected && (std::abs(rx) > kStickBypassThreshold ||
+                                              std::abs(ry) > kStickBypassThreshold);
+    physicalLeftStickActive_  = connected && (std::abs(lx) > kStickBypassThreshold ||
+                                              std::abs(ly) > kStickBypassThreshold);
     repaint();
 }
 
 void GamepadDisplayComponent::mouseMove(const juce::MouseEvent& e)
 {
     setTooltip(computeRegionTooltip(e.x, e.y));
+
+    // Show hand cursor over draggable sticks (always — mouse can drag even when connected)
+    if (proc_ != nullptr)
+    {
+        const float w = (float)getWidth(), h = (float)getHeight();
+        const float bodyY = (float)bodyOffset_;
+        const float bodyH = h - bodyY - 4.0f;
+        const float lsX = w * 0.22f, lsY = bodyY + bodyH * 0.28f;
+        const float lsR = juce::jmin(w * 0.07f, bodyH * 0.12f) * 1.5f;
+        const float rsX = w * 0.78f, rsY = bodyY + bodyH * 0.70f;
+        const float rsR = juce::jmin(w * 0.065f, bodyH * 0.115f) * 1.5f;
+        const float dx = (float)e.x, dy = (float)e.y;
+        if (std::hypot(dx - lsX, dy - lsY) < lsR || std::hypot(dx - rsX, dy - rsY) < rsR)
+        {
+            setMouseCursor(juce::MouseCursor::PointingHandCursor);
+            return;
+        }
+    }
+    setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void GamepadDisplayComponent::mouseExit(const juce::MouseEvent&)
 {
     setTooltip({});
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
+void GamepadDisplayComponent::updateDrag(const juce::MouseEvent& e)
+{
+    if (proc_ == nullptr || draggingStick_ < 0) return;
+
+    const float w = (float)getWidth(), h = (float)getHeight();
+    const float bodyY = (float)bodyOffset_;
+    const float bodyH = h - bodyY - 4.0f;
+    auto bY = [&](float frac) { return bodyY + bodyH * frac; };
+
+    float cx, cy, radius;
+    if (draggingStick_ == 0)
+    {
+        cx     = w * 0.22f;
+        cy     = bY(0.28f);
+        radius = juce::jmax(8.0f, juce::jmin(w * 0.07f, bodyH * 0.12f));
+    }
+    else
+    {
+        cx     = w * 0.78f;
+        cy     = bY(0.70f);
+        radius = juce::jmax(8.0f, juce::jmin(w * 0.065f, bodyH * 0.115f));
+    }
+
+    dragNormX_ = juce::jlimit(-1.0f, 1.0f, ((float)e.x - cx) / radius);
+    dragNormY_ = juce::jlimit(-1.0f, 1.0f, -((float)e.y - cy) / radius);
+
+    if (draggingStick_ == 0)
+    {
+        // Left stick → filter. Only write if physical left stick is still (not bypassed).
+        if (!physicalLeftStickActive_)
+            proc_->getGamepad().setMouseFilterOverride(dragNormY_, dragNormX_, true);
+    }
+    else
+    {
+        // Right stick → pitch. Only write if physical right stick is still (not bypassed).
+        if (!physicalRightStickActive_)
+        {
+            proc_->joystickX.store(dragNormX_, std::memory_order_relaxed);
+            proc_->joystickY.store(dragNormY_, std::memory_order_relaxed);
+        }
+    }
+    repaint();
+}
+
+void GamepadDisplayComponent::mouseDown(const juce::MouseEvent& e)
+{
+    if (proc_ == nullptr) return;
+
+    const float w = (float)getWidth(), h = (float)getHeight();
+    const float bodyY = (float)bodyOffset_;
+    const float bodyH = h - bodyY - 4.0f;
+    auto bY = [&](float frac) { return bodyY + bodyH * frac; };
+    auto dist = [](float ax, float ay, float bx, float by) { return std::hypot(ax - bx, ay - by); };
+
+    const float lsX = w * 0.22f, lsY = bY(0.28f);
+    const float lsR = juce::jmin(w * 0.07f, bodyH * 0.12f) * 1.5f;
+    const float rsX = w * 0.78f, rsY = bY(0.70f);
+    const float rsR = juce::jmin(w * 0.065f, bodyH * 0.115f) * 1.5f;
+
+    if (dist((float)e.x, (float)e.y, lsX, lsY) < lsR)
+        draggingStick_ = 0;
+    else if (dist((float)e.x, (float)e.y, rsX, rsY) < rsR)
+        draggingStick_ = 1;
+
+    if (draggingStick_ >= 0)
+        updateDrag(e);
+}
+
+void GamepadDisplayComponent::mouseDrag(const juce::MouseEvent& e)
+{
+    if (draggingStick_ < 0 || proc_ == nullptr) return;
+    updateDrag(e);
+}
+
+void GamepadDisplayComponent::mouseUp(const juce::MouseEvent&)
+{
+    if (proc_ == nullptr) return;
+
+    if (draggingStick_ == 0)
+        proc_->getGamepad().setMouseFilterOverride(0.0f, 0.0f, false);
+    // Right stick: joystickX/Y holds last position (natural S&H like JoystickPad)
+
+    draggingStick_ = -1;
+    dragNormX_     = 0.0f;
+    dragNormY_     = 0.0f;
+    repaint();
 }
 
 juce::String GamepadDisplayComponent::computeRegionTooltip(int mx, int my) const
@@ -486,9 +639,12 @@ void GamepadDisplayComponent::paint(juce::Graphics& g)
         g.setColour(l3 ? pink : stickRim);
         g.drawEllipse(lsX - lsR, lsY - lsR, lsR * 2, lsR * 2, 1.2f);
         const float dR = lsR * 0.32f;
+        // Show mouse-drag position unless physical stick is intentionally active (bypass)
+        const float dispLX = (!physicalLeftStickActive_ && draggingStick_ == 0) ? dragNormX_ : leftX_;
+        const float dispLY = (!physicalLeftStickActive_ && draggingStick_ == 0) ? dragNormY_ : leftY_;
         g.setColour(stickDot);
-        g.fillEllipse(lsX + leftX_ * (lsR - dR) - dR,
-                      lsY - leftY_ * (lsR - dR) - dR,
+        g.fillEllipse(lsX + dispLX * (lsR - dR) - dR,
+                      lsY - dispLY * (lsR - dR) - dR,
                       dR * 2, dR * 2);
         // L3 label
         g.setColour(btnText.withAlpha(0.6f));
@@ -586,9 +742,17 @@ void GamepadDisplayComponent::paint(juce::Graphics& g)
         g.setColour(r3 ? pink : stickRim);
         g.drawEllipse(rsX - rsR, rsY - rsR, rsR * 2, rsR * 2, 1.2f);
         const float dR = rsR * 0.30f;
+        // Base: physical position when connected, otherwise mirror JoystickPad
+        const float baseRX = connected_ ? rightX_
+                           : (proc_ ? proc_->joystickX.load(std::memory_order_relaxed) : rightX_);
+        const float baseRY = connected_ ? rightY_
+                           : (proc_ ? proc_->joystickY.load(std::memory_order_relaxed) : rightY_);
+        // Show mouse-drag position unless physical stick is intentionally active (bypass)
+        const float dispRX = (!physicalRightStickActive_ && draggingStick_ == 1) ? dragNormX_ : baseRX;
+        const float dispRY = (!physicalRightStickActive_ && draggingStick_ == 1) ? dragNormY_ : baseRY;
         g.setColour(stickDot);
-        g.fillEllipse(rsX + rightX_ * (rsR - dR) - dR,
-                      rsY - rightY_ * (rsR - dR) - dR,
+        g.fillEllipse(rsX + dispRX * (rsR - dR) - dR,
+                      rsY - dispRY * (rsR - dR) - dR,
                       dR * 2, dR * 2);
         g.setColour(btnText.withAlpha(0.6f));
         g.setFont(juce::Font(7.5f));
@@ -628,7 +792,8 @@ void GamepadDisplayComponent::paint(juce::Graphics& g)
     // ── "NO CTRL" overlay when disconnected ────────────────────────────────────
     if (!connected_)
     {
-        g.setColour(juce::Colour(0x99131525u));
+        // Light overlay — sticks remain visible and mouse-interactive
+        g.setColour(juce::Colour(0x55131525u));
         g.fillRoundedRectangle(2.0f, bodyY, w - 4.0f, bodyH, 8.0f);
         g.setColour(juce::Colour(0xFF3A3C50u));
         g.setFont(juce::Font(11.0f, juce::Font::bold));
@@ -636,6 +801,20 @@ void GamepadDisplayComponent::paint(juce::Graphics& g)
                    (int)tpX, (int)(tpY + tpH * 0.5f - 8),
                    (int)tpW, 16,
                    juce::Justification::centred);
+
+        // Subtle dashed ring around sticks to hint they are mouse-draggable
+        if (proc_ != nullptr)
+        {
+            const float lsX2 = w * 0.22f, lsY2 = bY(0.28f);
+            const float lsR2 = juce::jmin(w * 0.07f, bodyH * 0.12f);
+            const float rsX2 = w * 0.78f, rsY2 = bY(0.70f);
+            const float rsR2 = juce::jmin(w * 0.065f, bodyH * 0.115f);
+            g.setColour(juce::Colour(0x66FFFFFF));
+            g.drawEllipse(lsX2 - lsR2 * 1.25f, lsY2 - lsR2 * 1.25f,
+                          lsR2 * 2.5f, lsR2 * 2.5f, 1.0f);
+            g.drawEllipse(rsX2 - rsR2 * 1.25f, rsY2 - rsR2 * 1.25f,
+                          rsR2 * 2.5f, rsR2 * 2.5f, 1.0f);
+        }
     }
 }
 
@@ -699,10 +878,10 @@ void JoystickPad::timerCallback()
 
     // ── Poll voice note-on bursts ─────────────────────────────────────────────
     static const juce::Colour kVoiceClr[4] = {
-        juce::Colour(0xFF00E676),  // Voice 0: green
-        juce::Colour(0xFF3DD8FF),  // Voice 1: cyan
-        juce::Colour(0xFFB06EFF),  // Voice 2: purple
-        juce::Colour(0xFFFF9800),  // Voice 3: orange
+        juce::Colour(0xFFFF3333),  // Voice 0 (Root):    Red
+        juce::Colour(0xFF3366FF),  // Voice 1 (Third):   Blue
+        juce::Colour(0xFF00DD55),  // Voice 2 (Fifth):   Green
+        juce::Colour(0xFFFFDD00),  // Voice 3 (Tension): Yellow
     };
     for (int v = 0; v < 4; ++v)
     {
@@ -721,7 +900,7 @@ void JoystickPad::spawnGoldParticles(float cx, float cy, float dx, float dy, flo
     const float angle0 = std::atan2(-dy, -dx);  // trail behind movement
     for (int i = 0; i < count; ++i)
     {
-        if (particles_.size() >= 120) break;
+        if (particles_.size() >= 200) break;
         JoyParticle p;
         p.x     = cx + rng.nextFloat() * 3.0f - 1.5f;
         p.y     = cy + rng.nextFloat() * 3.0f - 1.5f;
@@ -742,7 +921,7 @@ void JoystickPad::spawnBurst(float cx, float cy, juce::Colour color, int count)
     static juce::Random rng;
     for (int i = 0; i < count; ++i)
     {
-        if (particles_.size() >= 120) break;
+        if (particles_.size() >= 250) break;
         JoyParticle p;
         p.x     = cx + rng.nextFloat() * 5.0f - 2.5f;
         p.y     = cy + rng.nextFloat() * 5.0f - 2.5f;
@@ -775,9 +954,25 @@ void JoystickPad::updateFromMouse(const juce::MouseEvent& e)
     repaint();
 }
 
-void JoystickPad::mouseDown       (const juce::MouseEvent& e) { updateFromMouse(e); }
-void JoystickPad::mouseDrag       (const juce::MouseEvent& e) { updateFromMouse(e); }
-void JoystickPad::mouseUp         (const juce::MouseEvent& e) { (void)e; }
+void JoystickPad::mouseDown(const juce::MouseEvent& e)
+{
+    mouseIsDown_ = true;
+    mousePixX_   = (float)e.x;
+    mousePixY_   = (float)e.y;
+    updateFromMouse(e);
+}
+
+void JoystickPad::mouseDrag(const juce::MouseEvent& e)
+{
+    mousePixX_ = (float)e.x;
+    mousePixY_ = (float)e.y;
+    updateFromMouse(e);
+}
+
+void JoystickPad::mouseUp(const juce::MouseEvent&)
+{
+    mouseIsDown_ = false;
+}
 void JoystickPad::mouseDoubleClick(const juce::MouseEvent& /*e*/)
 {
     // Double-click resets joystick to exact centre (0, 0)
@@ -1843,6 +2038,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     chordNameLabel_.setColour(juce::Label::outlineColourId,    Clr::highlight);             // pink border
     addAndMakeVisible(chordNameLabel_);
     addAndMakeVisible(gamepadDisplay_);
+    gamepadDisplay_.setProcessor(&proc_);  // enables mouse-drag of sticks when no hardware
 
     // Update gamepad status label with specific controller type on hot-plug events.
     // Passes controller name string (empty = disconnected) via onConnectionChangeUI.
@@ -3722,33 +3918,42 @@ void PluginEditor::timerCallback()
             }
         }
 
-        // ── LFO fader red/blue tinting from live left stick ───────────────────
+        // ── LFO fader delta indicator from live left stick ────────────────────
+        // Shows a directional bar starting at the slider thumb, extending toward
+        // where the stick is pushing. Only the single active slider is lit.
         {
-            const float lx   = proc_.leftStickXDisplay_.load(std::memory_order_relaxed);
-            const float ly   = proc_.leftStickYDisplay_.load(std::memory_order_relaxed);
-            const float absX = std::abs(lx);
-            const float absY = std::abs(ly);
+            const float lx = proc_.leftStickXDisplay_.load(std::memory_order_relaxed);
+            const float ly = proc_.leftStickYDisplay_.load(std::memory_order_relaxed);
             constexpr float kThresh = 0.05f;
-            const juce::Colour posClr(0xFFE03030);   // red
-            const juce::Colour negClr(0xFF3060FF);   // blue
-            const juce::Colour xTrk = (absX > kThresh)
-                ? Clr::accent.interpolatedWith(lx > 0 ? posClr : negClr, juce::jmin(absX, 1.0f))
-                : Clr::accent;
-            const juce::Colour yTrk = (absY > kThresh)
-                ? Clr::accent.interpolatedWith(ly > 0 ? posClr : negClr, juce::jmin(absY, 1.0f))
-                : Clr::accent;
-            if (xMode >= 2 && xMode <= 5)
-            {
-                lfoXRateSlider_ .setColour(juce::Slider::trackColourId, xTrk);
-                lfoXPhaseSlider_.setColour(juce::Slider::trackColourId, xTrk);
-                lfoXLevelSlider_.setColour(juce::Slider::trackColourId, xTrk);
-            }
-            if (yMode >= 2 && yMode <= 5)
-            {
-                lfoYRateSlider_ .setColour(juce::Slider::trackColourId, yTrk);
-                lfoYPhaseSlider_.setColour(juce::Slider::trackColourId, yTrk);
-                lfoYLevelSlider_.setColour(juce::Slider::trackColourId, yTrk);
-            }
+
+            // Clear delta property and restore neutral colour on every slider each tick.
+            // setColour triggers repaint, so the indicator disappears immediately on release.
+            auto clearMod = [](juce::Slider& s) {
+                s.getProperties().remove("modDelta");
+                s.setColour(juce::Slider::trackColourId, Clr::accent);
+            };
+            clearMod(lfoXRateSlider_);
+            clearMod(lfoXPhaseSlider_);
+            clearMod(lfoXLevelSlider_);
+            clearMod(lfoYRateSlider_);
+            clearMod(lfoYPhaseSlider_);
+            clearMod(lfoYLevelSlider_);
+
+            // Apply delta indicator only to the one slider being driven.
+            auto setMod = [kThresh](juce::Slider& s, float delta) {
+                if (std::abs(delta) > kThresh) {
+                    s.getProperties().set("modDelta", (double)delta);
+                    s.repaint();
+                }
+            };
+            // X axis → LFO-X panel (modes 2-4)
+            if      (xMode == 2) setMod(lfoXRateSlider_,  lx);
+            else if (xMode == 3) setMod(lfoXPhaseSlider_, lx);
+            else if (xMode == 4) setMod(lfoXLevelSlider_, lx);
+            // Y axis → LFO-Y panel (modes 2-4)
+            if      (yMode == 2) setMod(lfoYRateSlider_,  ly);
+            else if (yMode == 3) setMod(lfoYPhaseSlider_, ly);
+            else if (yMode == 4) setMod(lfoYLevelSlider_, ly);
         }
     }
 
@@ -3997,24 +4202,31 @@ void PluginEditor::timerCallback()
     {
         const float gpX = proc_.getGamepad().getPitchX();
         const float gpY = proc_.getGamepad().getPitchY();
-        constexpr float kCenterSnap = 0.05f;
-        const float snappedX = std::abs(gpX) < kCenterSnap ? 0.0f : gpX;
-        const float snappedY = std::abs(gpY) < kCenterSnap ? 0.0f : gpY;
 
-        if (snappedX != 0.0f || snappedY != 0.0f)
+        // Use the same bypass threshold as GamepadDisplayComponent so jitter
+        // that lingers just above the dead zone does not override mouse input.
+        const bool intentional = std::abs(gpX) > kStickBypassThreshold ||
+                                 std::abs(gpY) > kStickBypassThreshold;
+
+        if (intentional)
         {
-            proc_.joystickX.store(snappedX);
-            proc_.joystickY.store(snappedY);
+            proc_.joystickX.store(gpX);
+            proc_.joystickY.store(gpY);
             gamepadWasLastPitchWriter_ = true;
         }
         else if (gamepadWasLastPitchWriter_)
         {
-            // Stick just returned to centre — snap cursor back to 0 once
-            proc_.joystickX.store(0.0f);
-            proc_.joystickY.store(0.0f);
+            // Stick just returned to centre — snap cursor back to 0, unless
+            // the user is currently mouse-dragging the right stick illustration
+            // (in which case the mouse takes over immediately).
+            if (!gamepadDisplay_.isRightStickMouseDragging())
+            {
+                proc_.joystickX.store(0.0f);
+                proc_.joystickY.store(0.0f);
+            }
             gamepadWasLastPitchWriter_ = false;
         }
-        // else: stick at centre, mouse was last — leave joystickX/Y alone
+        // else: stick in jitter zone and no prior write — leave joystickX/Y to mouse
     }
     else
     {

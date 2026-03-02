@@ -55,13 +55,24 @@ public:
     void setGamepadState(uint32_t buttonMask, float leftX, float leftY,
                          float rightX, float rightY, bool connected);
     void paint(juce::Graphics& g) override;
-    void mouseMove(const juce::MouseEvent& e) override;
-    void mouseExit(const juce::MouseEvent& e) override;
+    void mouseMove (const juce::MouseEvent& e) override;
+    void mouseExit (const juce::MouseEvent& e) override;
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseUp   (const juce::MouseEvent& e) override;
 
     // bodyOffset_ = pixels from component top to the main body rectangle.
     // Shoulder buttons (L2/R2/L1/R1) are drawn above this line in free space.
     // Set by PluginEditor::resized() to align body with the GAMEPAD ON button row.
     void setBodyOffset(int pixels) { bodyOffset_ = juce::jmax(24, pixels); repaint(); }
+
+    // Must be called once (from PluginEditor ctor) so stick dragging can write to the processor.
+    void setProcessor(PluginProcessor* p) { proc_ = p; }
+
+    // Returns true while the user is mouse-dragging the right stick illustration.
+    // Used by PluginEditor::timerCallback so it won't snap joystickX/Y back to 0
+    // when the physical stick returns to centre during an active mouse drag.
+    bool isRightStickMouseDragging() const { return draggingStick_ == 1; }
 
 private:
     uint32_t buttonMask_ = 0;
@@ -72,7 +83,19 @@ private:
     bool     connected_  = false;
     int      bodyOffset_ = 40;   // default matches old hardcoded value
 
+    // Mouse-drag state for stick illustration
+    PluginProcessor* proc_         = nullptr;
+    int              draggingStick_ = -1;   // -1=none, 0=left stick, 1=right stick
+    float            dragNormX_    = 0.0f;
+    float            dragNormY_    = 0.0f;
+
+    // True when the physical stick is pushed intentionally (above jitter/bypass threshold).
+    // Set in setGamepadState(); used to decide whether mouse or hardware wins.
+    bool physicalRightStickActive_ = false;
+    bool physicalLeftStickActive_  = false;
+
     juce::String computeRegionTooltip(int mx, int my) const;
+    void         updateDrag(const juce::MouseEvent& e);
 };
 
 // ─── JoystickPad ─────────────────────────────────────────────────────────────
@@ -111,6 +134,11 @@ private:
     std::vector<JoyParticle> particles_;
     float prevCx_ = -9999.0f;
     float prevCy_ = -9999.0f;
+
+    // Mouse-held state for sustained sparkle + burst on release
+    bool  mouseIsDown_ = false;
+    float mousePixX_   = 0.0f;
+    float mousePixY_   = 0.0f;
 };
 
 // ─── TouchPlate ───────────────────────────────────────────────────────────────

@@ -33,6 +33,13 @@ GamepadInput::~GamepadInput()
         SdlContext::release();
 }
 
+void GamepadInput::setMouseFilterOverride(float x, float y, bool active)
+{
+    mouseFilterX_.store(x, std::memory_order_relaxed);
+    mouseFilterY_.store(y, std::memory_order_relaxed);
+    mouseFilterActive_.store(active, std::memory_order_relaxed);
+}
+
 juce::String GamepadInput::getControllerName() const
 {
     if (!controller_) return {};

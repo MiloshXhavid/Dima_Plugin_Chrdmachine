@@ -37,8 +37,33 @@ public:
     // ── Normalised joystick values (-1..+1), updated at 60Hz ─────────────────
     float getPitchX()      const { return pitchX_.load(); }
     float getPitchY()      const { return pitchY_.load(); }
-    float getFilterX()     const { return filterX_.load(); }
-    float getFilterY()     const { return filterY_.load(); }
+    float getFilterX()     const {
+        if (mouseFilterActive_.load(std::memory_order_relaxed))
+        {
+            // Mouse wins when: no controller, OR controller connected but left stick still
+            // (below bypass threshold — above dead zone jitter is ignored)
+            const bool physActive = isConnected() &&
+                (std::abs(leftStickXLive_.load(std::memory_order_relaxed)) > kMouseBypassThreshold ||
+                 std::abs(leftStickYLive_.load(std::memory_order_relaxed)) > kMouseBypassThreshold);
+            if (!physActive)
+                return mouseFilterX_.load(std::memory_order_relaxed);
+        }
+        return filterX_.load();
+    }
+    float getFilterY()     const {
+        if (mouseFilterActive_.load(std::memory_order_relaxed))
+        {
+            const bool physActive = isConnected() &&
+                (std::abs(leftStickXLive_.load(std::memory_order_relaxed)) > kMouseBypassThreshold ||
+                 std::abs(leftStickYLive_.load(std::memory_order_relaxed)) > kMouseBypassThreshold);
+            if (!physActive)
+                return mouseFilterY_.load(std::memory_order_relaxed);
+        }
+        return filterY_.load();
+    }
+    // Set mouse override for filter when no controller is connected (from GamepadDisplayComponent drag)
+    void setMouseFilterOverride(float x, float y, bool active);
+
     // Raw Y (no sample-and-hold): 0 when stick is in dead zone.
     // Use for CC64 sustain so releasing the stick sends CC64=0.
     float getFilterYRaw()  const { return filterYRaw_.load(); }
@@ -98,6 +123,45 @@ public:
     // Left stick live position (-1..+1), no sample-and-hold. +X = right, +Y = up.
     float getLeftStickXLive() const { return leftStickXLive_.load(std::memory_order_relaxed); }
     float getLeftStickYLive() const { return leftStickYLive_.load(std::memory_order_relaxed); }
+
+    // Display variants: when a mouse drag override is active and the physical left stick
+    // is not intentionally pushed (below bypass threshold), return the mouse values so
+    // that the MOD FIX knob animation and LFO fader tinting respond to illustration drags.
+    // Override mapping: mouseFilterY_ = left/right drag (X axis / resonance direction)
+    //                   mouseFilterX_ = up/down drag   (Y axis / cutoff   direction)
+    float getLeftStickXDisplay() const
+    {
+        if (mouseFilterActive_.load(std::memory_order_relaxed))
+        {
+            const bool physActive = isConnected() &&
+                (std::abs(leftStickXLive_.load(std::memory_order_relaxed)) > kMouseBypassThreshold ||
+                 std::abs(leftStickYLive_.load(std::memory_order_relaxed)) > kMouseBypassThreshold);
+            if (!physActive)
+                return mouseFilterY_.load(std::memory_order_relaxed);
+        }
+        return leftStickXLive_.load(std::memory_order_relaxed);
+    }
+    float getLeftStickYDisplay() const
+    {
+        if (mouseFilterActive_.load(std::memory_order_relaxed))
+        {
+            const bool physActive = isConnected() &&
+                (std::abs(leftStickXLive_.load(std::memory_order_relaxed)) > kMouseBypassThreshold ||
+                 std::abs(leftStickYLive_.load(std::memory_order_relaxed)) > kMouseBypassThreshold);
+            if (!physActive)
+                return mouseFilterX_.load(std::memory_order_relaxed);
+        }
+        return leftStickYLive_.load(std::memory_order_relaxed);
+    }
+
+    // Sticks must exceed this threshold (post-dead-zone) to be treated as
+    // "intentionally active" for mouse-bypass. Higher than the dead zone so that
+    // PS4 jitter hovering just above it does not prevent mouse from winning.
+    static constexpr float kMouseBypassThreshold = 0.15f;
+
+    // True when a mouse drag is overriding the left stick (controller illustration drag).
+    // Used by processBlock to enable the LFO dispatch path without a physical controller.
+    bool isMouseFilterActive() const { return mouseFilterActive_.load(std::memory_order_relaxed); }
 
     // ── Dead zone setter ──────────────────────────────────────────────────────
     // Called from processBlock via PluginProcessor — sets dead zone threshold
@@ -219,4 +283,9 @@ private:
     std::atomic<uint32_t> buttonHeldMask_ {0};
     std::atomic<float>    leftStickXLive_ {0.0f};
     std::atomic<float>    leftStickYLive_ {0.0f};
+
+    // ── Mouse filter override (UI drag of controller illustration, no hardware) ─
+    std::atomic<float> mouseFilterX_      { 0.0f };
+    std::atomic<float> mouseFilterY_      { 0.0f };
+    std::atomic<bool>  mouseFilterActive_ { false };
 };
