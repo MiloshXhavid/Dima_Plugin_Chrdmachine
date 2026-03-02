@@ -954,8 +954,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     if (noteCount_[ch - 1][looperActivePitch_[v]] > 0 &&
                         --noteCount_[ch - 1][looperActivePitch_[v]] == 0)
                         midi.addEvent(juce::MidiMessage::noteOff(ch, looperActivePitch_[v], (uint8_t)0), 0);
-                    else
-                        noteCount_[ch - 1][looperActivePitch_[v]] = 0;
                     looperActivePitch_[v] = -1;
                 }
                 // Looper sub-octave note-off on looper stop
@@ -965,8 +963,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     const int ch = looperActiveCh_[v];
                     if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
                         midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
-                    else
-                        noteCount_[ch - 1][subPitch] = 0;
                 }
             }
             resetNoteCount();
@@ -986,8 +982,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 if (noteCount_[ch - 1][looperActivePitch_[v]] > 0 &&
                     --noteCount_[ch - 1][looperActivePitch_[v]] == 0)
                     midi.addEvent(juce::MidiMessage::noteOff(ch, looperActivePitch_[v], (uint8_t)0), 0);
-                else
-                    noteCount_[ch - 1][looperActivePitch_[v]] = 0;
                 looperActivePitch_[v] = -1;
             }
             // Looper sub-octave note-off on looper reset
@@ -997,8 +991,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 const int ch = looperActiveCh_[v];
                 if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
                     midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
-                else
-                    noteCount_[ch - 1][subPitch] = 0;
             }
         }
         resetNoteCount();
@@ -1113,8 +1105,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             if (noteCount_[ch - 1][looperActivePitch_[v]] > 0 &&
                 --noteCount_[ch - 1][looperActivePitch_[v]] == 0)
                 midi.addEvent(juce::MidiMessage::noteOff(ch, looperActivePitch_[v], (uint8_t)0), 0);
-            else
-                noteCount_[ch - 1][looperActivePitch_[v]] = 0;
             looperActivePitch_[v] = -1;
 
             // Looper sub-octave note-off using snapshot
@@ -1123,8 +1113,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             {
                 if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
                     midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
-                else
-                    noteCount_[ch - 1][subPitch] = 0;
                 looperActiveSubPitch_[v] = -1;
             }
         }
@@ -1158,8 +1146,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             {
                 if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
                     midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
-                else
-                    noteCount_[ch - 1][subPitch] = 0;
                 subHeldPitch_[v] = -1;
             }
             subOctSounding_[v].store(false, std::memory_order_relaxed);
@@ -1243,8 +1229,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 if (noteCount_[chArp - 1][arpActivePitch_] > 0 &&
                     --noteCount_[chArp - 1][arpActivePitch_] == 0)
                     midi.addEvent(juce::MidiMessage::noteOff(chArp, arpActivePitch_, (uint8_t)0), sampleOff);
-                else
-                    noteCount_[chArp - 1][arpActivePitch_] = 0;
                 arpActivePitch_ = -1;
                 arpActiveVoice_ = -1;
                 arpCurrentVoice_.store(-1, std::memory_order_relaxed);
@@ -1290,8 +1274,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             const int ch = sentChannel_[voice];
             if (noteCount_[ch - 1][pitch] > 0 && --noteCount_[ch - 1][pitch] == 0)
                 midi.addEvent(juce::MidiMessage::noteOff(ch, pitch, (uint8_t)0), sampleOff);
-            else
-                noteCount_[ch - 1][pitch] = 0;  // clamp (defensive)
 
             // Sub-octave note-off — always use snapshot, never heldPitch_[voice] - 12
             const int subPitch = subHeldPitch_[voice];
@@ -1299,8 +1281,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             {
                 if (noteCount_[ch - 1][subPitch] > 0 && --noteCount_[ch - 1][subPitch] == 0)
                     midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), sampleOff);
-                else
-                    noteCount_[ch - 1][subPitch] = 0;
                 subHeldPitch_[voice] = -1;
                 subOctSounding_[voice].store(false, std::memory_order_relaxed);
             }
@@ -1441,8 +1421,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             if (noteCount_[ch - 1][arpActivePitch_] > 0 &&
                 --noteCount_[ch - 1][arpActivePitch_] == 0)
                 midi.addEvent(juce::MidiMessage::noteOff(ch, arpActivePitch_, (uint8_t)0), 0);
-            else
-                noteCount_[ch - 1][arpActivePitch_] = 0;
             arpActivePitch_ = -1;
             arpActiveVoice_ = -1;
         }
@@ -1481,8 +1459,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 if (noteCount_[ch - 1][arpActivePitch_] > 0 &&
                     --noteCount_[ch - 1][arpActivePitch_] == 0)
                     midi.addEvent(juce::MidiMessage::noteOff(ch, arpActivePitch_, (uint8_t)0), 0);
-                else
-                    noteCount_[ch - 1][arpActivePitch_] = 0;
                 arpActivePitch_ = -1;
                 arpActiveVoice_ = -1;
                 arpCurrentVoice_.store(-1, std::memory_order_relaxed);
@@ -1528,8 +1504,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 if (noteCount_[ch - 1][arpActivePitch_] > 0 &&
                     --noteCount_[ch - 1][arpActivePitch_] == 0)
                     midi.addEvent(juce::MidiMessage::noteOff(ch, arpActivePitch_, (uint8_t)0), 0);
-                else
-                    noteCount_[ch - 1][arpActivePitch_] = 0;
                 arpActivePitch_ = -1;
                 arpActiveVoice_ = -1;
                 arpCurrentVoice_.store(-1, std::memory_order_relaxed);
