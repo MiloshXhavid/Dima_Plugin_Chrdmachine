@@ -76,7 +76,20 @@ An XY joystick mapped to harmonic space — combined with per-note trigger gates
 
 ### Active — v1.6
 
-(Define with `/gsd:new-milestone`)
+- [ ] **DEF-01**: Third octave knob displays "4" by default
+- [ ] **DEF-02**: Fifth octave knob displays "4" by default
+- [ ] **DEF-03**: Tension octave knob displays "3" by default
+- [ ] **DEF-04**: Scale preset defaults to Natural Minor on fresh load
+- [ ] **BUG-03**: Remove `else noteCount_ = 0` clamp from all 5 note-off paths — eliminates stuck notes when any two voices produce the same pitch in Single Channel mode
+- [ ] **TRIP-01**: Random trigger subdivision selector adds 1/1T, 1/2T, 1/4T, 1/8T, 1/16T, 1/32T
+- [ ] **TRIP-02**: Quantize trigger subdivision selector adds the same 6 triplet options
+- [ ] **RND-08**: Random Free + RND SYNC OFF → gates fire at truly random intervals, no tempo grid
+- [ ] **RND-09**: Random Free + RND SYNC ON + DAW Sync OFF → gates subdivided to internal free-tempo clock
+- [ ] **RND-10**: Random Free + DAW Sync ON → gates subdivided to DAW beat grid
+- [ ] **LOOP-01**: Remove existing linear looper progress bar (strip below Rec gates)
+- [ ] **LOOP-02**: Rectangular perimeter bar travels clockwise around Looper box — one circuit = one loop cycle, 30 Hz
+- [ ] **LOOP-03**: Bar starts/ends at the Looper label position, travels right → bottom-right → bottom-left → top-left
+- [ ] **LOOP-04**: Looper label remains fully visible at all times
 
 ### Out of Scope
 
@@ -125,17 +138,16 @@ An XY joystick mapped to harmonic space — combined with per-note trigger gates
 | Border-only section panels | Fills covered drawAbove labels at same Y coordinate | ✓ Good |
 | Editor height 790 → 810 | Quantize row (20px) was clipped at 790 | ✓ Good |
 
-## Current Milestone: v1.5 Routing + Expression
+## Current Milestone: v1.6 Triplets & Fixes
 
-**Goal:** Add single-channel MIDI routing, per-voice sub octave, LFO recording, left-stick modulation targets, gamepad Option Mode 1 arp control, and fix known looper/BT crash bugs.
+**Goal:** Fix the noteCount stuck-notes bug, add triplet subdivisions, change default octave/scale values, fix Random Free to be truly tempo-free, and replace the looper bar with a rectangular perimeter visualization.
 
 **Target features:**
-- Single Channel mode — all 4 voices → configurable MIDI channel, note-collision safe
-- Sub Octave per voice — parallel note 1 oct lower, Split Hold/SubOct pad button, R3+pad shortcut
-- Left Joystick X/Y modulation targets expanded: LFO freq / shape / level / arp gate len
-- LFO recording — arm button, records 1 loop cycle, locked playback mode, Distort stays adjustable, Clear button
-- Option Mode 1 Arp: Circle = Arp on/off, Triangle = Rate, Square = Order, X = RND Sync; remove R3 panic
-- Bug fixes: looper start position after rec cycle; PS4 BT reconnect crash
+- Default octave values: Third=4, Fifth=4, Tension=3 (UI display values); default scale = Natural Minor
+- Bug fix: noteCount_ reference counting clamp removed — eliminates stuck notes in Single Channel mode
+- Triplet subdivisions (1/1T–1/32T) added to random trigger and quantize selectors
+- Random Free redesign: no RND SYNC = truly free timing; RND SYNC = internal clock; DAW Sync = DAW grid
+- Looper visualization: rectangular perimeter fill bar replacing the linear strip
 
 ---
-*Last updated: 2026-03-02 — v1.5 milestone complete*
+*Last updated: 2026-03-02 — v1.6 milestone started*
