@@ -162,6 +162,11 @@
 - [ ] **LOOP-03**: Bar origin/terminus is at the Looper section label (top-left corner area) — travels right along top → down right edge → left along bottom → up left edge → back to origin
 - [ ] **LOOP-04**: The floating "LOOPER" section label remains fully visible at all times — the bar passes alongside or behind it, never obscuring it
 
+### Distribution
+
+- [ ] **DIST-05**: GitHub v1.6 release created with built installer binary and release notes listing defaults fix, noteCount bug fix, triplet subdivisions, Random Free redesign, and looper perimeter bar
+- [ ] **DIST-06**: Full plugin copy backed up to Desktop
+
 ## Future Requirements (v2+)
 
 ### LFO Extensions
@@ -254,12 +259,28 @@
 | OPT1-07 | Phase 24 | Complete |
 | DIST-03 | Phase 25 | Complete |
 | DIST-04 | Phase 25 | Complete |
+| DEF-01 | Phase 26 | Pending |
+| DEF-02 | Phase 26 | Pending |
+| DEF-03 | Phase 26 | Pending |
+| DEF-04 | Phase 26 | Pending |
+| BUG-03 | Phase 26 | Pending |
+| TRIP-01 | Phase 27 | Pending |
+| TRIP-02 | Phase 27 | Pending |
+| RND-08 | Phase 28 | Pending |
+| RND-09 | Phase 28 | Pending |
+| RND-10 | Phase 28 | Pending |
+| LOOP-01 | Phase 29 | Pending |
+| LOOP-02 | Phase 29 | Pending |
+| LOOP-03 | Phase 29 | Pending |
+| LOOP-04 | Phase 29 | Pending |
+| DIST-05 | Phase 30 | Pending |
+| DIST-06 | Phase 30 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 21 total — mapped to phases: 21 (Phase 12: 8, Phase 13: 5, Phase 14: 3, Phase 15: 2, Phase 16: 3) — unmapped: 0 ✓
 - v1.5 requirements: 46 total — mapped to phases: 46 (Phase 17: 2, Phase 18: 5, Phase 19: 4, Phase 20: 7, Phase 21: 4, Phase 22: 6, Phase 23: 6, Phase 24: 7, Phase 24.1: 3, Phase 25: 2) — unmapped: 0 ✓
-- v1.6 requirements: 14 total — mapped to phases: 0 (roadmap pending) — unmapped: 14
+- v1.6 requirements: 16 total — mapped to phases: 16 (Phase 26: 5, Phase 27: 2, Phase 28: 3, Phase 29: 4, Phase 30: 2) — unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-26 (v1.4), 2026-02-28 (v1.5), 2026-03-02 (v1.6)*
-*Last updated: 2026-03-02 — v1.6: DEF-01..04, BUG-03, TRIP-01..02, RND-08..10, LOOP-01..04 minted*
+*Last updated: 2026-03-02 — v1.6 roadmap created; DIST-05/DIST-06 minted; all 16 v1.6 reqs mapped to Phases 26-30*
