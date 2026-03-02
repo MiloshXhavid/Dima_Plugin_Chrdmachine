@@ -121,7 +121,7 @@
 
 ### Distribution
 
-- [ ] **DIST-03**: GitHub v1.5 release created with built installer binary and release notes
+- [x] **DIST-03**: GitHub v1.5 release created with built installer binary and release notes
 - [ ] **DIST-04**: Full plugin copy backed up to Desktop
 
 ## Future Requirements (v2+)
@@ -214,7 +214,7 @@
 | OPT1-05 | Phase 24 | Complete |
 | OPT1-06 | Phase 24 | Complete |
 | OPT1-07 | Phase 24 | Complete |
-| DIST-03 | Phase 25 | Pending |
+| DIST-03 | Phase 25 | Complete |
 | DIST-04 | Phase 25 | Pending |
 
 **Coverage:**

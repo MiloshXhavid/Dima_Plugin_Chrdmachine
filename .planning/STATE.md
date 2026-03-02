@@ -2,6 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Routing + Expression
+status: unknown
+last_updated: "2026-03-02T04:22:11.051Z"
+progress:
+  total_phases: 19
+  completed_phases: 18
+  total_plans: 48
+  completed_plans: 47
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.5
+milestone_name: Routing + Expression
 status: in_progress
 last_updated: "2026-03-01T12:00:00.000Z"
 progress:
@@ -74,16 +87,16 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-Phase: 24.1 (LFO Joystick Visual Tracking and Center Offset) — In Progress (2/2 plans, checkpoint pending)
-Plan: 24.1-02 tasks 1+2 complete — timerCallback display atomic poll block verified, Release VST3 built and deployed
-Status: 24.1-02 CHECKPOINT — awaiting human verify with PS controller in Ableton Live
-Last activity: 2026-03-01 — Phase 24.1 plan 02 tasks 1+2 complete (timerCallback block + build + deploy)
+Phase: 25 (Distribution) — In Progress (0/2 plans, checkpoint pending)
+Plan: 25-01 Task 1 complete — installer script updated to v1.5, DIMEA-ChordJoystickMK2-v1.5-Setup.exe compiled
+Status: 25-01 CHECKPOINT — awaiting human smoke test (install v1.5 + verify features in DAW)
+Last activity: 2026-03-02 — Phase 25 plan 01 task 1 complete (installer script + ISCC compile)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
 v1.3 Polish [██████████] SHIPPED 2026-02-25
 v1.4 LFO    [██████████] SHIPPED 2026-02-26
-v1.5 Routing+Expression  [█████     ] In progress
+v1.5 Routing+Expression  [█████████ ] In progress
   Phase 17  [██████████]   Bug Fixes              COMPLETE 2026-02-28
   Phase 18  [██████████]   Single-Channel Routing COMPLETE 2026-02-28
   Phase 19  [██████████]   Sub Octave Per Voice   COMPLETE 2026-03-01
@@ -92,7 +105,8 @@ v1.5 Routing+Expression  [█████     ] In progress
   Phase 22  [██████████]   LFO Recording          COMPLETE 2026-03-01
   Phase 23  [██████████]   Arpeggiator            COMPLETE 2026-03-01
   Phase 24  [██████████]   Gamepad Option Mode 1  COMPLETE 2026-03-01
-  Phase 25  [          ]   Distribution           Not started
+  Phase 24.1[██████████]   LFO Joystick Tracking  COMPLETE 2026-03-02
+  Phase 25  [█         ]   Distribution           In progress (25-01 checkpoint)
 ```
 
 ## Performance Metrics
@@ -176,6 +190,7 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 24.1-02]: Display poll block uses its own {} scope with fresh getLfoXRecState() calls — avoids xPlayback/yPlayback scope dependency on outer grayout block
 - [Phase 24.1-02]: Drag guards (lfoXRateDragging_ etc.) prevent setValue from fighting user's manual drag; each slider's case is independently guarded
 - [Phase 24.1-02]: Sync mode guard in case 2: no setValue when lfoXSync/lfoYSync is true — Rate slider is replaced by subdivision dropdown in sync mode
+- [Phase 25-distribution]: LicenseFile removed from installer — no license agreement step shown to users
 
 ### Pending Todos
 
