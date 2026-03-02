@@ -269,8 +269,8 @@ Plans:
   4. During LFO recording Playback mode, grayed-out sliders do NOT visually update even when the joystick is routed to them
 **Plans**: 2 plans
 Plans:
-- [ ] 24.1-01-PLAN.md — PluginProcessor.h/cpp: 7 display atomics, 6 override floats, SmoothedValue; LFO block override consumption; dispatch block base+offset refactor; gate smoothing
-- [ ] 24.1-02-PLAN.md — PluginEditor.cpp timerCallback display poll; deploy VST3; human smoke test checkpoint
+- [x] 24.1-01-PLAN.md — PluginProcessor.h/cpp: 7 display atomics, 6 override floats, SmoothedValue; LFO block override consumption; dispatch block base+offset refactor; gate smoothing
+- [x] 24.1-02-PLAN.md — PluginEditor.cpp timerCallback display poll; deploy VST3; human smoke test checkpoint
 
 ### Phase 25: Distribution
 **Goal**: v1.5 is publicly released on GitHub and backed up locally
@@ -303,7 +303,7 @@ Plans:
 | 22. LFO Recording | v1.5 | Complete    | 2026-03-01 | 2026-03-01 |
 | 23. Arpeggiator | v1.5 | Complete    | 2026-03-01 | 2026-03-01 |
 | 24. Gamepad Option Mode 1 | v1.5 | 3/3 | Complete | 2026-03-01 |
-| 24.1. LFO Joystick Visual Tracking | 2/2 | Complete   | 2026-03-01 | - |
+| 24.1. LFO Joystick Visual Tracking | 2/2 | Complete | 2026-03-02 | 2026-03-02 |
 | 25. Distribution | v1.5 | 0/TBD | Not started | - |
 
 ---
