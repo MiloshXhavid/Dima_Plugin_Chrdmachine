@@ -2785,20 +2785,22 @@ void PluginEditor::resized()
                               .expanded(0, 10);
     }
     // ── Chord name label + Gamepad display ───────────────────────────────────
-    // Threshold slider hidden (gate length handled by arp GATE LEN param).
-    // Chord display top-aligns with the CUTOFF knob group.
+    // Chord display: bottom flush with gamepad top, original height.
+    // Logo: from trigSelBounds_.getY() down to chord display top (drawn in paint()).
     // Gamepad display fills remaining space down to the arpeggiator bottom.
     {
         const int chordX = lfoXCol.getX();
         const int chordW = lfoYCol.getRight() - chordX;   // lfoX + gap + lfoY = 304px
         thresholdSlider_.setBounds(0, 0, 0, 0);  // hidden — gate length lives in arp panel
-        {
-            const int chordTop = juce::jmax(lfoXPanelBounds_.getBottom(), lfoYPanelBounds_.getBottom()) + 2;
-            chordNameLabel_.setBounds(chordX, chordTop, chordW,
-                                      juce::jmax(0, quantizerBoxBounds_.getBottom() - chordTop));
-        }
         // Component top at the DEL/ALL button row (shoulder buttons float in logo space above body).
         const int gpY = loopDeleteBtn_.getY();
+        // Original chord height: same as before the swap
+        const int originalChordH = juce::jmax(0,
+            quantizerBoxBounds_.getBottom()
+            - (juce::jmax(lfoXPanelBounds_.getBottom(), lfoYPanelBounds_.getBottom()) + 2));
+        // Chord display: bottom aligned with Random Params box bottom
+        chordNameLabel_.setBounds(chordX, randomBoxBounds_.getBottom() - originalChordH,
+                                  chordW, originalChordH);
         gamepadDisplay_.setBounds(chordX, gpY,
                                   chordW, arpBlockBounds_.getBottom() - gpY);
         // Body rectangle aligned with GAMEPAD ON button row.
@@ -2852,11 +2854,11 @@ void PluginEditor::paint(juce::Graphics& g)
     };
     (void)drawSectionTitle;
 
-    // ── DIMEA logo — PNG, filling zone between quantizer box and gamepad display ──
+    // ── Logo — top aligned with Trigger box, bottom at chord display top ──
     if (logoImage_.isValid() && !quantizerBoxBounds_.isEmpty())
     {
-        const int logoY1 = quantizerBoxBounds_.getBottom();
-        const int logoY2 = gamepadDisplay_.getY();
+        const int logoY1 = trigSelBounds_.getY();
+        const int logoY2 = chordNameLabel_.getY();
         if (logoY2 > logoY1)
         {
             const auto logoDest = juce::Rectangle<float>((float)dividerX_, (float)logoY1,
@@ -2898,30 +2900,29 @@ void PluginEditor::paint(juce::Graphics& g)
             g.fillRect(juce::Rectangle<float>(logoDest.getX(), logoDest.getBottom() - fadeH,
                                               logoDest.getWidth(), fadeH));
 
-            // 3. Slogan overlay — drawn AFTER fades so it stays bright at the bottom edge.
-            //    Pixel-accurate position derived from PNG: slogan runs y=82.5%..88.8%,
-            //    x=2.7%..93.1%, horizontally centred in the image.
+            // 3. Slogan overlay — full middle-row width, brand pink colour.
             {
                 const float sloganTop = imageRect.getY() + imageRect.getHeight() * 0.820f;
-                const float sloganH   = imageRect.getHeight() * 0.090f;
-                const float fontSize  = juce::jlimit(7.0f, 11.0f, sloganH * 0.85f);
+                const float sloganH   = imageRect.getHeight() * 0.110f;
+                const float fontSize  = juce::jlimit(7.0f, 16.0f, sloganH * 0.85f);
 
+                // Span the full middle-row width, not just the image rect
                 const auto sloganRect = juce::Rectangle<float>(
-                    imageRect.getX(), sloganTop, imageRect.getWidth(), sloganH);
+                    logoDest.getX(), sloganTop, logoDest.getWidth(), sloganH);
 
                 const auto sloganFont = juce::Font(
                     juce::Font::getDefaultSansSerifFontName(), fontSize, juce::Font::plain)
                     .withExtraKerningFactor(0.28f);
 
-                // Glow pass — soft cyan halo that matches the divider line colour
+                // Glow pass — soft cyan halo matching logo underline
                 g.setFont(sloganFont);
-                g.setColour(juce::Colour(0xFF00D8FF).withAlpha(0.25f));
+                g.setColour(juce::Colour(0xFF00D8FF).withAlpha(0.30f));
                 g.drawText("BRINGING HARMONY TO THE PEOPLE",
                            sloganRect.expanded(1.5f, 1.5f),
                            juce::Justification::centred, false);
 
-                // Main pass — bright white, high contrast
-                g.setColour(juce::Colours::white.withAlpha(0.92f));
+                // Main pass — cyan matching logo underline
+                g.setColour(juce::Colour(0xFF00D8FF).withAlpha(0.95f));
                 g.drawText("BRINGING HARMONY TO THE PEOPLE",
                            sloganRect, juce::Justification::centred, false);
             }
