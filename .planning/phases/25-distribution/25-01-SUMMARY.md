@@ -44,14 +44,14 @@ completed: 2026-03-02
 
 # Phase 25 Plan 01: Distribution Summary
 
-**Inno Setup script updated to v1.5 with DIMEA branding, SmartScreen disclaimer added via [Messages] section, and DIMEA-ChordJoystickMK2-v1.5-Setup.exe compiled (3.76 MB) from Phase 24.1 VST3 binary**
+**Inno Setup script updated to v1.5 with DIMEA branding, SmartScreen disclaimer added via [Messages] section, DIMEA-ChordJoystickMK2-v1.5-Setup.exe compiled (3.76 MB) from Phase 24.1 VST3, and smoke test approved by user in DAW**
 
 ## Performance
 
 - **Duration:** ~15 min
 - **Started:** 2026-03-02T04:10:00Z
 - **Completed:** 2026-03-02T04:25:00Z
-- **Tasks:** 1/2 complete (Task 2 is a checkpoint awaiting human verification)
+- **Tasks:** 2/2 complete
 - **Files modified:** 1
 
 ## Accomplishments
@@ -64,6 +64,7 @@ completed: 2026-03-02
 ## Task Commits
 
 1. **Task 1: Update .iss for v1.5, clean Release build, recompile installer** - `a4efa34` (chore)
+2. **Task 2: Smoke test — install and verify v1.5 features in DAW** - checkpoint approved (human verification gate — no code commit)
 
 ## Files Created/Modified
 - `installer/DimaChordJoystick-Setup.iss` - Updated to v1.5 with DIMEA branding, no LicenseFile, [Messages] SmartScreen disclaimer
@@ -84,8 +85,8 @@ None — plan executed exactly as written. Build step ran successfully (note: ba
 None — no external service configuration required.
 
 ## Next Phase Readiness
-- `installer/Output/DIMEA-ChordJoystickMK2-v1.5-Setup.exe` is ready to install and smoke test
-- After smoke test approval (Task 2 checkpoint), Phase 25 plan 02 proceeds to GitHub pre-release + desktop backup
+- `installer/Output/DIMEA-ChordJoystickMK2-v1.5-Setup.exe` smoke test approved — DIMEA welcome page confirmed, no license step, v1.5 features verified in DAW
+- Phase 25 plan 02 can proceed: create v1.5 git tag, push to plugin remote, create GitHub pre-release, desktop backup
 
 ---
 *Phase: 25-distribution*

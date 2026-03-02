@@ -282,7 +282,7 @@ Plans:
   3. The installer runs successfully on a clean machine without pre-installed MSVC redistributables (static CRT confirmed)
 **Plans**: 2 plans
 Plans:
-- [ ] 25-01-PLAN.md — Update .iss for v1.5 (DIMEA branding, [Messages] section, remove LicenseFile), clean Release build, recompile installer, smoke test checkpoint
+- [x] 25-01-PLAN.md — Update .iss for v1.5 (DIMEA branding, [Messages] section, remove LicenseFile), clean Release build, recompile installer, smoke test checkpoint (completed 2026-03-02)
 - [ ] 25-02-PLAN.md — Create v1.5 git tag, push to plugin remote, create GitHub pre-release, desktop backup
 
 ## Progress
@@ -307,7 +307,7 @@ Plans:
 | 23. Arpeggiator | v1.5 | Complete    | 2026-03-01 | 2026-03-01 |
 | 24. Gamepad Option Mode 1 | v1.5 | 3/3 | Complete | 2026-03-01 |
 | 24.1. LFO Joystick Visual Tracking | 2/2 | Complete | 2026-03-02 | 2026-03-02 |
-| 25. Distribution | 1/2 | In Progress|  | - |
+| 25. Distribution | 1/2 | In Progress | | - |
 
 ---
 *v1.0 shipped 2026-02-23 — 7 phases, 17 plans*

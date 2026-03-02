@@ -83,14 +83,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.5 — Phase 24: Gamepad Option Mode 1 COMPLETE (all 3 plans done, all 7 OPT1 requirements verified live in DAW)
+**Current focus:** v1.5 — Phase 25: Distribution — plan 01 complete (installer + smoke test approved), plan 02 pending
 
 ## Current Position
 
-Phase: 25 (Distribution) — In Progress (0/2 plans, checkpoint pending)
-Plan: 25-01 Task 1 complete — installer script updated to v1.5, DIMEA-ChordJoystickMK2-v1.5-Setup.exe compiled
-Status: 25-01 CHECKPOINT — awaiting human smoke test (install v1.5 + verify features in DAW)
-Last activity: 2026-03-02 — Phase 25 plan 01 task 1 complete (installer script + ISCC compile)
+Phase: 25 (Distribution) — In Progress (1/2 plans complete)
+Plan: 25-01 COMPLETE — installer script v1.5, DIMEA-ChordJoystickMK2-v1.5-Setup.exe compiled + smoke test approved
+Status: Ready for 25-02 (git tag v1.5, GitHub pre-release, desktop backup)
+Last activity: 2026-03-02 — Phase 25 plan 01 complete (smoke test approved)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -106,13 +106,13 @@ v1.5 Routing+Expression  [█████████ ] In progress
   Phase 23  [██████████]   Arpeggiator            COMPLETE 2026-03-01
   Phase 24  [██████████]   Gamepad Option Mode 1  COMPLETE 2026-03-01
   Phase 24.1[██████████]   LFO Joystick Tracking  COMPLETE 2026-03-02
-  Phase 25  [█         ]   Distribution           In progress (25-01 checkpoint)
+  Phase 25  [█████     ]   Distribution           In progress (25-01 complete)
 ```
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 50 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 19 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02 + 20-03 + 21-01 + 21-02 + 22-01 + 22-02 + 22-03 + 23-01 + 23-02 + 24-01 + 24-02 + 24-03])
+- Total plans completed: 51 (v1.0: 17, v1.3: 11, v1.4: 9, v1.5: 20 [Phase 17 complete + 18-01 + 18-02 + 18-03 + 19-01 + 19-02 + 20-01 + 20-02 + 20-03 + 21-01 + 21-02 + 22-01 + 22-02 + 22-03 + 23-01 + 23-02 + 24-01 + 24-02 + 24-03 + 25-01])
 - Average duration: not tracked per plan
 - Total execution time: not tracked
 
@@ -191,6 +191,8 @@ Key v1.5 design decisions (locked, do not re-open):
 - [Phase 24.1-02]: Drag guards (lfoXRateDragging_ etc.) prevent setValue from fighting user's manual drag; each slider's case is independently guarded
 - [Phase 24.1-02]: Sync mode guard in case 2: no setValue when lfoXSync/lfoYSync is true — Rate slider is replaced by subdivision dropdown in sync mode
 - [Phase 25-distribution]: LicenseFile removed from installer — no license agreement step shown to users
+- [Phase 25-01]: SmartScreen disclaimer placed on installer welcome page via Inno Setup [Messages] WelcomeLabel1/WelcomeLabel2 — no separate info page needed
+- [Phase 25-01]: DIMEA CHORD JOYSTICK MK2.vst3 bundle from Mar 1 23:32 build used for installer source — CMakeLists.txt was rebranded after Phase 24.1, so new cmake build would produce wrong bundle name; existing bundle contains all required Phase 24.1 code
 
 ### Pending Todos
 
@@ -202,6 +204,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-01
-Stopped at: 24.1-02 checkpoint:human-verify — tasks 1+2 complete, VST3 deployed, awaiting PS controller test in Ableton Live
-Next step: Human verifies LJOY-05/06/07 with PS controller; after approval Phase 24.1 is complete
+Last session: 2026-03-02
+Stopped at: Completed 25-01-PLAN.md — smoke test approved, SUMMARY.md created
+Next step: Execute 25-02-PLAN.md — git tag v1.5, push to plugin remote, create GitHub pre-release, desktop backup
