@@ -1,14 +1,14 @@
 ; DimaChordJoystick-Setup.iss
-; Inno Setup 6.7.1 installer for DIMEA CHORD JOYSTICK MK2 VST3 v1.5
+; Inno Setup 6.7.1 installer for DIMEA CHORD JOYSTICK MK2 VST3 v1.6
 ; Place this file in the installer/ subdirectory of the project root.
 
 [Setup]
 AppName=DIMEA CHORD JOYSTICK MK2
-AppVersion=1.5
+AppVersion=1.6
 AppPublisher=DIMEA
 AppPublisherURL=https://www.dimea.com
-AppComments=v1.5: Single-Channel Routing, Sub-Octave Per Voice, Arpeggiator (6 modes), LFO Recording, Random Trigger extensions, Left Joystick Modulation targets, Gamepad Option Mode 1
-OutputBaseFilename=DIMEA-ChordJoystickMK2-v1.5-Setup
+AppComments=v1.6: Defaults & Bug Fix (octave/scale defaults; stuck-notes fix), Triplet Subdivisions, Random Free Redesign (Poisson density), Looper Perimeter Bar
+OutputBaseFilename=DIMEA-ChordJoystickMK2-v1.6-Setup
 OutputDir=Output
 DefaultDirName={commoncf64}\VST3\DIMEA CHORD JOYSTICK MK2.vst3
 PrivilegesRequired=admin
@@ -22,7 +22,7 @@ UninstallDisplayName=DIMEA CHORD JOYSTICK MK2 VST3
 ; Copies the entire .vst3 bundle (directory tree) to the standard VST3 system path.
 ; Source ends in \* so Inno Setup recurses into the directory.
 ; DestDir creates DIMEA CHORD JOYSTICK MK2.vst3\ at the destination.
-Source: "..\build\ChordJoystick_artefacts\Release\VST3\DIMEA CHORD JOYSTICK MK2.vst3\*"; \
+Source: "..\build\ChordJoystick_artefacts\Release\VST3\Chord Joystick Control (BETA).vst3\*"; \
     DestDir: "{commoncf64}\VST3\DIMEA CHORD JOYSTICK MK2.vst3"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
