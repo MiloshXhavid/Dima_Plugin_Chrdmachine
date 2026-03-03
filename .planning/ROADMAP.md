@@ -74,7 +74,7 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 - [x] **Phase 26: Defaults and Bug Fix** — Default octave values (Third=4, Fifth=4, Tension=3) + Natural Minor default + noteCount_ clamp removal from all 13 note-off paths (completed 2026-03-02)
 - [x] **Phase 27: Triplet Subdivisions** — 1/1T through 1/32T added to random trigger and quantize subdivision selectors; APVTS enum extended; UI updated (completed 2026-03-03)
 - [x] **Phase 28: Random Free Redesign** — Poisson clock + 64-note burst model; three-branch sync matrix: Poisson (SYNC OFF), DAW ppq (SYNC ON + playing), internal counter (SYNC ON + stopped) (completed 2026-03-03)
-- [ ] **Phase 29: Looper Perimeter Bar** — Remove linear strip; clockwise rectangular progress bar around Looper section at 30 Hz; label always visible
+- [x] **Phase 29: Looper Perimeter Bar** — Clockwise 2px green perimeter bar replaces horizontal strip; ghost ring at idle; LOOPER label excluded from clip at all times (completed 2026-03-03)
 - [ ] **Phase 30: Distribution** — GitHub v1.6 release with installer binary + release notes; desktop backup
 
 ## Phase Details
@@ -348,7 +348,7 @@ Plans:
   4. The "LOOPER" section label text remains fully legible at all times — the bar does not paint over or occlude the label characters at any point in the circuit
 **Plans**: 1 plan
 Plans:
-- [ ] 29-01-PLAN.md — PluginEditor.cpp paint/resized/timerCallback: remove horizontal strip, add ghost ring + clockwise perimeter bar with tail and label exclusion; human visual smoke-test checkpoint
+- [x] 29-01-PLAN.md — PluginEditor.cpp paint/resized/timerCallback: remove horizontal strip, add ghost ring + clockwise perimeter bar with tail and label exclusion; human visual smoke-test checkpoint (completed 2026-03-03)
 
 ### Phase 30: Distribution
 **Goal**: v1.6 is publicly released on GitHub with an updated installer and backed up locally
@@ -371,5 +371,5 @@ Plans:
 | 26. Defaults and Bug Fix | v1.6 | Complete    | 2026-03-02 | 2026-03-02 |
 | 27. Triplet Subdivisions | v1.6 | Complete    | 2026-03-03 | - |
 | 28. Random Free Redesign | v1.6 | 1/1 | Complete | 2026-03-03 |
-| 29. Looper Perimeter Bar | v1.6 | 0/1 | Not started | - |
+| 29. Looper Perimeter Bar | v1.6 | 1/1 | Complete | 2026-03-03 |
 | 30. Distribution | v1.6 | 0/? | Not started | - |

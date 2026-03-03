@@ -157,10 +157,10 @@
 
 ### Looper Visualization
 
-- [ ] **LOOP-01**: Remove existing linear looper progress bar (the strip rendered below Rec gates in the Looper section)
-- [ ] **LOOP-02**: A rectangular perimeter progress bar travels clockwise around the outer edge of the Looper section box — one full circuit = one loop cycle, updates at 30 Hz via existing timerCallback
-- [ ] **LOOP-03**: Bar origin/terminus is at the Looper section label (top-left corner area) — travels right along top → down right edge → left along bottom → up left edge → back to origin
-- [ ] **LOOP-04**: The floating "LOOPER" section label remains fully visible at all times — the bar passes alongside or behind it, never obscuring it
+- [x] **LOOP-01**: Remove existing linear looper progress bar (the strip rendered below Rec gates in the Looper section)
+- [x] **LOOP-02**: A rectangular perimeter progress bar travels clockwise around the outer edge of the Looper section box — one full circuit = one loop cycle, updates at 30 Hz via existing timerCallback
+- [x] **LOOP-03**: Bar origin/terminus is at the Looper section label (top-left corner area) — travels right along top → down right edge → left along bottom → up left edge → back to origin
+- [x] **LOOP-04**: The floating "LOOPER" section label remains fully visible at all times — the bar passes alongside or behind it, never obscuring it
 
 ### Distribution
 
@@ -273,10 +273,10 @@
 | RND-08 | Phase 28 | Complete |
 | RND-09 | Phase 28 | Complete |
 | RND-10 | Phase 28 | Complete |
-| LOOP-01 | Phase 29 | Pending |
-| LOOP-02 | Phase 29 | Pending |
-| LOOP-03 | Phase 29 | Pending |
-| LOOP-04 | Phase 29 | Pending |
+| LOOP-01 | Phase 29 | Complete |
+| LOOP-02 | Phase 29 | Complete |
+| LOOP-03 | Phase 29 | Complete |
+| LOOP-04 | Phase 29 | Complete |
 | DIST-05 | Phase 30 | Pending |
 | DIST-06 | Phase 30 | Pending |
 | BUG-04 | Future | Pending |

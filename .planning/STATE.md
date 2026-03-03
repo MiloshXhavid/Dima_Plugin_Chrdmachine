@@ -48,17 +48,17 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 28 (complete — 1/1 plans done)
+Phase: 29 (complete — 1/1 plans done)
 Plan: 01 (complete)
-Status: Phase 28 complete — advancing to Phase 29
-Last activity: 2026-03-03 — Phase 28 plan 01 executed: Poisson clock + burst semantics for RandomFree/RandomHold
+Status: Phase 29 complete — advancing to Phase 30
+Last activity: 2026-03-03 — Phase 29 plan 01 executed: Clockwise looper perimeter bar replacing horizontal progress strip
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
 v1.3 Polish [██████████] SHIPPED 2026-02-25
 v1.4 LFO    [██████████] SHIPPED 2026-02-26
 v1.5 Routing+Expression [██████████] SHIPPED 2026-03-02
-v1.6 Triplets & Fixes   [██████    ] 3/5 phases complete
+v1.6 Triplets & Fixes   [████████  ] 4/5 phases complete
 ```
 
 ## Accumulated Context
@@ -75,7 +75,7 @@ v1.6 Triplets & Fixes   [██████    ] 3/5 phases complete
 | 26 | Defaults and Bug Fix | DEF-01..04, BUG-03 | Complete |
 | 27 | Triplet Subdivisions | TRIP-01, TRIP-02 | Complete |
 | 28 | Random Free Redesign | RND-08, RND-09, RND-10 | Complete |
-| 29 | Looper Perimeter Bar | LOOP-01..04 | Not started |
+| 29 | Looper Perimeter Bar | LOOP-01..04 | Complete |
 | 30 | Distribution | DIST-05, DIST-06 | Not started |
 
 ### Decisions
@@ -90,7 +90,10 @@ Key v1.6 design decisions (locked):
 - Random Free + RND SYNC ON + DAW Sync OFF = internal free-tempo clock grid
 - Random Free + DAW Sync ON = DAW beat grid (existing behavior, clarified)
 - Triplet subdivisions target: random trigger subdivisions AND quantize subdivisions (not LFO sync — deferred to v2 as LFO-EXT-02)
-- Looper perimeter bar: clockwise, starts/ends at label top-left, 30 Hz via existing timerCallback
+- Looper perimeter bar: clockwise, starts/ends at label top-left, 30 Hz via existing timerCallback (IMPLEMENTED Phase 29)
+- perimPoint lambda uses fmod+conditional add for negative-distance wraparound — tail before position 0 wraps correctly without corner special-casing
+- excludeClipRegion (not reduceClipRegion) for label protection — subtracts label zone so bar passes alongside characters without covering them
+- Ghost ring: 1px / gateOff.brighter(0.3f) when looper stopped; animated tail+head: 40px tail @ 0.28 alpha + 12px head @ full alpha (Phase 29)
 - DIST-05 and DIST-06 minted for v1.6 distribution phase (continuing DIST-01..04 sequence)
 - Phase 27 depends on Phase 26 (APVTS enum changes must land before triplet logic) — Phase 27 now complete
 - Phase 28 depends on Phase 27 (triplet subdivision values must exist in enum before redesign reads them) — Phase 28 now complete
@@ -113,5 +116,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Phase 28 plan 01 redesigned — probability drives Poisson rate, population modulates upward / expands subdivision pool; burst mechanics removed
-Next step: /gsd:plan-phase 29
+Stopped at: Phase 29 plan 01 complete — clockwise perimeter bar deployed and visually verified
+Next step: /gsd:plan-phase 30
