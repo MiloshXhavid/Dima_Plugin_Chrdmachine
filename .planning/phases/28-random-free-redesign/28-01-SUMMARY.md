@@ -2,27 +2,27 @@
 phase: 28-random-free-redesign
 plan: 01
 subsystem: audio
-tags: [cpp, juce, midi, trigger, random, poisson, burst]
+tags: [cpp, juce, midi, trigger, random, poisson, probability, population, subdivision-pool]
 
 # Dependency graph
 requires:
   - phase: 27-triplet-subdivisions
-    provides: RandomSubdiv enum with triplet values (WholeT..ThirtySecondT) that burst drain reads via subdivBeatsFor()
+    provides: RandomSubdiv enum with triplet values (WholeT..ThirtySecondT) used in subdivBeatsFor()
 provides:
-  - Poisson exponential countdown clock for RND SYNC OFF (truly stochastic inter-onset intervals)
-  - Three-branch sync matrix: Poisson / DAW-ppq / internal-free-tempo
-  - Burst semantics for RandomFree and RandomHold: N = round(probability * 64) notes per trigger event
-  - burstNotesRemaining_ and burstPhase_ state arrays with full reset coverage
+  - Probability-driven Poisson rate for RND SYNC OFF (0=silence, 1=64 events/bar)
+  - Population as upward modulator (SYNC OFF) and subdivision pool expander (SYNC ON)
+  - activeSubdiv_[4] per-voice active subdivision tracking
+  - Three-branch sync matrix: Poisson / DAW-ppq / internal-free-tempo (unchanged)
 affects: [29-looper-perimeter-bar, 30-distribution]
 
 # Tech tracking
 tech-stack:
   added: []
   patterns:
-    - Poisson exponential wait draw inlined at fire site using LCG nextRandom() (inverse-CDF method)
-    - Burst drain pattern: set burstNotesRemaining_ + burstPhase_=0 on trigger; decrement per block via burstPhase_ countdown
+    - Probability-driven Poisson: effProb = min(1.0, prob * (1 + rand * normPop)); mean = spBar / (effProb * 64)
+    - Subdivision pool expansion (SYNC ON): radius = floor(normPop * 7); pool = [selIdx-radius .. selIdx+radius]
+    - activeSubdiv_[v] tracks per-voice active subdivision; updated on each Poisson fire (SYNC OFF) or pool pick (SYNC ON)
     - Three-branch clock: !randomClockSync (Poisson) / isDawPlaying+ppq>=0 (grid) / else (internal counter)
-    - Reset burst state on: transport-stop, mode-switch, resetAllGates(), pad-release in RandomHold
 
 key-files:
   created: []
@@ -31,78 +31,103 @@ key-files:
     - Source/TriggerSystem.cpp
 
 key-decisions:
-  - "Probability (0-1.0) maps to burst size N = round(probability * 64): 0%=silence, 100%=64 notes per burst event"
-  - "Population is Poisson rate lambda for SYNC OFF; slot-selection probability via hitsPerBarToProbability only for SYNC ON"
-  - "Poisson wait inlined at call site rather than extracted to static helper — simpler, no signature complexity"
-  - "burstPhase_ counts DOWN toward 0 in SYNC OFF Poisson path (same pattern used for burst drain spacing)"
-  - "effectiveBpm = randomFreeTempo when !randomClockSync OR !isDawPlaying — ensures internal-clock third branch uses free tempo"
-
-patterns-established:
-  - "Burst drain: burstPhase_[v] -= blockSize; fire when <= 0; reschedule at samplesPerSubdiv spacing"
-  - "Poisson draw: u = max(1e-6, nextRandom()); wait = -mean * log(u); clamp to 10ms floor"
+  - "randomProbability (0-1.0) drives Poisson rate: effProb * 64 events/bar — 0=silence, 1=maximum density"
+  - "randomPopulation (1-64) is upward-only modulator (SYNC OFF) or subdivision pool radius (SYNC ON)"
+  - "Burst mechanics removed entirely — each trigger event fires exactly 1 note"
+  - "SYNC ON pool expands both directions from UI-selected index; radius = floor(normPop * 7) in 0..7"
+  - "hitsPerBarToProbability() helper removed as it became unused after branch rewrites"
 
 requirements-completed: [RND-08, RND-09, RND-10]
 
 # Metrics
-duration: 2min
+duration: 15min
 completed: 2026-03-03
 ---
 
-# Phase 28 Plan 01: Random Free Redesign Summary
+# Phase 28 Plan 01: Random Free Redesign Summary (Revised)
 
-**Poisson exponential clock + 64-note burst model replaces periodic grid in RND SYNC OFF, three-branch sync matrix governs all random timing modes**
+**Probability drives Poisson rate (0=silence to 64 events/bar); population acts as upward random modulator (SYNC OFF) or subdivision pool expander (SYNC ON); burst mechanics removed; 1 note per trigger event**
+
+## Note
+
+This SUMMARY supersedes the previous 28-01-SUMMARY written by the initial plan execution. The behaviour described in the original summary (burst drain, population-as-lambda) was incorrect per the design spec. This redesign was executed 2026-03-03 per user direction.
 
 ## Performance
 
-- **Duration:** 2 min
-- **Started:** 2026-03-03T01:05:03Z
-- **Completed:** 2026-03-03T01:07:12Z
-- **Tasks:** 2
+- **Duration:** ~15 min
+- **Completed:** 2026-03-03
+- **Tasks:** 1
 - **Files modified:** 2
+- **Commit:** 84ccc12
 
-## Accomplishments
-- TriggerSystem.h gains `burstNotesRemaining_` and `burstPhase_` arrays with full reset coverage (resetAllGates, transport-stop, mode-switch)
-- Clock block restructured to three branches: Poisson countdown (SYNC OFF), DAW ppq grid (SYNC ON + playing), internal free-tempo counter (SYNC ON + stopped)
-- RandomFree and RandomHold branches rewritten: burst of N notes (N = round(probability * 64)) per trigger event, drained one per block via burstPhase_ countdown
-- Build succeeds with 0 errors; VST3 installed to `%COMMONPROGRAMFILES%\VST3`
+## What Was Fixed
 
-## Task Commits
+### Previous behaviour (incorrect)
+- `randomPopulation` was used as the Poisson lambda directly (events/bar = population)
+- `randomProbability` was used as a burst size multiplier: N = round(probability * 64) notes per event
+- Burst drain loop fired multiple notes per clock event via `burstNotesRemaining_` / `burstPhase_` arrays
 
-Each task was committed atomically:
+### New behaviour (correct)
 
-1. **Task 1: Add burst state arrays to TriggerSystem.h and update resetAllGates()** - `191193a` (feat)
-2. **Task 2: Restructure clock block and rewrite RandomFree/RandomHold branches** - `a3627d6` (feat)
+**SYNC OFF (Poisson free-tempo):**
+- `randomProbability` (0.0-1.0) drives the Poisson rate: `effProb * 64` events/bar
+- `randomPopulation` (1-64) is an upward-only random modulator applied at each draw:
+  - `normPop = max(0, (population - 1) / 63)` — 0.0 at min (1), 1.0 at max (64)
+  - `boost = nextRandom() * normPop`
+  - `effProb = min(1.0, prob * (1 + boost))`
+  - Population=1: no modulation (deterministic at prob rate)
+  - Population=64: effProb varies randomly between prob and min(2*prob, 1.0)
+- Each Poisson event fires exactly 1 note
+- `activeSubdiv_[v]` kept in sync with the UI-selected subdivision on each fire
 
-**Plan metadata:** (docs commit — see below)
+**SYNC ON (DAW ppq grid):**
+- Each grid slot fires with probability = `randomProbability` (per-slot gate, 0=never, 1=always)
+- `randomPopulation` expands the subdivision pool in both directions from the selected index:
+  - `radius = floor(normPop * 7)` — 0 at pop=1, 7 at pop=64
+  - Pool = `[max(0, selIdx - radius) .. min(14, selIdx + radius)]`
+  - At each trigger: one subdivision picked randomly from pool; `activeSubdiv_[v]` updated; `prevSubdivIndex_[v]` reset to -1 to force fresh ppq index
+  - Population=1 (normPop=0): radius=0, always use selected subdivision
 
-## Files Created/Modified
-- `Source/TriggerSystem.h` - Added `burstNotesRemaining_` and `burstPhase_` private arrays after `randomGateRemaining_`
-- `Source/TriggerSystem.cpp` - Three-branch clock block, rewritten RandomFree/RandomHold branches, reset logic for burst state
+## Structural Changes
 
-## Decisions Made
-- Probability (0–1.0) maps to burst size N = round(probability * 64): 0% = silence, 100% = up to 64 rapid re-triggers per burst event
-- Population is the Poisson rate lambda (events/bar) for SYNC OFF; `hitsPerBarToProbability()` is only called for SYNC ON slot-selection gating
-- Poisson wait inlined at fire site rather than extracted to a static free function — avoids signature complexity with the private `rng_` member
-- `burstPhase_` counts DOWN toward 0 in both the Poisson path and burst drain path (consistent direction)
-- `effectiveBpm` formula updated: use `randomFreeTempo` whenever `!randomClockSync || !isDawPlaying` — ensures the internal-clock third branch uses free tempo, not stale DAW BPM
+**TriggerSystem.h:**
+- Removed: `std::array<int, 4> burstNotesRemaining_` and `std::array<double, 4> burstPhase_`
+- Added: `std::array<RandomSubdiv, 4> activeSubdiv_` (currently active subdivision per voice)
+
+**TriggerSystem.cpp:**
+- Transport section: removed `justStopped` variable and burst-drain block on transport stop
+- Clock block: uses `activeSubdiv_[v]` for beats/samplesPerSubdiv; Poisson formula uses `effProb * 64` rate
+- Mode-switch block: removed burst reset (only gate-close remains)
+- RandomFree branch: full replacement — 1 trigger per event; SYNC OFF triggers unconditionally; SYNC ON gates on probability and updates subdivision pool
+- RandomHold branch: full replacement — same 1-trigger semantics, pad-held guard preserved, same pool update logic
+- Gate length calc (in `if (trigger)` block): uses `activeSubdiv_[v]` instead of `p.randomSubdiv[v]`
+- `resetAllGates()`: removed burst field zeroing, added `activeSubdiv_[v] = RandomSubdiv::Quarter`
+- Removed unused `hitsPerBarToProbability()` static helper function
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
 
-## Issues Encountered
+**1. [Rule 2 - Cleanup] Removed unused hitsPerBarToProbability helper**
+- **Found during:** Task 1, after rewriting all callers
+- **Issue:** The static helper became unreferenced after the RandomFree and RandomHold branches were replaced. MSVC emits C4505 unused-function warning for unreferenced static functions.
+- **Fix:** Deleted the function definition entirely
+- **Files modified:** Source/TriggerSystem.cpp
+- **Commit:** 84ccc12
 
-None. Build succeeded on first attempt with 0 compiler errors or warnings introduced by these changes.
+## Self-Check: PASSED
 
-## User Setup Required
-
-None - no external service configuration required.
-
-## Next Phase Readiness
-- Phase 28 Plan 01 complete. RandomFree/RandomHold now use Poisson timing and burst semantics.
-- Phase 29 (Looper Perimeter Bar) is independent of Phase 28 and can start now.
-- Phase 28 has no further plans — phase complete after this metadata commit.
+- `Source/TriggerSystem.h` exists: FOUND
+- `activeSubdiv_` declared in header: CONFIRMED
+- `burstNotesRemaining_` absent from header: CONFIRMED
+- `burstPhase_` absent from header: CONFIRMED
+- `Source/TriggerSystem.cpp` exists: FOUND
+- Clock Poisson branch uses `effProb * 64` rate: CONFIRMED (line 133-135)
+- RandomFree fires 1 note per event (no drain loop): CONFIRMED
+- RandomHold fires 1 note per event (no drain loop): CONFIRMED
+- SYNC ON subdivision pool logic present (both-direction expansion): CONFIRMED
+- Commit 84ccc12 exists: CONFIRMED
+- Build: 0 errors, 0 new warnings; VST3 installed to Program Files/Common Files/VST3
 
 ---
-*Phase: 28-random-free-redesign*
-*Completed: 2026-03-03*
+*Phase: 28-random-free-redesign | Revised: 2026-03-03*

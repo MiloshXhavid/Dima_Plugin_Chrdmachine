@@ -94,8 +94,9 @@ Key v1.6 design decisions (locked):
 - DIST-05 and DIST-06 minted for v1.6 distribution phase (continuing DIST-01..04 sequence)
 - Phase 27 depends on Phase 26 (APVTS enum changes must land before triplet logic) — Phase 27 now complete
 - Phase 28 depends on Phase 27 (triplet subdivision values must exist in enum before redesign reads them) — Phase 28 now complete
-- Probability (0-1.0) maps to burst size N = round(probability * 64) — 0%=silence, 100%=64 notes per burst
-- Population is Poisson rate lambda for SYNC OFF; hitsPerBarToProbability only for SYNC ON slot-selection
+- randomProbability (0-1.0) drives Poisson rate: effProb * 64 events/bar — 0=silence, 1=maximum density (REDESIGNED 2026-03-03)
+- randomPopulation is upward-only modulator (SYNC OFF: effProb = prob*(1+rand*normPop)) or subdivision pool radius (SYNC ON: radius = floor(normPop*7), pool expands both directions) (REDESIGNED 2026-03-03)
+- Burst mechanics removed entirely — each trigger event fires exactly 1 note (REDESIGNED 2026-03-03)
 - Three-branch sync matrix: !randomClockSync=Poisson, isDawPlaying+ppq=DAW-grid, else=internal-counter
 - Triplet subdivisions interleaved with straight counterparts in all selectors (RandomSubdiv enum, APVTS choices, quantizeSubdivToGridSize, PluginEditor ComboBoxes) — no preset backward compatibility maintained (user accepted)
 - Phase 29 depends on Phase 26 (independent of 27/28, but must start from stable base) — Phase 26 now complete
@@ -112,5 +113,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Phase 28 plan 01 complete — Poisson clock + burst semantics for RandomFree/RandomHold
+Stopped at: Phase 28 plan 01 redesigned — probability drives Poisson rate, population modulates upward / expands subdivision pool; burst mechanics removed
 Next step: /gsd:plan-phase 29
