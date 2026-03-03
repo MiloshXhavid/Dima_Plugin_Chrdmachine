@@ -346,7 +346,9 @@ Plans:
   2. A colored bar travels clockwise around the outer edge of the Looper section rectangle at 30 Hz, completing exactly one circuit per loop cycle — observable by watching the bar complete a full lap in sync with the DAW transport
   3. The bar starts and ends its circuit at the top-left corner (Looper label area), travels right along the top edge, down the right edge, left along the bottom edge, and up the left edge — direction confirmed by watching a slow loop (e.g. 4-bar at 60 BPM)
   4. The "LOOPER" section label text remains fully legible at all times — the bar does not paint over or occlude the label characters at any point in the circuit
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 29-01-PLAN.md — PluginEditor.cpp paint/resized/timerCallback: remove horizontal strip, add ghost ring + clockwise perimeter bar with tail and label exclusion; human visual smoke-test checkpoint
 
 ### Phase 30: Distribution
 **Goal**: v1.6 is publicly released on GitHub with an updated installer and backed up locally
@@ -369,5 +371,5 @@ Plans:
 | 26. Defaults and Bug Fix | v1.6 | Complete    | 2026-03-02 | 2026-03-02 |
 | 27. Triplet Subdivisions | v1.6 | Complete    | 2026-03-03 | - |
 | 28. Random Free Redesign | v1.6 | 1/1 | Complete | 2026-03-03 |
-| 29. Looper Perimeter Bar | v1.6 | 0/? | Not started | - |
+| 29. Looper Perimeter Bar | v1.6 | 0/1 | Not started | - |
 | 30. Distribution | v1.6 | 0/? | Not started | - |
