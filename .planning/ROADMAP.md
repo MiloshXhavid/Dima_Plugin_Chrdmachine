@@ -358,7 +358,10 @@ Plans:
   1. A GitHub release tagged `v1.6` exists with the installer binary attached and release notes listing the defaults fix, noteCount bug fix, triplet subdivisions, Random Free redesign, and looper perimeter bar
   2. A full copy of the built plugin and installer is present on the Desktop backup location — confirmed by directory listing
   3. The installer runs successfully on a clean machine and the plugin loads in Ableton Live with no stuck notes on first use in Single Channel mode
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 30-01-PLAN.md — Promote v1.5 to finished release, update .iss to v1.6, clean build, recompile installer, smoke test checkpoint
+- [ ] 30-02-PLAN.md — Create v1.6 git tag, push to plugin remote, create GitHub Latest release, desktop backup
 
 ## Progress
 
@@ -372,4 +375,4 @@ Plans:
 | 27. Triplet Subdivisions | v1.6 | Complete    | 2026-03-03 | - |
 | 28. Random Free Redesign | v1.6 | 1/1 | Complete | 2026-03-03 |
 | 29. Looper Perimeter Bar | v1.6 | Complete    | 2026-03-03 | 2026-03-03 |
-| 30. Distribution | v1.6 | 0/? | Not started | - |
+| 30. Distribution | v1.6 | 0/2 | Not started | - |
