@@ -375,4 +375,4 @@ Plans:
 | 27. Triplet Subdivisions | v1.6 | Complete    | 2026-03-03 | - |
 | 28. Random Free Redesign | v1.6 | 1/1 | Complete | 2026-03-03 |
 | 29. Looper Perimeter Bar | v1.6 | Complete    | 2026-03-03 | 2026-03-03 |
-| 30. Distribution | v1.6 | 0/2 | Not started | - |
+| 30. Distribution | 1/2 | In Progress|  | - |

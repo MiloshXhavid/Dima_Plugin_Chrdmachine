@@ -57,21 +57,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** XY joystick mapped to harmonic space — per-note trigger gates, scale quantization, gesture looper with trigger quantization, gamepad control — no competitor provides this as a unified instrument.
-**Current focus:** v1.6 — Phase 28 complete, ready for Phase 29
+**Current focus:** v1.6 — Phase 30 distribution in progress (1/2 plans done)
 
 ## Current Position
 
-Phase: 29 (complete — 1/1 plans done)
-Plan: 01 (complete)
-Status: Phase 29 complete — advancing to Phase 30
-Last activity: 2026-03-03 — Phase 29 plan 01 executed: Clockwise looper perimeter bar replacing horizontal progress strip
+Phase: 30 (in progress — 1/2 plans done)
+Plan: 01 (complete), 02 (pending)
+Status: Phase 30 plan 01 complete — v1.5 promoted, .iss bumped to v1.6, installer compiled, smoke test approved
+Last activity: 2026-03-03 — Phase 30 plan 01 executed: v1.5 promoted to finished release, v1.6 installer compiled from Phase 29 VST3
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
 v1.3 Polish [██████████] SHIPPED 2026-02-25
 v1.4 LFO    [██████████] SHIPPED 2026-02-26
 v1.5 Routing+Expression [██████████] SHIPPED 2026-03-02
-v1.6 Triplets & Fixes   [████████  ] 4/5 phases complete
+v1.6 Triplets & Fixes   [█████████ ] 4.5/5 phases complete
 ```
 
 ## Accumulated Context
@@ -89,7 +89,7 @@ v1.6 Triplets & Fixes   [████████  ] 4/5 phases complete
 | 27 | Triplet Subdivisions | TRIP-01, TRIP-02 | Complete |
 | 28 | Random Free Redesign | RND-08, RND-09, RND-10 | Complete |
 | 29 | Looper Perimeter Bar | LOOP-01..04 | Complete |
-| 30 | Distribution | DIST-05, DIST-06 | Not started |
+| 30 | Distribution | DIST-05, DIST-06 | In Progress (1/2) |
 
 ### Decisions
 
@@ -117,6 +117,7 @@ Key v1.6 design decisions (locked):
 - Triplet subdivisions interleaved with straight counterparts in all selectors (RandomSubdiv enum, APVTS choices, quantizeSubdivToGridSize, PluginEditor ComboBoxes) — no preset backward compatibility maintained (user accepted)
 - Phase 29 depends on Phase 26 (independent of 27/28, but must start from stable base) — Phase 26 now complete
 - Phase 30 depends on Phase 29 (last feature phase; distribution always last)
+- VST3 bundle source path is Chord Joystick Control (BETA).vst3 — PRODUCT_NAME in CMakeLists.txt is "Chord Joystick Control (BETA)"; DestDir installs to DIMEA CHORD JOYSTICK MK2.vst3 (Phase 30, plan 01)
 
 ### Pending Todos
 
@@ -129,5 +130,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Phase 29 plan 01 complete — clockwise perimeter bar deployed and visually verified
-Next step: /gsd:plan-phase 30
+Stopped at: Phase 30 plan 01 complete — v1.6 installer built and smoke-tested; ready for plan 02 (GitHub release + desktop backup)
+Next step: Execute plan 30-02
