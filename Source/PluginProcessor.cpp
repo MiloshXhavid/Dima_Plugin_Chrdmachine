@@ -1403,10 +1403,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         // also supporting the new looper-sync flow.
         const bool clockRunning  = arpSyncOn ? isDawPlaying : (looper_.isPlaying() || isDawPlaying);
         const bool clockStarted  = arpSyncOn ? dawJustStarted : (looperJustStarted || dawJustStarted);
-        if (arpOn && !prevArpOn_ && clockRunning)
-            arpWaitingForPlay_ = true;   // just enabled while clock is rolling — arm
-        if (!arpOn || (!arpSyncOn && !looper_.isPlaying() && !isDawPlaying))
-            arpWaitingForPlay_ = false;  // disabled, OR free-run (no external clock) — start immediately
+        if (arpOn && !prevArpOn_)
+            arpWaitingForPlay_ = true;   // always arm when ARP is enabled — wait for looper/DAW play
+        if (!arpOn)
+            arpWaitingForPlay_ = false;  // disabled — clear arm
         if (clockStarted)
             arpWaitingForPlay_ = false;  // clock just started — launch
 
@@ -1432,7 +1432,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     // DAW sync OFF → looper OR DAW transport can run the arp (looper beat takes priority
     //                for phase locking when both are active; falls back to free-run otherwise).
     const bool arpSyncOn  = looper_.isSyncToDaw();
-    const bool arpClockOn = arpSyncOn ? isDawPlaying : true;  // free-run always available when not DAW-synced
+    const bool arpClockOn = arpSyncOn ? isDawPlaying : looper_.isPlaying();
     if (!arpOn || !arpClockOn || arpWaitingForPlay_)
     {
         // Kill any hanging arp note when ARP is off or clock stops.
@@ -1465,9 +1465,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             static_cast<int>(*apvts.getRawParameterValue(ParamID::arpOrder)));
 
         const double gateRatio = smoothedGateLength_.getCurrentValue();
-        // Manual mode (gateRatio == 0.0): gateBeats = 0.0, arpNoteOffRemaining_ stays 0
-        // → no gate-time note-off; step boundary provides implicit note-off via the cut-at-next-step path.
-        const double gateBeats = subdivBeats * gateRatio;
+        // Minimum 2% of subdivision (~5ms at 120BPM/8th) so slider fully closed = very short notes.
+        const double gateBeats = subdivBeats * std::max(gateRatio, 0.02);
 
         const double beatsThisBlock = lp.bpm * static_cast<double>(blockSize)
                                       / (sampleRate_ * 60.0);
@@ -1883,6 +1882,13 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 if (xMode != 4) lfoXSubdivMult_.store(1.0f, std::memory_order_relaxed);
                 if (yMode != 4) lfoYSubdivMult_.store(1.0f, std::memory_order_relaxed);
             }
+
+            // When gate mode is selected but joystick is idle, keep gateLengthDisplay_
+            // in sync with the APVTS knob so the arp Gate Length slider always works.
+            if (!liveGamepad && (xMode == 7 || yMode == 7))
+                gateLengthDisplay_.store(
+                    apvts.getRawParameterValue(ParamID::gateLength)->load(),
+                    std::memory_order_relaxed);
         }
     }
 
