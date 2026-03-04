@@ -3,6 +3,19 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Triplets & Fixes
 status: unknown
+last_updated: "2026-03-04T14:14:14.193Z"
+progress:
+  total_phases: 27
+  completed_phases: 23
+  total_plans: 57
+  completed_plans: 55
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.6
+milestone_name: Triplets & Fixes
+status: unknown
 last_updated: "2026-03-03T03:15:04.400Z"
 progress:
   total_phases: 23
@@ -118,6 +131,8 @@ Key v1.6 design decisions (locked):
 - Phase 29 depends on Phase 26 (independent of 27/28, but must start from stable base) — Phase 26 now complete
 - Phase 30 depends on Phase 29 (last feature phase; distribution always last)
 - VST3 bundle source path is Chord Joystick Control (BETA).vst3 — PRODUCT_NAME in CMakeLists.txt is "Chord Joystick Control (BETA)"; DestDir installs to DIMEA CHORD JOYSTICK MK2.vst3 (Phase 30, plan 01)
+- [Phase 31]: Milky way uses 3-layer Gaussian (outer/mid/core) baked in resized() for zero per-frame allocation
+- [Phase 31]: Semitone grid replaces area-count grid: joystickXAtten/YAtten now mean exact semitone count with in/out-of-scale alpha differentiation
 
 ### Pending Todos
 
@@ -129,6 +144,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-03
-Stopped at: Phase 30 plan 01 complete — v1.6 installer built and smoke-tested; ready for plan 02 (GitHub release + desktop backup)
-Next step: Execute plan 30-02
+Last session: 2026-03-04
+Stopped at: v1.7 6-bug fix session built+installed; arp gate length minimum fix applied; awaiting DAW test per .planning/phases/33-version-sync/.continue-here.md
+Next step: DAW test (arp gate length closed=staccato, open=legato), then commit uncommitted changes in GamepadInput.cpp, PluginProcessor.h, TriggerSystem.cpp/h, ROADMAP.md; then plan/execute Phase 32 (Spring-Damper + Angle Indicator) — CONTEXT.md already written
