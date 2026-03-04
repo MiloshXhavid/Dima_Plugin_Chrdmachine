@@ -1016,6 +1016,21 @@ void JoystickPad::timerCallback()
         }
     }
 
+    // ── Cursor breathing animation ────────────────────────────────────────────
+    // glowPhase_ (0..1) drives the breathing glow ring in paint().
+    // Beat sync: resetGlowPhase() is called by PluginEditor::timerCallback() on beat.
+    // Gate-open: hold at peak brightness (full inhale). Resume on release.
+    {
+        bool anyGateOpen = false;
+        for (int v = 0; v < 4; ++v)
+            anyGateOpen |= proc_.isGateOpen(v);
+
+        if (anyGateOpen)
+            glowPhase_ = 1.0f;  // locked to full glow while a gate is open
+        else
+            glowPhase_ = std::fmod(glowPhase_ + 1.0f / 60.0f, 1.0f);
+    }
+
     repaint();
 }
 
