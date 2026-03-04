@@ -2203,34 +2203,38 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     // Gamepad left-stick axis mode toggles — pill style: left=default, right=alt
     filterYModeBox_.addItem("Resonance (CC71)", 1);
     filterYModeBox_.addItem("LFO Rate (CC76)",  2);
-    filterYModeBox_.addItem("LFO-Y Freq",       3);
-    filterYModeBox_.addItem("LFO-Y Phase",      4);
-    filterYModeBox_.addItem("LFO-Y Level",      5);
-    filterYModeBox_.addItem("Gate Length",      6);
-    filterYModeBox_.setTooltip("Left Stick Y Mode  -  Resonance (CC71), LFO-Y Rate, LFO-Y Level, or Gate Length");
+    filterYModeBox_.addItem("Cutoff (CC74)",    3);
+    filterYModeBox_.addItem("VCF LFO (CC12)",   4);
+    filterYModeBox_.addItem("LFO-Y Freq",       5);
+    filterYModeBox_.addItem("LFO-Y Phase",      6);
+    filterYModeBox_.addItem("LFO-Y Level",      7);
+    filterYModeBox_.addItem("Gate Length",      8);
+    filterYModeBox_.setTooltip("Left Stick Y Mode  -  Resonance (CC71), LFO Rate (CC76), Cutoff (CC74), VCF LFO (CC12), LFO-Y Freq/Phase/Level, or Gate Length");
     styleCombo(filterYModeBox_);
     addAndMakeVisible(filterYModeBox_);
     filterYModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterYMode", filterYModeBox_);
 
-    filterXModeBox_.addItem("Cutoff (CC74)",  1);
-    filterXModeBox_.addItem("VCF LFO (CC12)", 2);
-    filterXModeBox_.addItem("LFO-X Freq",     3);
-    filterXModeBox_.addItem("LFO-X Phase",    4);
-    filterXModeBox_.addItem("LFO-X Level",    5);
-    filterXModeBox_.addItem("Gate Length",    6);
-    filterXModeBox_.setTooltip("Left Stick X Mode  -  Cutoff (CC74), VCF LFO depth, LFO-X Level, or Gate Length");
+    filterXModeBox_.addItem("Cutoff (CC74)",    1);
+    filterXModeBox_.addItem("VCF LFO (CC12)",   2);
+    filterXModeBox_.addItem("Resonance (CC71)", 3);
+    filterXModeBox_.addItem("LFO Rate (CC76)",  4);
+    filterXModeBox_.addItem("LFO-X Freq",       5);
+    filterXModeBox_.addItem("LFO-X Phase",      6);
+    filterXModeBox_.addItem("LFO-X Level",      7);
+    filterXModeBox_.addItem("Gate Length",      8);
+    filterXModeBox_.setTooltip("Left Stick X Mode  -  Cutoff (CC74), VCF LFO (CC12), Resonance (CC71), LFO Rate (CC76), LFO-X Freq/Phase/Level, or Gate Length");
     styleCombo(filterXModeBox_);
     addAndMakeVisible(filterXModeBox_);
     filterXModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterXMode", filterXModeBox_);
     filterXModeBox_.onChange = [this]
     {
-        if (filterXModeBox_.getSelectedItemIndex() >= 2)  // LFO / Gate modes — drop MOD FIX to 0
+        if (filterXModeBox_.getSelectedItemIndex() >= 4)  // LFO / Gate modes — drop MOD FIX to 0
             if (auto* px = proc_.apvts.getParameter("filterXOffset"))
                 px->setValueNotifyingHost(0.5f);  // 0.5 = centre of -50..+50 = value 0
     };
     filterYModeBox_.onChange = [this]
     {
-        if (filterYModeBox_.getSelectedItemIndex() >= 2)
+        if (filterYModeBox_.getSelectedItemIndex() >= 4)
             if (auto* py = proc_.apvts.getParameter("filterYOffset"))
                 py->setValueNotifyingHost(0.5f);
     };
@@ -3950,25 +3954,25 @@ void PluginEditor::timerCallback()
         {
             switch (xMode)
             {
-                case 2:  // LFO-X Freq — only update in free mode (sync mode has no rate slider to track)
+                case 4:  // LFO-X Freq — only update in free mode (sync mode has no rate slider to track)
                     if (!xSyncOn && !lfoXRateDragging_)
                         lfoXRateSlider_.setValue(
                             proc_.lfoXRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 3:  // LFO-X Phase
+                case 5:  // LFO-X Phase
                     if (!lfoXPhaseDragging_)
                         lfoXPhaseSlider_.setValue(
                             proc_.lfoXPhaseDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 4:  // LFO-X Level
+                case 6:  // LFO-X Level
                     if (!lfoXLevelDragging_)
                         lfoXLevelSlider_.setValue(
                             proc_.lfoXLevelDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 5:  // Gate Length
+                case 7:  // Gate Length
                     if (!gateDragging_)
                         arpGateTimeKnob_.setValue(
                             proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
@@ -3976,6 +3980,8 @@ void PluginEditor::timerCallback()
                     break;
                 case 0:  // Cutoff (CC74) — MOD FIX X tracks live offset in -50..+50 range
                 case 1:  // VCF LFO (CC12)
+                case 2:  // Resonance (CC71)
+                case 3:  // LFO Rate (CC76)
                     if (!filterXOffsetDragging_)
                         filterXOffsetKnob_.setValue(
                             proc_.filterXOffsetDisplay_.load(std::memory_order_relaxed),
@@ -3990,25 +3996,25 @@ void PluginEditor::timerCallback()
         {
             switch (yMode)
             {
-                case 2:  // LFO-Y Freq
+                case 4:  // LFO-Y Freq
                     if (!ySyncOn && !lfoYRateDragging_)
                         lfoYRateSlider_.setValue(
                             proc_.lfoYRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 3:  // LFO-Y Phase
+                case 5:  // LFO-Y Phase
                     if (!lfoYPhaseDragging_)
                         lfoYPhaseSlider_.setValue(
                             proc_.lfoYPhaseDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 4:  // LFO-Y Level
+                case 6:  // LFO-Y Level
                     if (!lfoYLevelDragging_)
                         lfoYLevelSlider_.setValue(
                             proc_.lfoYLevelDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 5:  // Gate Length — Y also writes gateLengthDisplay_; last writer wins (known limitation)
+                case 7:  // Gate Length — Y also writes gateLengthDisplay_; last writer wins (known limitation)
                     if (!gateDragging_)
                         arpGateTimeKnob_.setValue(
                             proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
@@ -4016,6 +4022,8 @@ void PluginEditor::timerCallback()
                     break;
                 case 0:  // Resonance (CC71) — MOD FIX Y tracks live offset in -50..+50 range
                 case 1:  // LFO Rate (CC76)
+                case 2:  // Cutoff (CC74)
+                case 3:  // VCF LFO (CC12)
                     if (!filterYOffsetDragging_)
                         filterYOffsetKnob_.setValue(
                             proc_.filterYOffsetDisplay_.load(std::memory_order_relaxed),
@@ -4055,12 +4063,12 @@ void PluginEditor::timerCallback()
                 }
             };
 
-            updateMod(lfoXRateSlider_,  xMode == 2 ? lx : 0.0f, lfoXRateAnchor_);
-            updateMod(lfoXPhaseSlider_, xMode == 3 ? lx : 0.0f, lfoXPhaseAnchor_);
-            updateMod(lfoXLevelSlider_, xMode == 4 ? lx : 0.0f, lfoXLevelAnchor_);
-            updateMod(lfoYRateSlider_,  yMode == 2 ? ly : 0.0f, lfoYRateAnchor_);
-            updateMod(lfoYPhaseSlider_, yMode == 3 ? ly : 0.0f, lfoYPhaseAnchor_);
-            updateMod(lfoYLevelSlider_, yMode == 4 ? ly : 0.0f, lfoYLevelAnchor_);
+            updateMod(lfoXRateSlider_,  xMode == 4 ? lx : 0.0f, lfoXRateAnchor_);
+            updateMod(lfoXPhaseSlider_, xMode == 5 ? lx : 0.0f, lfoXPhaseAnchor_);
+            updateMod(lfoXLevelSlider_, xMode == 6 ? lx : 0.0f, lfoXLevelAnchor_);
+            updateMod(lfoYRateSlider_,  yMode == 4 ? ly : 0.0f, lfoYRateAnchor_);
+            updateMod(lfoYPhaseSlider_, yMode == 5 ? ly : 0.0f, lfoYPhaseAnchor_);
+            updateMod(lfoYLevelSlider_, yMode == 6 ? ly : 0.0f, lfoYLevelAnchor_);
         }
     }
 
@@ -4127,26 +4135,26 @@ void PluginEditor::timerCallback()
     // Modes 2-5 are LFO/Gate targets (show unit label, no "%" suffix).
     {
         const int xMode = (int)*proc_.apvts.getRawParameterValue("filterXMode");
-        const juce::String xLabel = (xMode == 2) ? "Hz"
-                                  : (xMode == 3) ? "Phase"
-                                  : (xMode == 4) ? "Level"
-                                  : (xMode == 5) ? "Gate"
+        const juce::String xLabel = (xMode == 4) ? "Hz"
+                                  : (xMode == 5) ? "Phase"
+                                  : (xMode == 6) ? "Level"
+                                  : (xMode == 7) ? "Gate"
                                   : "-/+ MOD X";
         if (filterXAttenLabel_.getText() != xLabel)
             styleLabel(filterXAttenLabel_, xLabel);
-        const juce::String xSuffix = (xMode >= 2) ? "" : " %";
+        const juce::String xSuffix = (xMode >= 4) ? "" : " %";
         if (filterXAttenKnob_.getTextValueSuffix() != xSuffix)
             filterXAttenKnob_.setTextValueSuffix(xSuffix);
 
         const int yMode = (int)*proc_.apvts.getRawParameterValue("filterYMode");
-        const juce::String yLabel = (yMode == 2) ? "Hz"
-                                  : (yMode == 3) ? "Phase"
-                                  : (yMode == 4) ? "Level"
-                                  : (yMode == 5) ? "Gate"
+        const juce::String yLabel = (yMode == 4) ? "Hz"
+                                  : (yMode == 5) ? "Phase"
+                                  : (yMode == 6) ? "Level"
+                                  : (yMode == 7) ? "Gate"
                                   : "-/+ MOD Y";
         if (filterYAttenLabel_.getText() != yLabel)
             styleLabel(filterYAttenLabel_, yLabel);
-        const juce::String ySuffix = (yMode >= 2) ? "" : " %";
+        const juce::String ySuffix = (yMode >= 4) ? "" : " %";
         if (filterYAttenKnob_.getTextValueSuffix() != ySuffix)
             filterYAttenKnob_.setTextValueSuffix(ySuffix);
     }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(ChordJoystick VERSION 1.5.0)
+project(ChordJoystick VERSION 1.7.0)
 
 # Static CRT — must precede all FetchContent calls so JUCE internals also get /MT
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
