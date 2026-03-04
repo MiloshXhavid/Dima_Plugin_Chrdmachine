@@ -1011,6 +1011,32 @@ void JoystickPad::timerCallback()
     prevCx_ = cx;
     prevCy_ = cy;
 
+    // ── Phase 32: Spring-damper display position ──────────────────────────────
+    // kSpring=0.18, kDamping=0.72 → ~90ms settle at 60Hz, slight underdamp overshoot.
+    // cx/cy above is the raw (LFO-aware) target pixel position (same as particle spawn origin).
+    // displayCx_/Cy_ is the spring-smoothed position read by paint() for the cursor dot.
+    {
+        constexpr float kSpring  = 0.18f;
+        constexpr float kDamping = 0.72f;
+        // First-frame snap: all spring state is zero only on the very first timerCallback.
+        // Snap directly to avoid springing from (0,0) at plugin load.
+        if (springVelX_ == 0.0f && springVelY_ == 0.0f &&
+            displayCx_  == 0.0f && displayCy_  == 0.0f)
+        {
+            displayCx_ = cx;
+            displayCy_ = cy;
+        }
+        else
+        {
+            springVelX_ += (cx - displayCx_) * kSpring;
+            springVelY_ += (cy - displayCy_) * kSpring;
+            springVelX_ *= kDamping;
+            springVelY_ *= kDamping;
+            displayCx_  += springVelX_;
+            displayCy_  += springVelY_;
+        }
+    }
+
     // ── Poll voice note-on bursts ─────────────────────────────────────────────
     static const juce::Colour kVoiceClr[4] = {
         juce::Colour(0xFFFF3333),  // Voice 0 (Root):    Red
