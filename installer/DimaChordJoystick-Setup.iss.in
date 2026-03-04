@@ -1,14 +1,14 @@
-; DimaChordJoystick-Setup.iss
-; Inno Setup 6.7.1 installer for DIMEA CHORD JOYSTICK MK2 VST3 v1.6
+; DimaChordJoystick-Setup.iss  (generated — edit DimaChordJoystick-Setup.iss.in instead)
+; Inno Setup 6.7.1 installer for DIMEA CHORD JOYSTICK MK2 VST3 v@PROJECT_VERSION@
 ; Place this file in the installer/ subdirectory of the project root.
 
 [Setup]
 AppName=DIMEA CHORD JOYSTICK MK2
-AppVersion=1.6
+AppVersion=@PROJECT_VERSION@
 AppPublisher=DIMEA
 AppPublisherURL=https://www.dimea.com
-AppComments=v1.6: Defaults & Bug Fix (octave/scale defaults; stuck-notes fix), Triplet Subdivisions, Random Free Redesign (Poisson density), Looper Perimeter Bar
-OutputBaseFilename=DIMEA-ChordJoystickMK2-v1.6-Setup
+AppComments=v@PROJECT_VERSION@
+OutputBaseFilename=DIMEA-ChordJoystickMK2-v@PROJECT_VERSION@-Setup
 OutputDir=Output
 DefaultDirName={commoncf64}\VST3\DIMEA CHORD JOYSTICK MK2.vst3
 PrivilegesRequired=admin

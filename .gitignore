@@ -1,3 +1,6 @@
+# Generated installer script (source of truth is installer/*.iss.in)
+installer/DimaChordJoystick-Setup.iss
+
 node_modules/
 .DS_Store
 TO-DOS.md

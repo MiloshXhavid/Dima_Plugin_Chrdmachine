@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
 project(ChordJoystick VERSION 1.7.0)
 
+# Generate Inno Setup installer script from template (single version source of truth)
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/installer/DimaChordJoystick-Setup.iss.in"
+    "${CMAKE_CURRENT_SOURCE_DIR}/installer/DimaChordJoystick-Setup.iss"
+    @ONLY
+)
+
 # Static CRT — must precede all FetchContent calls so JUCE internals also get /MT
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
