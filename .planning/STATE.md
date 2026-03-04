@@ -74,10 +74,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 30 (in progress — 1/2 plans done)
-Plan: 01 (complete), 02 (pending)
-Status: Phase 30 plan 01 complete — v1.5 promoted, .iss bumped to v1.6, installer compiled, smoke test approved
-Last activity: 2026-03-03 — Phase 30 plan 01 executed: v1.5 promoted to finished release, v1.6 installer compiled from Phase 29 VST3
+Phase: 31 (in progress — 2/2 auto tasks complete, human visual checkpoint pending)
+Plan: 01 (complete), 02 (auto tasks complete — awaiting human-verify checkpoint approval)
+Status: Phase 31 plan 02 auto tasks committed — glowPhase_ advancement + resetGlowPhase() wiring done; build+install+visual approval required
+Last activity: 2026-03-04 — Phase 31 plan 02 tasks executed: beat-synced glow ring breathing wired, SUMMARY.md created, awaiting checkpoint
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -133,6 +133,8 @@ Key v1.6 design decisions (locked):
 - VST3 bundle source path is Chord Joystick Control (BETA).vst3 — PRODUCT_NAME in CMakeLists.txt is "Chord Joystick Control (BETA)"; DestDir installs to DIMEA CHORD JOYSTICK MK2.vst3 (Phase 30, plan 01)
 - [Phase 31]: Milky way uses 3-layer Gaussian (outer/mid/core) baked in resized() for zero per-frame allocation
 - [Phase 31]: Semitone grid replaces area-count grid: joystickXAtten/YAtten now mean exact semitone count with in/out-of-scale alpha differentiation
+- [Phase 31 plan 02]: BPM-driven glow phase advancement (bpm/3600 per tick) — one full cycle = one beat at any tempo; beat reset via resetGlowPhase() prevents drift
+- [Phase 31 plan 02]: Beat ownership rule — PluginEditor owns beatOccurred_ exchange, notifies JoystickPad via resetGlowPhase() only; JoystickPad never reads beatOccurred_
 
 ### Pending Todos
 
@@ -145,5 +147,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-04
-Stopped at: v1.7 6-bug fix session built+installed; arp gate length minimum fix applied; awaiting DAW test per .planning/phases/33-version-sync/.continue-here.md
-Next step: DAW test (arp gate length closed=staccato, open=legato), then commit uncommitted changes in GamepadInput.cpp, PluginProcessor.h, TriggerSystem.cpp/h, ROADMAP.md; then plan/execute Phase 32 (Spring-Damper + Angle Indicator) — CONTEXT.md already written
+Stopped at: Phase 31 plan 02 auto tasks complete — at human-verify checkpoint for visual validation of space background + beat-synced glow ring
+Next step: Build + install VST3, load in Ableton/pluginval, verify all 8 visual checks in 31-02-PLAN.md checkpoint (background, milky way, stars, heatmap, grid, cursor glow pulsing, border), then approve checkpoint to complete Phase 31 and proceed to Phase 32
