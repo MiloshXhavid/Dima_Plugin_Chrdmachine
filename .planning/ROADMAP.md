@@ -6,7 +6,8 @@
 - ✅ **v1.3 Polish & Quantization** — Phases 09-11 (shipped 2026-02-25)
 - ✅ **v1.4 LFO + Clock** — Phases 12-16 (shipped 2026-02-26)
 - ✅ **v1.5 Routing + Expression** — Phases 17-25 (shipped 2026-03-02)
-- **v1.6 Triplets & Fixes** — Phases 26-30 (in progress)
+- ✅ **v1.6 Triplets & Fixes** — Phases 26-30 (shipped 2026-03-03)
+- 🔲 **v1.7 Space Joystick** — Phases 31-38 (active)
 
 ## Phases
 
@@ -363,6 +364,16 @@ Plans:
 - [ ] 30-01-PLAN.md — Promote v1.5 to finished release, update .iss to v1.6, clean build, recompile installer, smoke test checkpoint
 - [ ] 30-02-PLAN.md — Create v1.6 git tag, push to plugin remote, create GitHub Latest release, desktop backup
 
+### Phase 31: Paint-Only Visual Foundation
+**Goal**: The joystick pad has a realistic deep-space visual identity — milky way band, density-driven starfield, heatmap overlay, semitone grid, and a beat-synced breathing cursor glow — implemented as pure paint operations with zero audio/MIDI changes
+**Depends on**: Phase 30
+**Requirements**: VIS-03, VIS-07, VIS-12
+**Plans**: 2 plans
+Plans:
+- [ ] 31-01-PLAN.md — PluginEditor.h/cpp: add resized() + new members + bake milkyWayCache_/starfield_/heatmapCache_ + rewrite paint() layers 1-6
+- [ ] 31-02-PLAN.md — JoystickPad::timerCallback() glowPhase_ advancement + PluginEditor resetGlowPhase() beat wiring + human visual checkpoint
+
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -376,3 +387,4 @@ Plans:
 | 28. Random Free Redesign | v1.6 | 1/1 | Complete | 2026-03-03 |
 | 29. Looper Perimeter Bar | v1.6 | Complete    | 2026-03-03 | 2026-03-03 |
 | 30. Distribution | 1/2 | In Progress|  | - |
+| 31. Paint-Only Visual Foundation | v1.7 | 0/2 | Planned | - |
