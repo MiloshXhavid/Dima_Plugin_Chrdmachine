@@ -1276,6 +1276,98 @@ void JoystickPad::paint(juce::Graphics& g)
         g.drawEllipse(circleRect, 1.5f);
     }
 
+    // ── Layer 4b: Perimeter arc — raw joystick polar angle ────────────────────
+    // Reads proc_.joystickX/Y directly (NOT displayCx_/Cy_) so arc always shows
+    // the true joystick direction even while the dot is still catching up.
+    // Arc span: ±20° (40° total). Color: cyan 0xFF00CFFF at alpha 0.55.
+    // Skipped when joystick magnitude < 0.08 (near center, no meaningful direction).
+    {
+        const float rawX = proc_.joystickX.load(std::memory_order_relaxed);
+        const float rawY = proc_.joystickY.load(std::memory_order_relaxed);
+        const float mag  = std::sqrt(rawX * rawX + rawY * rawY);
+
+        if (mag >= 0.08f)
+        {
+            const float arcCx     = b.getCentreX();
+            const float arcCy     = b.getCentreY();
+            const float arcR      = juce::jmin(b.getWidth(), b.getHeight()) * 0.5f;
+            const juce::Rectangle<float> arcRect(arcCx - arcR, arcCy - arcR, arcR * 2.0f, arcR * 2.0f);
+
+            // atan2(-rawY, rawX): Y negated because joystick +Y = screen up (JUCE Y flipped)
+            const float angle     = std::atan2(-rawY, rawX);
+            const float spanRad   = juce::degreesToRadians(20.0f);
+
+            juce::Path arc;
+            // addArc(x, y, w, h, fromAngle, toAngle, startAsNewSubpath)
+            arc.addArc(arcRect.getX(), arcRect.getY(), arcRect.getWidth(), arcRect.getHeight(),
+                       angle - spanRad, angle + spanRad, true);
+
+            juce::PathStrokeType stroke(1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+            g.setColour(juce::Colour(0xFF00CFFF).withAlpha(0.55f));
+            g.strokePath(arc, stroke);
+        }
+    }
+
+    // ── Layer 4c: Note-label compass — Root/Third/Fifth/Tension at cardinals ──
+    // Idle alpha 0.38, active (within ±50° of arc angle) alpha 0.75.
+    // Positions: Root=bottom, Third=top, Fifth=left, Tension=right.
+    // Labels sit ~12px outside the inscribed circle radius.
+    {
+        const float rawX     = proc_.joystickX.load(std::memory_order_relaxed);
+        const float rawY     = proc_.joystickY.load(std::memory_order_relaxed);
+        const float mag      = std::sqrt(rawX * rawX + rawY * rawY);
+        const float arcAngle = (mag >= 0.08f) ? std::atan2(-rawY, rawX) : -999.0f;
+
+        const float labelR   = juce::jmin(b.getWidth(), b.getHeight()) * 0.5f + 12.0f;
+        const float cx0      = b.getCentreX();
+        const float cy0      = b.getCentreY();
+        const float lw       = 36.0f;   // label bounding box width
+        const float lh       = 14.0f;   // label bounding box height
+
+        // Cardinal angles in JUCE screen space (atan2(-rawY, rawX) convention):
+        //   Root    = bottom = -PI/2 (joyY=-1, screen down)  → angle = PI/2
+        //   Third   = top    = +PI/2 (joyY=+1, screen up)    → angle = -PI/2
+        //   Fifth   = left   (joyX=-1)                        → angle = PI
+        //   Tension = right  (joyX=+1)                        → angle = 0
+        struct LabelDef { const char* name; float angle; };
+        const LabelDef labels[4] = {
+            { "Root",    juce::MathConstants<float>::pi * 0.5f  },   // bottom
+            { "Third",  -juce::MathConstants<float>::pi * 0.5f  },   // top
+            { "Fifth",   juce::MathConstants<float>::pi         },   // left
+            { "Tension", 0.0f                                   },   // right
+        };
+
+        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 10.0f, juce::Font::plain));
+
+        const float activeThreshRad = juce::degreesToRadians(50.0f);
+
+        for (const auto& lbl : labels)
+        {
+            // Check angular proximity to arc angle
+            bool active = false;
+            if (arcAngle > -998.0f)
+            {
+                float diff = lbl.angle - arcAngle;
+                // Normalize diff to -PI..PI
+                while (diff >  juce::MathConstants<float>::pi) diff -= juce::MathConstants<float>::twoPi;
+                while (diff < -juce::MathConstants<float>::pi) diff += juce::MathConstants<float>::twoPi;
+                active = std::abs(diff) <= activeThreshRad;
+            }
+
+            const float alpha = active ? 0.75f : 0.38f;
+            g.setColour(Clr::text.withAlpha(alpha));
+
+            // Position: label center at labelR from pad center along label's cardinal angle.
+            // Offset box so center lands on the cardinal point.
+            const float lx = cx0 + std::cos(lbl.angle) * labelR - lw * 0.5f;
+            const float ly = cy0 - std::sin(lbl.angle) * labelR - lh * 0.5f;
+            // Note: ly uses -sin because JUCE Y increases downward, but cardinal angles
+            // were defined in math space (Y up). Subtracting sin maps correctly.
+            g.drawText(lbl.name, juce::Rectangle<float>(lx, ly, lw, lh),
+                       juce::Justification::centred, false);
+        }
+    }
+
     // ── Layer 5: Semitone grid ────────────────────────────────────────────────
     {
         const int xSemitones = juce::jmax(0, (int)proc_.apvts.getRawParameterValue("joystickXAtten")->load());
@@ -1368,25 +1460,13 @@ void JoystickPad::paint(juce::Graphics& g)
     }
 
     // ── Cursor position (shared by layers 7a-7c) ─────────────────────────────
-    // Use LFO-modulated position whenever either LFO is enabled.
-    const bool lfoXActive = *proc_.apvts.getRawParameterValue("lfoXEnabled") > 0.5f;
-    const bool lfoYActive = *proc_.apvts.getRawParameterValue("lfoYEnabled") > 0.5f;
-    const float displayX = (lfoXActive || lfoYActive)
-        ? proc_.modulatedJoyX_.load(std::memory_order_relaxed)
-        : proc_.joystickX.load(std::memory_order_relaxed);
-    const float displayY = (lfoXActive || lfoYActive)
-        ? proc_.modulatedJoyY_.load(std::memory_order_relaxed)
-        : proc_.joystickY.load(std::memory_order_relaxed);
-
+    // Phase 32: cx/cy are now the spring-smoothed display positions (displayCx_/Cy_).
+    // The spring target (raw LFO-aware pixel position) is computed in timerCallback().
+    // Perimeter arc reads raw proc_.joystickX/Y directly below (NOT the smoothed dot).
     constexpr float dotR    = 7.0f;
     constexpr float tickLen = 5.0f;
-    // Border inner edge is 2px from the component boundary (drawRect b.reduced(1), 2px thick).
-    constexpr float brdr    = 2.0f;
-
-    const float cx = juce::jlimit(b.getX() + dotR + brdr, b.getRight()  - dotR - brdr,
-                                  (displayX + 1.0f) * 0.5f * b.getWidth()  + b.getX());
-    const float cy = juce::jlimit(b.getY() + dotR + brdr, b.getBottom() - dotR - brdr,
-                                  (1.0f - (displayY + 1.0f) * 0.5f) * b.getHeight() + b.getY());
+    const float cx = displayCx_;
+    const float cy = displayCy_;
 
     // ── Layer 7a: Static centre reference dot — UNCHANGED ────────────────────
     {
