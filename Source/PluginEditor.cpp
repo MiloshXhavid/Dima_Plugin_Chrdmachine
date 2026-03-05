@@ -1068,20 +1068,24 @@ void JoystickPad::timerCallback()
 
     const bool lfoXActive = *proc_.apvts.getRawParameterValue("lfoXEnabled") > 0.5f;
     const bool lfoYActive = *proc_.apvts.getRawParameterValue("lfoYEnabled") > 0.5f;
+    const bool tcbInvOn = *proc_.apvts.getRawParameterValue("stickInvert") > 0.5f;
     const float dispX = (lfoXActive || lfoYActive)
         ? proc_.modulatedJoyX_.load(std::memory_order_relaxed)
         : proc_.joystickX.load(std::memory_order_relaxed);
-    const float dispY = (lfoXActive || lfoYActive)
+    const float dispY_base = (lfoXActive || lfoYActive)
         ? proc_.modulatedJoyY_.load(std::memory_order_relaxed)
         : proc_.joystickY.load(std::memory_order_relaxed);
+    // INV: negate dispY so cursor goes UP when rawY=+1 after 90° CCW rotation.
+    // Signal (pitch) routing is unchanged — only display position is affected.
+    const float dispY = tcbInvOn ? -dispY_base : dispY_base;
 
     constexpr float dotR = 7.0f, brdr = 2.0f;
     const float cx = juce::jlimit(dotR + brdr, w - dotR - brdr, (dispX + 1.0f) * 0.5f * w);
     const float cy = juce::jlimit(dotR + brdr, h - dotR - brdr, (1.0f - (dispY + 1.0f) * 0.5f) * h);
 
-    // ── toVisPos: raw pixel → visual pixel (CCW rotation + Y flip) ─────────────
+    // ── toVisPos: raw pixel → visual pixel (CCW rotation only) ──────────────────
     // Used to keep particles at the same position as the visible cursor dot.
-    const bool tcbInvOn = *proc_.apvts.getRawParameterValue("stickInvert") > 0.5f;
+    // Y-flip removed: dispY negation above handles INV direction correction.
     auto toVisPos = [&](float px, float py) -> std::pair<float, float>
     {
         float vx = px, vy = py;
@@ -1094,7 +1098,6 @@ void JoystickPad::timerCallback()
             vx = cx0 + ddx * cosA + ddy * sinA;
             vy = cy0 - ddx * sinA + ddy * cosA;
         }
-        if (tcbInvOn) vy = h - vy;
         return { vx, vy };
     };
 
@@ -1246,7 +1249,7 @@ void JoystickPad::timerCallback()
             bgRotSpringVel_    = 0.0f;
             // Scale duration proportionally: full 12 s for 90°, shorter for mid-anim reversal.
             const float journeyDeg  = std::abs(bgRotEndAngle_ - bgRotStartAngle_);
-            const float framesTotal = (journeyDeg / 90.0f) * 720.0f;  // 12 s @ 60 Hz = 720 frames
+            const float framesTotal = (journeyDeg / 90.0f) * 600.0f;  // 10 s @ 60 Hz = 600 frames
             bgRotProgressStep_ = (framesTotal > 0.5f) ? (1.0f / framesTotal) : 1.0f;
         }
 
@@ -1264,7 +1267,7 @@ void JoystickPad::timerCallback()
                 bgRotAngle_        = bgRotEndAngle_;
                 bgRotSpringActive_ = true;
                 const float dir    = (bgRotEndAngle_ >= bgRotStartAngle_) ? 1.0f : -1.0f;
-                bgRotSpringVel_    = dir * 2.9f;    // initial kick → peaks at ≈ 96° overshoot
+                bgRotSpringVel_    = dir * 1.5f;    // initial kick → peaks at ≈ 93° overshoot
             }
         }
         else if (bgRotSpringActive_)
@@ -1556,9 +1559,7 @@ void JoystickPad::paint(juce::Graphics& g)
             // Position: label center at labelR from pad center along label's cardinal angle.
             // Offset box so center lands on the cardinal point.
             const float lx = cx0 + std::cos(lbl.angle) * labelR - lw * 0.5f;
-            // Normal: -sin (JUCE Y down). Y-flip (INV): +sin (mirror vertically).
-            const float sinSign = invOn ? 1.0f : -1.0f;
-            const float ly = cy0 + sinSign * std::sin(lbl.angle) * labelR - lh * 0.5f;
+            const float ly = cy0 - std::sin(lbl.angle) * labelR - lh * 0.5f;
             g.drawText(lbl.name, juce::Rectangle<float>(lx, ly, lw, lh),
                        juce::Justification::centred, false);
         }
@@ -1620,8 +1621,7 @@ void JoystickPad::paint(juce::Graphics& g)
             for (int i = 0; i < ySemitones; i += yStep)
             {
                 const float t     = (float)i / (float)ySemitones;
-                const float tY    = invOn ? (1.0f - t) : t;   // Y-flip when INV active
-                const float py    = b.getY() + tY * b.getHeight();
+                const float py    = b.getY() + t * b.getHeight();
                 const float ramp  = 1.0f - (1.0f - std::abs(t * 2.0f - 1.0f)) * 0.6f;
                 const int pitchClass = ((i % 12) + transpose) % 12;
                 const bool inScale   = ((scaleMask >> pitchClass) & 1) != 0;
@@ -1678,8 +1678,7 @@ void JoystickPad::paint(juce::Graphics& g)
         cx = cx0 + dx * cosA + dy * sinA;
         cy = cy0 - dx * sinA + dy * cosA;
     }
-    if (invOn)
-        cy = 2.0f * b.getCentreY() - cy;   // Y-flip: mirror cursor vertically
+    // INV cursor direction is handled by dispY negation in timerCallback — no Y-flip here.
 
     // ── Layer 7a: Static centre reference dot — UNCHANGED ────────────────────
     {
