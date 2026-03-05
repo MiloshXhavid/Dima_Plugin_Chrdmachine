@@ -90,8 +90,12 @@ public:
     void armLfoY()             { lfoY_.arm();            }
     void clearLfoXRecording()  { lfoX_.clearRecording(); }
     void clearLfoYRecording()  { lfoY_.clearRecording(); }
+    void resetLfoXPhase()      { lfoX_.requestPhaseReset(); }
+    void resetLfoYPhase()      { lfoY_.requestPhaseReset(); }
     LfoRecState getLfoXRecState() const { return lfoX_.getRecState(); }
     LfoRecState getLfoYRecState() const { return lfoY_.getRecState(); }
+    // Instant LFO capture: start Armed LFOs recording immediately (looper keeps playing).
+    void triggerLfoInstantCapture() { lfoInstantCapture_.store(true, std::memory_order_relaxed); }
 
     // Quantize mode (0=Off 1=Live 2=Post) + subdivision (0=1/4 1=1/8 2=1/16 3=1/32)
     // Called from PluginEditor onClick handlers and timerCallback.
@@ -227,6 +231,9 @@ private:
     // LFO disable ramp state (audio-thread only)
     float lfoXRampOut_ = 0.0f;   // current ramped LFO X contribution
     float lfoYRampOut_ = 0.0f;   // current ramped LFO Y contribution
+    std::atomic<bool> lfoInstantCapture_ { false }; // set by UI, consumed in processBlock
+    int lfoInstantCaptureSamplesLeft_ = 0;          // audio-thread countdown for Bug-2 one-cycle stop
+    bool prevDawPlaying_ = false;                   // audio-thread edge detect for transport stop (Bug-3)
 
     // LFO direct CC dedup — audio-thread only. -1 = force-send on next block.
     int prevLfoCcX_ = -1;
@@ -262,6 +269,8 @@ private:
     bool prevIsDawPlaying_ = false;      // audio thread only — for DAW stop detection
     bool prevLooperWasPlaying_ = false;  // audio thread only — for looper stop detection
     bool prevLooperRecording_  = false;  // audio thread only — LFO rec edge detection
+    bool lfoXMidCycleRec_ = false;       // audio thread only — LFO X started mid-cycle (looper REC press), skip first looperCycled stop
+    bool lfoYMidCycleRec_ = false;       // audio thread only — LFO Y started mid-cycle (looper REC press), skip first looperCycled stop
     int   prevXMode_    = -1;            // audio thread only — dedup reset on X mode change
     int   prevYMode_    = -1;            // audio thread only — dedup reset on Y mode change
     float prevFilterX_  = -99.0f;       // audio thread only — raw joystick X, -99 = uninitialised

@@ -282,6 +282,8 @@ PluginProcessor::createParameterLayout()
     // ── LFO ───────────────────────────────────────────────────────────────────
     addBool(ParamID::lfoXEnabled, "LFO X Enabled", false);
     addBool(ParamID::lfoYEnabled, "LFO Y Enabled", false);
+    addBool("lfoXCursorLink", "LFO X Cursor Link", true);
+    addBool("lfoYCursorLink", "LFO Y Cursor Link", true);
     {
         juce::StringArray waveforms { "Sine", "Triangle", "Saw Up", "Saw Down",
                                       "Square", "S&H", "Random" };
@@ -448,9 +450,10 @@ ChordEngine::Params PluginProcessor::buildChordParams() const
     const float jx  = joystickX.load();
     const float jy  = joystickY.load();
 
-    // Per-axis center snap: values within ±5% snap to exactly 0 (matches UI snap in updateFromMouse).
-    // This prevents hardware noise near stick-center from jittering the pitch.
-    constexpr float kCenterSnap = 0.05f;
+    // Per-axis center snap: values within ±1% snap to exactly 0 (matches UI snap in updateFromMouse).
+    // Kept small because GamepadInput now applies deadzone rescaling to the pitch stick,
+    // so values near zero are already suppressed by the hardware deadzone.
+    constexpr float kCenterSnap = 0.01f;
     const float gpXs = std::abs(gpX) < kCenterSnap ? 0.0f : gpX;
     const float gpYs = std::abs(gpY) < kCenterSnap ? 0.0f : gpY;
 
@@ -727,43 +730,94 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     // ── LFO Recording state machine — edge detection (Phase 22) ──────────────
     {
         const bool looperNowRecording = looper_.isRecording();
-        const bool looperNowPlaying   = looper_.isPlaying();
 
-        // Rising edge: looper just started recording → start capture on armed LFOs
+        // Rising edge: looper just started recording → start capture on armed LFOs.
+        // midCycleRec = false: the auto punch-out (falling edge) fires simultaneously
+        // with looperCycled at the first wrap, stopping capture after exactly one loop.
         if (!prevLooperRecording_ && looperNowRecording)
         {
             if (lfoX_.getRecState() == LfoRecState::Armed)
+            {
                 lfoX_.startCapture();
+                lfoXMidCycleRec_ = false;
+            }
             if (lfoY_.getRecState() == LfoRecState::Armed)
+            {
                 lfoY_.startCapture();
+                lfoYMidCycleRec_ = false;
+            }
         }
-        // Falling edge: looper just stopped recording → push to Playback
+        // Falling edge: looper just stopped recording (auto punch-out at cycle wrap).
         else if (prevLooperRecording_ && !looperNowRecording)
         {
-            if (lfoX_.getRecState() == LfoRecState::Recording)
+            if (lfoX_.getRecState() == LfoRecState::Recording && !lfoXMidCycleRec_)
                 lfoX_.stopCapture();
-            if (lfoY_.getRecState() == LfoRecState::Recording)
+            if (lfoY_.getRecState() == LfoRecState::Recording && !lfoYMidCycleRec_)
                 lfoY_.stopCapture();
-        }
-
-        // Immediate capture: if ARM is pressed while looper is already in playback
-        // (not recording), start capture on the very next processBlock rather than
-        // waiting for a new record cycle.
-        if (looperNowPlaying && !looperNowRecording)
-        {
-            if (lfoX_.getRecState() == LfoRecState::Armed)
-                lfoX_.startCapture();
-            if (lfoY_.getRecState() == LfoRecState::Armed)
-                lfoY_.startCapture();
         }
 
         prevLooperRecording_ = looperNowRecording;
 
-        // Looper Clear (deleteLoop or reset) → return LFO to Unarmed live mode
-        if (loopOut.looperReset)
+        // Bug-3: transport stopped while LFO was recording → finalise capture.
+        if (prevDawPlaying_ && !isDawPlaying)
         {
-            lfoX_.clearRecording();
-            lfoY_.clearRecording();
+            if (lfoX_.getRecState() == LfoRecState::Recording) { lfoX_.stopCapture(); lfoXMidCycleRec_ = false; }
+            if (lfoY_.getRecState() == LfoRecState::Recording) { lfoY_.stopCapture(); lfoYMidCycleRec_ = false; }
+            lfoInstantCaptureSamplesLeft_ = 0;
+        }
+        prevDawPlaying_ = isDawPlaying;
+
+        // Cycle wrap during playback: start capture on Armed LFOs, stop after one full cycle.
+        // Mid-cycle flag: first looperCycled after a looper-REC-triggered start clears the flag
+        // instead of stopping, so the LFO records for one full cycle from the REC press point.
+        // Snapshot states before any transition so start and stop don't collide in the same block.
+        if (loopOut.looperCycled)
+        {
+            const bool xWasArmed     = (lfoX_.getRecState() == LfoRecState::Armed);
+            const bool yWasArmed     = (lfoY_.getRecState() == LfoRecState::Armed);
+            const bool xWasRecording = (lfoX_.getRecState() == LfoRecState::Recording);
+            const bool yWasRecording = (lfoY_.getRecState() == LfoRecState::Recording);
+            // Stop recording: only if NOT mid-cycle. Mid-cycle gets one more pass.
+            if (xWasRecording && !lfoXMidCycleRec_) lfoX_.stopCapture();
+            if (yWasRecording && !lfoYMidCycleRec_) lfoY_.stopCapture();
+            // Mid-cycle first wrap: clear the flag so next cycle wrap will stop.
+            if (xWasRecording && lfoXMidCycleRec_) lfoXMidCycleRec_ = false;
+            if (yWasRecording && lfoYMidCycleRec_) lfoYMidCycleRec_ = false;
+            // Start capture for Armed LFOs on cycle wrap (wait-for-wrap behavior, no mid-cycle).
+            if (xWasArmed) { lfoX_.startCapture(); lfoXMidCycleRec_ = false; }
+            if (yWasArmed) { lfoY_.startCapture(); lfoYMidCycleRec_ = false; }
+        }
+
+        // Looper reset seeks position only — do NOT clear LFO recordings.
+        // (LFO recordings are preserved across looper position resets.)
+
+        // Instant capture: looper REC pressed while LFO Armed + looper playing.
+        // Starts recording immediately and stops after exactly one loop cycle in samples.
+        if (lfoInstantCapture_.exchange(false, std::memory_order_relaxed))
+        {
+            const bool xArmed = (lfoX_.getRecState() == LfoRecState::Armed);
+            const bool yArmed = (lfoY_.getRecState() == LfoRecState::Armed);
+            if (xArmed || yArmed)
+            {
+                const double bpm        = lp.bpm > 0.0 ? lp.bpm : 120.0;
+                const double loopBeats  = looper_.getLoopLengthBeats();
+                lfoInstantCaptureSamplesLeft_ = (loopBeats > 0.0)
+                    ? juce::roundToInt(loopBeats * (sampleRate_ * 60.0 / bpm))
+                    : 0;
+                if (xArmed) { lfoX_.startCapture(); lfoXMidCycleRec_ = false; }
+                if (yArmed) { lfoY_.startCapture(); lfoYMidCycleRec_ = false; }
+            }
+        }
+        // Count down instant-capture one-cycle timer and stop when elapsed.
+        if (lfoInstantCaptureSamplesLeft_ > 0)
+        {
+            lfoInstantCaptureSamplesLeft_ -= blockSize;
+            if (lfoInstantCaptureSamplesLeft_ <= 0)
+            {
+                lfoInstantCaptureSamplesLeft_ = 0;
+                if (lfoX_.getRecState() == LfoRecState::Recording) lfoX_.stopCapture();
+                if (lfoY_.getRecState() == LfoRecState::Recording) lfoY_.stopCapture();
+            }
         }
     }
 
@@ -786,6 +840,11 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const bool  yEnabled = *apvts.getRawParameterValue(ParamID::lfoYEnabled) > 0.5f;
         const float xLevel   = *apvts.getRawParameterValue(ParamID::lfoXLevel);
         const float yLevel   = *apvts.getRawParameterValue(ParamID::lfoYLevel);
+
+        // Consume any pending phase resets unconditionally so they take effect
+        // at the moment LFO is turned OFF, not deferred to re-enable.
+        lfoX_.applyPhaseResetIfPending();
+        lfoY_.applyPhaseResetIfPending();
 
         // Sister modulation: capture last frame's ramped Y output before any mutations.
         // LFO Y→X uses this (one-frame delay, negligible). LFO X→Y uses same-frame xTarget.
@@ -883,6 +942,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             xTarget = lfoX_.process(xp);
             lfoXOutputDisplay_.store(xTarget, std::memory_order_relaxed);
         }
+        else
+        {
+            lfoXOutputDisplay_.store(0.0f, std::memory_order_relaxed);
+        }
 
         float yTarget = 0.0f;
         if (yEnabled && yLevel > 0.0f)
@@ -939,6 +1002,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             yTarget = lfoY_.process(yp);
             lfoYOutputDisplay_.store(yTarget, std::memory_order_relaxed);
         }
+        else
+        {
+            lfoYOutputDisplay_.store(0.0f, std::memory_order_relaxed);
+        }
 
         // Ramp toward target — smooths the disable transition so LFO fades out rather
         // than snapping hard to 0.  Coefficient is clamped to 1.0 so the filter is
@@ -954,12 +1021,15 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
         // Store the UNCLIPPED modulated position for cursor display so the dot can
         // show the full LFO swing even when the joystick is near ±1.
+        // Cursor link: when OFF the LFO still runs and sends CC but does not move cursor/pitch.
         // (JoystickPad::paint() applies its own dotR-aware bounds clamp.)
-        modulatedJoyX_.store(chordP.joystickX + lfoXRampOut_, std::memory_order_relaxed);
-        modulatedJoyY_.store(chordP.joystickY + lfoYRampOut_, std::memory_order_relaxed);
+        const bool xLinked = *apvts.getRawParameterValue("lfoXCursorLink") > 0.5f;
+        const bool yLinked = *apvts.getRawParameterValue("lfoYCursorLink") > 0.5f;
+        modulatedJoyX_.store(chordP.joystickX + (xLinked ? lfoXRampOut_ : 0.0f), std::memory_order_relaxed);
+        modulatedJoyY_.store(chordP.joystickY + (yLinked ? lfoYRampOut_ : 0.0f), std::memory_order_relaxed);
 
-        chordP.joystickX = std::clamp(chordP.joystickX + lfoXRampOut_, -1.0f, 1.0f);
-        chordP.joystickY = std::clamp(chordP.joystickY + lfoYRampOut_, -1.0f, 1.0f);
+        chordP.joystickX = std::clamp(chordP.joystickX + (xLinked ? lfoXRampOut_ : 0.0f), -1.0f, 1.0f);
+        chordP.joystickY = std::clamp(chordP.joystickY + (yLinked ? lfoYRampOut_ : 0.0f), -1.0f, 1.0f);
     }
     // ─────────────────────────────────── end LFO ──────────────────────────────
 
@@ -1828,6 +1898,13 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             const bool baseChanged = (xOffset != prevBaseX_) || (yOffset != prevBaseY_)
                                    || (xAtten != prevAttenX_) || (yAtten != prevAttenY_);
 
+            // INV swaps which physical axis drives which CC channel.
+            // Swap offset+atten so the knob that is labeled for axis A actually scales axis A.
+            const float effXOffset = blkInv ? yOffset : xOffset;
+            const float effYOffset = blkInv ? xOffset : yOffset;
+            const float effXAtten  = blkInv ? yAtten  : xAtten;
+            const float effYAtten  = blkInv ? xAtten  : yAtten;
+
             if (stickUpdated || baseChanged)
             {
                 prevBaseX_  = xOffset;
@@ -1836,8 +1913,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 prevAttenY_ = yAtten;
 
                 // xOffset/yOffset are now -50..+50 centred at 0; add to MIDI centre 64.
-                const float ccCutF = juce::jlimit(0.0f, 127.0f, 64.0f + xOffset + prevFilterX_ * 63.5f * (xAtten / 100.0f));
-                const float ccResF = juce::jlimit(0.0f, 127.0f, 64.0f + yOffset + prevFilterY_ * 63.5f * (yAtten / 100.0f));
+                const float ccCutF = juce::jlimit(0.0f, 127.0f, 64.0f + effXOffset + prevFilterX_ * 63.5f * (effXAtten / 100.0f));
+                const float ccResF = juce::jlimit(0.0f, 127.0f, 64.0f + effYOffset + prevFilterY_ * 63.5f * (effYAtten / 100.0f));
 
                 // On-load silent init: snap smoother to first value so no ramp from 64 on first use.
                 if (prevCcCut_.load(std::memory_order_relaxed) == -2)
@@ -1897,10 +1974,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 leftStickXDisplay_.store(lx, std::memory_order_relaxed);
                 leftStickYDisplay_.store(ly, std::memory_order_relaxed);
                 filterXOffsetDisplay_.store(
-                    juce::jlimit(-50.0f, 50.0f, xOffset + lx * 63.5f * (xAtten / 100.0f)),
+                    juce::jlimit(-50.0f, 50.0f, effXOffset + lx * 63.5f * (effXAtten / 100.0f)),
                     std::memory_order_relaxed);
                 filterYOffsetDisplay_.store(
-                    juce::jlimit(-50.0f, 50.0f, yOffset + ly * 63.5f * (yAtten / 100.0f)),
+                    juce::jlimit(-50.0f, 50.0f, effYOffset + ly * 63.5f * (effYAtten / 100.0f)),
                     std::memory_order_relaxed);
             }
 

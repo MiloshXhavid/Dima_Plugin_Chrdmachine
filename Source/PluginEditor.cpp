@@ -344,10 +344,10 @@ juce::Font PixelLookAndFeel::getTextButtonFont(juce::TextButton& button, int but
 // GamepadDisplayComponent
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Sticks must exceed this threshold (post-dead-zone) to be treated as
-// "intentionally active" for mouse-bypass. Sits above typical PS4 jitter
-// that can hover slightly above the hardware dead zone when the stick is still.
-static constexpr float kStickBypassThreshold = 0.15f;
+// Sticks must exceed this threshold (post-dead-zone rescaling) to be treated as
+// "intentionally active" for mouse-bypass. GamepadInput now rescales pitchX/Y to 0
+// inside the dead zone, so a small threshold suffices without jitter risk.
+static constexpr float kStickBypassThreshold = 0.05f;
 
 void GamepadDisplayComponent::setGamepadState(uint32_t mask, float lx, float ly,
                                                float rx, float ry, bool connected)
@@ -2503,7 +2503,14 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     loopDeleteBtn_.setTooltip("Delete  -  erase all recorded loop data (Gamepad: Circle)");
 
     loopPlayBtn_.onClick  = [this] { proc_.looperStartStop(); };
-    loopRecBtn_.onClick   = [this] { proc_.looperRecord();    };
+    loopRecBtn_.onClick   = [this] {
+        const bool xArmed = proc_.getLfoXRecState() == LfoRecState::Armed;
+        const bool yArmed = proc_.getLfoYRecState() == LfoRecState::Armed;
+        if ((xArmed || yArmed) && proc_.looperIsPlaying())
+            proc_.triggerLfoInstantCapture();
+        else
+            proc_.looperRecord();
+    };
     loopResetBtn_.onClick = [this] { proc_.looperReset();     };
     loopDeleteBtn_.onClick = [this] { proc_.looperDelete();   };
 
@@ -2518,25 +2525,23 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     loopRecGatesBtn_.setTooltip("Rec Gates  -  capture pad/trigger gate events into the loop");
     loopSyncBtn_.setTooltip("DAW Sync  -  align loop length and start point to the DAW bar grid");
 
-    loopRecJoyBtn_.setClickingTogglesState(true);
-    loopRecGatesBtn_.setClickingTogglesState(true);
+    loopRecJoyBtn_.setClickingTogglesState(false);
+    loopRecGatesBtn_.setClickingTogglesState(false);
     loopSyncBtn_.setClickingTogglesState(true);
 
     styleButton(loopRecJoyBtn_);
     styleButton(loopRecGatesBtn_);
     styleButton(loopSyncBtn_);
-    loopRecJoyBtn_  .setToggleState(true, juce::dontSendNotification);
-    loopRecGatesBtn_.setToggleState(true, juce::dontSendNotification);
+
+    // Initial colors: both start ON/armed (looper not yet recording)
+    loopRecJoyBtn_  .setColour(juce::TextButton::buttonColourId, Clr::gateOn.darker(0.45f));
+    loopRecGatesBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOn.darker(0.45f));
 
     loopRecJoyBtn_.onClick = [this] {
-        const bool newVal = !proc_.looperIsRecJoy();
-        proc_.looperSetRecJoy(newVal);
-        loopRecJoyBtn_.setToggleState(newVal, juce::dontSendNotification);
+        proc_.looperSetRecJoy(!proc_.looperIsRecJoy());
     };
     loopRecGatesBtn_.onClick = [this] {
-        const bool newVal = !proc_.looperIsRecGates();
-        proc_.looperSetRecGates(newVal);
-        loopRecGatesBtn_.setToggleState(newVal, juce::dontSendNotification);
+        proc_.looperSetRecGates(!proc_.looperIsRecGates());
     };
     loopSyncBtn_.onClick = [this] {
         const bool newVal = !proc_.looperIsSyncToDaw();
@@ -2759,33 +2764,30 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     // Left-joystick filter mod button — default ON.
     // When OFF, no filter CC is sent and the LEFT X / LEFT Y dropdowns are greyed out.
+    // Color scheme matches DAW SYNC: styleButton() base (Clr::accent), lit = Clr::highlight.
     filterModBtn_.setButtonText("FILTER MOD ON");
-    filterModBtn_.setTooltip("Filter Mod  -  send left stick X as CC74 Cutoff and Y as CC71 Resonance to your synth");
+    filterModBtn_.setTooltip("Filter Mod  -  enable left stick CC output (cutoff, resonance, etc.)");
     filterModBtn_.setClickingTogglesState(true);
     filterModBtn_.setToggleState(true, juce::dontSendNotification);
     proc_.setFilterModActive(true);
-    filterModBtn_.setColour(juce::TextButton::buttonOnColourId,  Clr::gateOn);
-    filterModBtn_.setColour(juce::TextButton::buttonColourId,    Clr::gateOff);
+    styleButton(filterModBtn_);
     filterModBtn_.onClick = [this]
     {
-        const bool active = filterModBtn_.getToggleState();
-        proc_.setFilterModActive(active);
-        filterModBtn_.setButtonText(active ? "FILTER MOD ON" : "FILTER MOD OFF");
+        proc_.setFilterModActive(!proc_.isFilterModActive());
     };
     addAndMakeVisible(filterModBtn_);
 
-    // REC FILTER button — when ON: looper records and plays back filter movements.
+    // REC MOD WHL button — when ON: looper records and plays back filter/CC movements.
     // When OFF: live stick always drives the filter freely, even during looper playback.
-    filterRecBtn_.setButtonText("REC FILTER");
-    filterRecBtn_.setTooltip("Rec Filter  -  record left stick CC movements into the loop; OFF = filter plays live over loop playback");
-    filterRecBtn_.setClickingTogglesState(true);
-    filterRecBtn_.setToggleState(proc_.looperIsRecFilter(), juce::dontSendNotification);
+    // Color scheme matches REC GATES / REC JOY: dim green base, bright on recording.
+    filterRecBtn_.setButtonText("REC MOD WHL");
+    filterRecBtn_.setTooltip("Rec Mod Whl  -  record left stick CC movements into the loop; OFF = filter plays live over loop playback");
+    filterRecBtn_.setClickingTogglesState(false);
     styleButton(filterRecBtn_);
+    filterRecBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOn.darker(0.45f));
     filterRecBtn_.onClick = [this]
     {
-        const bool newVal = !proc_.looperIsRecFilter();
-        proc_.looperSetRecFilter(newVal);
-        filterRecBtn_.setToggleState(newVal, juce::dontSendNotification);
+        proc_.looperSetRecFilter(!proc_.looperIsRecFilter());
     };
     addAndMakeVisible(filterRecBtn_);
 
@@ -2844,7 +2846,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     filterModHintLabel_.setText(
         "Left stick sends filter CC to your synth. "
         "Filter Mod enables it. "
-        "REC FILTER records stick moves into the looper. "
+        "REC MOD WHL records stick moves into the looper. "
         "Turn it OFF for live filter control during playback.",
         juce::dontSendNotification);
     filterModHintLabel_.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 10.5f, juce::Font::plain));
@@ -3053,6 +3055,15 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(lfoXEnabledBtn_);
     lfoXEnabledAtt_ = std::make_unique<ButtonAtt>(p.apvts, "lfoXEnabled", lfoXEnabledBtn_);
 
+    lfoXLinkBtn_.setButtonText("JOY");
+    lfoXLinkBtn_.setClickingTogglesState(true);
+    lfoXLinkBtn_.setToggleState(true, juce::dontSendNotification);
+    styleButton(lfoXLinkBtn_);
+    lfoXLinkBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOff);
+    lfoXLinkBtn_.setTooltip("LFO X Cursor Link  -  when lit, LFO X modulates the joystick cursor and pitch; when dim, LFO X sends CC only");
+    addAndMakeVisible(lfoXLinkBtn_);
+    lfoXLinkAtt_ = std::make_unique<ButtonAtt>(p.apvts, "lfoXCursorLink", lfoXLinkBtn_);
+
     // ── LFO Y panel ───────────────────────────────────────────────────────────
     // Shape ComboBox
     lfoYShapeBox_.addItem("Sine",     1);
@@ -3199,6 +3210,15 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfoYEnabledBtn_.setTooltip("LFO Y  -  enable/disable LFO Y; when off, joystick Y position is used directly");
     addAndMakeVisible(lfoYEnabledBtn_);
     lfoYEnabledAtt_ = std::make_unique<ButtonAtt>(p.apvts, "lfoYEnabled", lfoYEnabledBtn_);
+
+    lfoYLinkBtn_.setButtonText("JOY");
+    lfoYLinkBtn_.setClickingTogglesState(true);
+    lfoYLinkBtn_.setToggleState(true, juce::dontSendNotification);
+    styleButton(lfoYLinkBtn_);
+    lfoYLinkBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOff);
+    lfoYLinkBtn_.setTooltip("LFO Y Cursor Link  -  when lit, LFO Y modulates the joystick cursor and pitch; when dim, LFO Y sends CC only");
+    addAndMakeVisible(lfoYLinkBtn_);
+    lfoYLinkAtt_ = std::make_unique<ButtonAtt>(p.apvts, "lfoYCursorLink", lfoYLinkBtn_);
 
     // ── LFO X Recording buttons ────────────────────────────────────────────────
     lfoXArmBtn_.setButtonText("ARM");
@@ -3697,8 +3717,8 @@ void PluginEditor::resized()
 
         col.removeFromTop(14);  // clear header area
 
-        // Row 0: ON button (full width)
-        lfoXEnabledBtn_.setBounds(col.removeFromTop(22));
+        // Row 0: ON button — full width (bigger than before; JOY moved to Row 6)
+        lfoXEnabledBtn_.setBounds(col.removeFromTop(26));
         col.removeFromTop(4);
 
         // Row 1: Shape ComboBox (full width)
@@ -3713,7 +3733,7 @@ void PluginEditor::resized()
         lfoXSisterBox_.setBounds(col.removeFromTop(22));
         col.removeFromTop(4);
 
-        // Row 2: Rate slider (left 34px = label, right 32px = sync subdiv label when active)
+        // Row 2: Rate slider (left 34px = label, right 40px = sync subdiv label when active)
         {
             auto row = col.removeFromTop(18);
             row.removeFromLeft(34);
@@ -3746,31 +3766,41 @@ void PluginEditor::resized()
         }
         col.removeFromTop(4);
 
-        // Row 6: SYNC button (left half) + waveform visualizer (right half)
+        // Row 6: SYNC button (left half) + JOY cursor-link toggle (right half)
+        // Waveform visualiser moves to the new space below the REC button.
         {
             auto row = col.removeFromTop(22);
             const int btnW = (row.getWidth() - 4) / 2;
             lfoXSyncBtn_.setBounds(row.removeFromLeft(btnW));
             row.removeFromLeft(4);
-            lfoXVisBounds_ = row;
+            lfoXLinkBtn_.setBounds(row);
         }
-
-        // Row 7: ARM + CLR row
         col.removeFromTop(4);
+
+        // Row 7: REC button (wider, ~70%) + CLR (remaining ~30%)
         {
-            auto row = col.removeFromTop(22);
-            const int btnW = (row.getWidth() - 4) / 2;
-            lfoXArmBtn_ .setBounds(row.removeFromLeft(btnW));
-            row.removeFromLeft(4);
+            auto row = col.removeFromTop(26);
+            const int clrW = row.getWidth() / 3;
+            lfoXArmBtn_ .setBounds(row.removeFromLeft(row.getWidth() - clrW - 3));
+            row.removeFromLeft(3);
             lfoXClearBtn_.setBounds(row);
         }
+        col.removeFromTop(4);
 
-        // Panel bounds: wraps from ON button top to CLR button bottom (including new ARM/CLR row)
+        // Oscilloscope: fills remaining space down to quantizer bottom (spaceship style)
+        {
+            const int oscBottom = quantizerBoxBounds_.getBottom();
+            const int oscH = juce::jmax(0, oscBottom - col.getY());
+            lfoXVisBounds_ = col.removeFromTop(oscH);
+        }
+
+        // Panel bounds: from ON button top to quantizer bottom (no overflow below).
         lfoXPanelBounds_ = lfoXEnabledBtn_.getBounds()
-                              .getUnion(lfoXClearBtn_.getBounds())
+                              .getUnion(lfoXVisBounds_)
                               .withX(lfoXCol.getX())
                               .withWidth(lfoXCol.getWidth())
-                              .expanded(0, 10);
+                              .expanded(0, 10)
+                              .withBottom(quantizerBoxBounds_.getBottom());
     }
 
     // ── LFO Y panel layout ─────────────────────────────────────────────────────
@@ -3779,8 +3809,8 @@ void PluginEditor::resized()
 
         col.removeFromTop(14);  // clear header area
 
-        // Row 0: ON button (full width)
-        lfoYEnabledBtn_.setBounds(col.removeFromTop(22));
+        // Row 0: ON button — full width (bigger than before; JOY moved to Row 6)
+        lfoYEnabledBtn_.setBounds(col.removeFromTop(26));
         col.removeFromTop(4);
 
         // Row 1: Shape ComboBox (full width)
@@ -3795,7 +3825,7 @@ void PluginEditor::resized()
         lfoYSisterBox_.setBounds(col.removeFromTop(22));
         col.removeFromTop(4);
 
-        // Row 2: Rate slider (left 34px = label, right 32px = sync subdiv label when active)
+        // Row 2: Rate slider (left 34px = label, right 40px = sync subdiv label when active)
         {
             auto row = col.removeFromTop(18);
             row.removeFromLeft(34);
@@ -3828,34 +3858,44 @@ void PluginEditor::resized()
         }
         col.removeFromTop(4);
 
-        // Row 6: SYNC button (left half) + waveform visualizer (right half)
+        // Row 6: SYNC button (left half) + JOY cursor-link toggle (right half)
+        // Waveform visualiser moves to the new space below the REC button.
         {
             auto row = col.removeFromTop(22);
             const int btnW = (row.getWidth() - 4) / 2;
             lfoYSyncBtn_.setBounds(row.removeFromLeft(btnW));
             row.removeFromLeft(4);
-            lfoYVisBounds_ = row;
+            lfoYLinkBtn_.setBounds(row);
         }
-
-        // Row 7: ARM + CLR row
         col.removeFromTop(4);
+
+        // Row 7: REC button (wider, ~70%) + CLR (remaining ~30%)
         {
-            auto row = col.removeFromTop(22);
-            const int btnW = (row.getWidth() - 4) / 2;
-            lfoYArmBtn_ .setBounds(row.removeFromLeft(btnW));
-            row.removeFromLeft(4);
+            auto row = col.removeFromTop(26);
+            const int clrW = row.getWidth() / 3;
+            lfoYArmBtn_ .setBounds(row.removeFromLeft(row.getWidth() - clrW - 3));
+            row.removeFromLeft(3);
             lfoYClearBtn_.setBounds(row);
         }
+        col.removeFromTop(4);
 
-        // Panel bounds: wraps from ON button top to CLR button bottom (including new ARM/CLR row)
+        // Oscilloscope: fills remaining space down to quantizer bottom (spaceship style)
+        {
+            const int oscBottom = quantizerBoxBounds_.getBottom();
+            const int oscH = juce::jmax(0, oscBottom - col.getY());
+            lfoYVisBounds_ = col.removeFromTop(oscH);
+        }
+
+        // Panel bounds: from ON button top to quantizer bottom (no overflow below).
         lfoYPanelBounds_ = lfoYEnabledBtn_.getBounds()
-                              .getUnion(lfoYClearBtn_.getBounds())
+                              .getUnion(lfoYVisBounds_)
                               .withX(lfoYCol.getX())
                               .withWidth(lfoYCol.getWidth())
-                              .expanded(0, 10);
+                              .expanded(0, 10)
+                              .withBottom(quantizerBoxBounds_.getBottom());
     }
     // ── Chord name label + Gamepad display ───────────────────────────────────
-    // Chord display: bottom flush with gamepad top, original height.
+    // Chord display: fixed 50px, sitting just above the gamepad (below LFO boxes, below logo).
     // Logo: from trigSelBounds_.getY() down to chord display top (drawn in paint()).
     // Gamepad display fills remaining space down to the arpeggiator bottom.
     {
@@ -3863,13 +3903,11 @@ void PluginEditor::resized()
         const int chordW = lfoYCol.getRight() - chordX;   // lfoX + gap + lfoY = 304px
         // Component top at the DEL/ALL button row (shoulder buttons float in logo space above body).
         const int gpY = loopDeleteBtn_.getY();
-        // Original chord height: same as before the swap
-        const int originalChordH = juce::jmax(0,
-            quantizerBoxBounds_.getBottom()
-            - (juce::jmax(lfoXPanelBounds_.getBottom(), lfoYPanelBounds_.getBottom()) + 2));
-        // Chord display: bottom aligned with Random Params box bottom
-        chordNameLabel_.setBounds(chordX, randomBoxBounds_.getBottom() - originalChordH,
-                                  chordW, originalChordH);
+        // Chord display: fixed height, bottom anchored at randomBoxBounds_ bottom (same
+        // reference as before the LFO redesign). Independent of LFO panel size.
+        constexpr int kChordH = 64;
+        chordNameLabel_.setBounds(chordX, randomBoxBounds_.getBottom() - kChordH,
+                                  chordW, kChordH);
         gamepadDisplay_.setBounds(chordX, gpY,
                                   chordW, arpBlockBounds_.getBottom() - gpY);
         // Body rectangle aligned with GAMEPAD ON button row.
@@ -4254,75 +4292,90 @@ void PluginEditor::paint(juce::Graphics& g)
     }
 
     // ── LFO waveform visualizers ──────────────────────────────────────────────
-    // Draws a mini oscilloscope in the right half of the SYNC row for each LFO.
-    // Ring buffer holds kLfoVisBufSize samples; oldest sample is at lfoXVisBufIdx_
-    // (the next write slot). Values are in [-level, +level].
-    // Blink: current output (newest sample) drives overall alpha — bright on positive
-    // half-cycle, dim on negative, giving the pulsing indicator the original ON button
-    // was meant to provide.
+    // Spaceship-style oscilloscope below the REC button in each LFO panel.
+    // Ring buffer holds kLfoVisBufSize samples; oldest sample is at writeIdx.
+    // Values are raw process() output in [-level, +level].
     auto drawLfoVisualizer = [&](juce::Rectangle<int> bounds,
                                  const std::array<float, kLfoVisBufSize>& buf,
                                  int writeIdx)
     {
         if (bounds.isEmpty()) return;
-        const auto fb = bounds.toFloat().reduced(1.0f);
+        const auto fb = bounds.toFloat().reduced(1.5f);
+        if (fb.getHeight() < 4.0f) return;
 
-        // Background
-        g.setColour(juce::Colour(0xff050510));
-        g.fillRoundedRectangle(fb, 3.0f);
-        g.setColour(Clr::accent.withAlpha(0.35f));
-        g.drawRoundedRectangle(fb.reduced(0.5f), 3.0f, 0.75f);
+        // ── Background — deep space blue-black ──────────────────────────────
+        g.setColour(juce::Colour(0xff020310));
+        g.fillRoundedRectangle(fb, 4.0f);
 
-        // Centre reference line
-        const float cy = fb.getCentreY();
-        g.setColour(Clr::textDim.withAlpha(0.25f));
+        // Subtle border — dim cyan
+        g.setColour(juce::Colour(0xff1a4060).withAlpha(0.7f));
+        g.drawRoundedRectangle(fb.reduced(0.5f), 4.0f, 0.75f);
+
+        // ── Grid — horizontal thirds + vertical quarters ─────────────────────
+        const float cy  = fb.getCentreY();
+        const float gy1 = fb.getY()  + fb.getHeight() * 0.333f;
+        const float gy2 = fb.getBottom() - fb.getHeight() * 0.333f;
+        const juce::Colour gridCol = juce::Colour(0xff0a3050).withAlpha(0.6f);
+        // Centre line slightly brighter
+        g.setColour(juce::Colour(0xff0d4a70).withAlpha(0.8f));
         g.drawHorizontalLine((int)cy, fb.getX() + 2.0f, fb.getRight() - 2.0f);
+        g.setColour(gridCol);
+        g.drawHorizontalLine((int)gy1, fb.getX() + 2.0f, fb.getRight() - 2.0f);
+        g.drawHorizontalLine((int)gy2, fb.getX() + 2.0f, fb.getRight() - 2.0f);
+        // Vertical quarter lines
+        for (int qi = 1; qi <= 3; ++qi)
+        {
+            const float vx = fb.getX() + fb.getWidth() * (float)qi * 0.25f;
+            g.drawVerticalLine((int)vx, fb.getY() + 2.0f, fb.getBottom() - 2.0f);
+        }
 
-        // Waveform — values are raw process() output in [-level, +level].
-        // Scale is fixed at ±1.0: level=0 → flat line, level=1 → full height.
-        // This makes the waveform grow proportionally as the level knob is raised.
-        const float ampH = (fb.getHeight() * 0.5f) - 2.0f;  // max pixel excursion from centre
+        // ── Waveform ─────────────────────────────────────────────────────────
+        // Scale fixed at ±1.0: level=0 → flat line, level=1 → full height.
+        const float ampH = (fb.getHeight() * 0.5f) - 2.0f;
 
-        // Current output = sample just before writeIdx (most recently written)
+        // Blink: positive half-cycle = bright, negative = dim
         const int newestIdx = (writeIdx - 1 + kLfoVisBufSize) % kLfoVisBufSize;
         const float newestVal = buf[newestIdx];
-        // Blink: positive half-cycle = bright, negative = dim
         const float blink_t   = juce::jmax(0.0f, juce::jmin(1.0f, newestVal));
-        const float lineAlpha = 0.25f + 0.75f * blink_t;
+        const float lineAlpha = 0.30f + 0.70f * blink_t;
 
-        // Build waveform path — samples drawn left→right, oldest first
-        juce::Path wavePath;
         const float xStep = fb.getWidth() / (float)(kLfoVisBufSize - 1);
-        bool pathStarted = false;
-        for (int i = 0; i < kLfoVisBufSize; ++i)
+
+        // Glow pass — thick, dim cyan
         {
-            // Map ring buffer: oldest sample first (at writeIdx), newest last
-            const int sIdx = (writeIdx + i) % kLfoVisBufSize;
-            const float sNorm = juce::jlimit(-1.0f, 1.0f, buf[sIdx]);
-            const float px = fb.getX() + (float)i * xStep;
-            const float py = cy - sNorm * ampH;
-            if (!pathStarted) { wavePath.startNewSubPath(px, py); pathStarted = true; }
-            else               { wavePath.lineTo(px, py); }
+            juce::Path wavePath;
+            bool started = false;
+            for (int i = 0; i < kLfoVisBufSize; ++i)
+            {
+                const int sIdx = (writeIdx + i) % kLfoVisBufSize;
+                const float sNorm = juce::jlimit(-1.0f, 1.0f, buf[sIdx]);
+                const float px = fb.getX() + (float)i * xStep;
+                const float py = cy - sNorm * ampH;
+                if (!started) { wavePath.startNewSubPath(px, py); started = true; }
+                else           { wavePath.lineTo(px, py); }
+            }
+            g.setColour(juce::Colour(0xff00c8e8).withAlpha(lineAlpha * 0.25f));
+            juce::PathStrokeType stroke(4.0f);
+            stroke.createStrokedPath(wavePath, wavePath);
+            g.fillPath(wavePath);
         }
 
-        // Glow pass (thick, dim) + crisp pass (thin, bright) — same two-layer style as grid lines
-        g.setColour(Clr::highlight.withAlpha(lineAlpha * 0.30f));
-        juce::PathStrokeType(3.5f).createStrokedPath(wavePath, wavePath);
-        g.fillPath(wavePath);
-
-        wavePath.clear();
-        pathStarted = false;
-        for (int i = 0; i < kLfoVisBufSize; ++i)
+        // Crisp pass — thin, bright cyan
         {
-            const int sIdx = (writeIdx + i) % kLfoVisBufSize;
-            const float sNorm = juce::jlimit(-1.0f, 1.0f, buf[sIdx]);
-            const float px = fb.getX() + (float)i * xStep;
-            const float py = cy - sNorm * ampH;
-            if (!pathStarted) { wavePath.startNewSubPath(px, py); pathStarted = true; }
-            else               { wavePath.lineTo(px, py); }
+            juce::Path wavePath;
+            bool started = false;
+            for (int i = 0; i < kLfoVisBufSize; ++i)
+            {
+                const int sIdx = (writeIdx + i) % kLfoVisBufSize;
+                const float sNorm = juce::jlimit(-1.0f, 1.0f, buf[sIdx]);
+                const float px = fb.getX() + (float)i * xStep;
+                const float py = cy - sNorm * ampH;
+                if (!started) { wavePath.startNewSubPath(px, py); started = true; }
+                else           { wavePath.lineTo(px, py); }
+            }
+            g.setColour(juce::Colour(0xff00e8ff).withAlpha(lineAlpha));
+            g.strokePath(wavePath, juce::PathStrokeType(1.0f));
         }
-        g.setColour(Clr::highlight.withAlpha(lineAlpha));
-        g.strokePath(wavePath, juce::PathStrokeType(1.0f));
     };
 
     if (!lfoXVisBounds_.isEmpty())
@@ -4509,7 +4562,7 @@ void PluginEditor::paint(juce::Graphics& g)
 
         const juce::String hintRows[] = {
             "Left stick sends filter CC to your synth.",
-            "Filter Mod enables it. REC FILTER records into looper.",
+            "Filter Mod enables it. REC MOD WHL records into looper.",
             "Turn OFF for live filter control during playback."
         };
         for (const auto& line : hintRows)
@@ -4692,29 +4745,38 @@ void PluginEditor::timerCallback()
     {
         const LfoRecState xState = proc_.getLfoXRecState();
 
-        // ARM button blink / lit state
+        // REC button visual: Unarmed=off, Armed=dim "ARM", Recording=bright "REC", Playback=dim "REC"
+        lfoXArmBlinkCounter_ = 0;
+        lfoXArmBtn_.setToggleState(false, juce::dontSendNotification);
         if (xState == LfoRecState::Unarmed)
         {
-            lfoXArmBlinkCounter_ = 0;
-            lfoXArmBtn_.setToggleState(false, juce::dontSendNotification);
+            lfoXArmBtn_.setButtonText("REC");
+            lfoXArmBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOff);
         }
         else if (xState == LfoRecState::Armed)
         {
-            const bool on = ((++lfoXArmBlinkCounter_) / 5) % 2 == 0;
-            lfoXArmBtn_.setToggleState(on, juce::dontSendNotification);
+            lfoXArmBtn_.setButtonText("ARM");
+            lfoXArmBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOn.darker(0.45f));
         }
-        else  // Recording or Playback — steady lit
+        else if (xState == LfoRecState::Recording)
         {
-            lfoXArmBlinkCounter_ = 0;
-            lfoXArmBtn_.setToggleState(true, juce::dontSendNotification);
+            lfoXArmBtn_.setButtonText("REC");
+            lfoXArmBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOn);
+        }
+        else  // Playback — dim lit to signal "recorded, playing back"
+        {
+            lfoXArmBtn_.setButtonText("REC");
+            lfoXArmBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOn.darker(0.45f));
         }
 
         // ARM button enabled only when LFO X is ON.
         // If LFO X just went enabled→disabled while Armed/Recording/Playback,
         // call clearRecording() so state snaps back to Unarmed immediately.
         const bool lfoXOn = (*proc_.apvts.getRawParameterValue("lfoXEnabled") > 0.5f);
-        if (prevLfoXOn_ && !lfoXOn)
+        if (prevLfoXOn_ && !lfoXOn) {
             proc_.clearLfoXRecording();
+            proc_.resetLfoXPhase();   // reset phase on ON→OFF so next enable starts clean
+        }
         prevLfoXOn_ = lfoXOn;
         lfoXArmBtn_.setEnabled(lfoXOn);
 
@@ -4744,27 +4806,37 @@ void PluginEditor::timerCallback()
     {
         const LfoRecState yState = proc_.getLfoYRecState();
 
+        // REC button visual: Unarmed=off, Armed=dim "ARM", Recording=bright "REC", Playback=dim "REC"
+        lfoYArmBlinkCounter_ = 0;
+        lfoYArmBtn_.setToggleState(false, juce::dontSendNotification);
         if (yState == LfoRecState::Unarmed)
         {
-            lfoYArmBlinkCounter_ = 0;
-            lfoYArmBtn_.setToggleState(false, juce::dontSendNotification);
+            lfoYArmBtn_.setButtonText("REC");
+            lfoYArmBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOff);
         }
         else if (yState == LfoRecState::Armed)
         {
-            const bool on = ((++lfoYArmBlinkCounter_) / 5) % 2 == 0;
-            lfoYArmBtn_.setToggleState(on, juce::dontSendNotification);
+            lfoYArmBtn_.setButtonText("ARM");
+            lfoYArmBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOn.darker(0.45f));
         }
-        else
+        else if (yState == LfoRecState::Recording)
         {
-            lfoYArmBlinkCounter_ = 0;
-            lfoYArmBtn_.setToggleState(true, juce::dontSendNotification);
+            lfoYArmBtn_.setButtonText("REC");
+            lfoYArmBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOn);
+        }
+        else  // Playback — dim lit to signal "recorded, playing back"
+        {
+            lfoYArmBtn_.setButtonText("REC");
+            lfoYArmBtn_.setColour(juce::TextButton::buttonColourId, Clr::gateOn.darker(0.45f));
         }
 
         // If LFO Y just went enabled→disabled while Armed/Recording/Playback,
         // call clearRecording() so state snaps back to Unarmed immediately.
         const bool lfoYOn = (*proc_.apvts.getRawParameterValue("lfoYEnabled") > 0.5f);
-        if (prevLfoYOn_ && !lfoYOn)
+        if (prevLfoYOn_ && !lfoYOn) {
             proc_.clearLfoYRecording();
+            proc_.resetLfoYPhase();   // reset phase on ON→OFF so next enable starts clean
+        }
         prevLfoYOn_ = lfoYOn;
         lfoYArmBtn_.setEnabled(lfoYOn);
 
@@ -4828,12 +4900,13 @@ void PluginEditor::timerCallback()
                     break;
                 default: break;
             }
-            // MOD FIX X knob tracks joystick for all modes (CC and LFO alike)
-            if (!filterXOffsetDragging_)
-                filterXOffsetKnob_.setValue(
-                    proc_.filterXOffsetDisplay_.load(std::memory_order_relaxed),
-                    juce::dontSendNotification);
         }
+        // MOD FIX X knob always tracks live joystick regardless of LFO playback state.
+        // Not guarded by xPlayback — should always show the live modulated position.
+        if (!filterXOffsetDragging_)
+            filterXOffsetKnob_.setValue(
+                proc_.filterXOffsetDisplay_.load(std::memory_order_relaxed),
+                juce::dontSendNotification);
 
         // Y axis targets
         if (!yPlayback)
@@ -4866,12 +4939,13 @@ void PluginEditor::timerCallback()
                     break;
                 default: break;
             }
-            // MOD FIX Y knob tracks joystick for all modes (CC and LFO alike)
-            if (!filterYOffsetDragging_)
-                filterYOffsetKnob_.setValue(
-                    proc_.filterYOffsetDisplay_.load(std::memory_order_relaxed),
-                    juce::dontSendNotification);
         }
+        // MOD FIX Y knob always tracks live joystick regardless of LFO playback state.
+        // Not guarded by yPlayback — should always show the live modulated position.
+        if (!filterYOffsetDragging_)
+            filterYOffsetKnob_.setValue(
+                proc_.filterYOffsetDisplay_.load(std::memory_order_relaxed),
+                juce::dontSendNotification);
 
         // ── Rate label — Hz in free mode, subdivision name in sync mode ──
         {
@@ -5185,10 +5259,26 @@ void PluginEditor::timerCallback()
         }
     }
 
-    // Sync looper recording buttons (gamepad D-pad may have toggled them from audio thread)
-    loopRecGatesBtn_.setToggleState(proc_.looperIsRecGates(),  juce::dontSendNotification);
-    loopRecJoyBtn_  .setToggleState(proc_.looperIsRecJoy(),    juce::dontSendNotification);
-    filterRecBtn_   .setToggleState(proc_.looperIsRecFilter(), juce::dontSendNotification);
+    // Sync looper recording buttons (gamepad D-pad may have toggled them from audio thread).
+    // Visual: OFF=dark, ON+looper-not-recording=dim lit (armed/waiting), ON+recording=bright lit.
+    {
+        const bool isRecording = proc_.looperIsRecording();
+        auto setRecBtnBrightness = [&](juce::TextButton& btn, bool featureOn)
+        {
+            btn.setToggleState(false, juce::dontSendNotification);
+            if (!featureOn)
+                btn.setColour(juce::TextButton::buttonColourId, Clr::gateOff);
+            else if (isRecording)
+                btn.setColour(juce::TextButton::buttonColourId, Clr::gateOn);
+            else
+                btn.setColour(juce::TextButton::buttonColourId, Clr::gateOn.darker(0.45f));
+        };
+        setRecBtnBrightness(loopRecGatesBtn_, proc_.looperIsRecGates());
+        setRecBtnBrightness(loopRecJoyBtn_,   proc_.looperIsRecJoy());
+        setRecBtnBrightness(filterRecBtn_,    proc_.looperIsRecFilter());
+        // filterModBtn_ uses DAW SYNC toggle style: buttonOnColourId drives the lit state.
+        filterModBtn_.setToggleState(proc_.isFilterModActive(), juce::dontSendNotification);
+    }
 
     // Mirror the pitch-control stick to joystickX/Y (cursor + chord input).
     // SWAP off (default): right stick is pitch.  SWAP on: left stick is pitch.
