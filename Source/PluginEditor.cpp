@@ -3000,11 +3000,14 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(lfoXSyncBtn_);
     lfoXSyncAtt_ = std::make_unique<ButtonAtt>(p.apvts, "lfoXSync", lfoXSyncBtn_);
 
-    // Sync toggle: swap Rate attachment between free (lfoXRate) and sync (lfoXSubdiv)
+    // Sync toggle: swap Rate attachment between free (lfoXRate) and sync (lfoXSubdiv).
+    // Bug 1: also called on load to initialise display from saved APVTS state.
+    // Bug 2: resets anchor to NaN so timerCallback re-initialises it in the correct range.
     lfoXSyncBtn_.onClick = [this]()
     {
         const bool syncOn = lfoXSyncBtn_.getToggleState();
         lfoXRateAtt_.reset();
+        lfoXRateAnchor_ = std::numeric_limits<double>::quiet_NaN();
         if (syncOn)
         {
             lfoXRateSlider_.setRange(0.0, 17.0, 1.0);
@@ -3029,6 +3032,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
                     *param, lfoXRateSlider_, nullptr);
         }
     };
+    lfoXSyncBtn_.onClick();  // Bug 1: apply saved sync state on load
 
     // Enabled: hidden ToggleButton with ButtonAttachment — clickable LED area in paint()
     lfoXEnabledBtn_.setButtonText("ON");
@@ -3132,11 +3136,14 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(lfoYSyncBtn_);
     lfoYSyncAtt_ = std::make_unique<ButtonAtt>(p.apvts, "lfoYSync", lfoYSyncBtn_);
 
-    // Sync toggle: swap Rate attachment between free (lfoYRate) and sync (lfoYSubdiv)
+    // Sync toggle: swap Rate attachment between free (lfoYRate) and sync (lfoYSubdiv).
+    // Bug 1: also called on load to initialise display from saved APVTS state.
+    // Bug 2: resets anchor to NaN so timerCallback re-initialises it in the correct range.
     lfoYSyncBtn_.onClick = [this]()
     {
         const bool syncOn = lfoYSyncBtn_.getToggleState();
         lfoYRateAtt_.reset();
+        lfoYRateAnchor_ = std::numeric_limits<double>::quiet_NaN();
         if (syncOn)
         {
             lfoYRateSlider_.setRange(0.0, 17.0, 1.0);
@@ -3161,6 +3168,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
                     *param, lfoYRateSlider_, nullptr);
         }
     };
+    lfoYSyncBtn_.onClick();  // Bug 1: apply saved sync state on load
 
     // Enabled: hidden ToggleButton with ButtonAttachment — clickable LED area in paint()
     lfoYEnabledBtn_.setButtonText("ON");
@@ -4835,31 +4843,29 @@ void PluginEditor::timerCallback()
                     juce::dontSendNotification);
         }
 
-        // ── Sync subdivision label — shows actual Hz in sync mode ──
+        // ── Rate label — Hz in free mode, subdivision name in sync mode ──
         {
-            // Matches kLfoSubdivBeats in PluginProcessor.cpp (beats per cycle)
-            static constexpr double kLfoSubdivBeats[18] = {
-                64.0, 32.0, 16.0, 32.0/3.0, 8.0, 16.0/3.0, 4.0, 8.0/3.0, 2.0, 1.0, 2.0/3.0,
-                0.5, 0.375, 1.0/3.0, 0.25, 1.0/6.0, 0.125, 1.0/12.0
+            static const char* kSubdivNames[] = {
+                "16/1","8/1","4/1","4/1T","2/1","2/1T",
+                "1/1","1/1T","1/2","1/4","1/4T",
+                "1/8","1/16.","1/8T","1/16","1/16T","1/32","1/32T"
             };
-            auto hzLabel = [](double bpm, double subdivBeats) -> juce::String {
-                const double hz = bpm / (60.0 * subdivBeats);
-                if (hz >= 10.0) return juce::String((int)std::round(hz)) + "Hz";
-                if (hz >= 1.0)  return juce::String(hz, 1) + "Hz";
-                return juce::String(hz, 2) + "Hz";
+            auto freeHzStr = [](double hz) -> juce::String {
+                if (hz >= 10.0) return juce::String((int)std::round(hz)) + " Hz";
+                if (hz >= 1.0)  return juce::String(hz, 1) + " Hz";
+                return juce::String(hz, 2) + " Hz";
             };
-            const double bpm = proc_.getEffectiveBpm();
             if (xSyncOn) {
                 const int idx = juce::jlimit(0, 17, (int)std::round(lfoXRateSlider_.getValue()));
-                lfoXSyncSubdivLabel_.setText(hzLabel(bpm, kLfoSubdivBeats[idx]), juce::dontSendNotification);
+                lfoXSyncSubdivLabel_.setText(kSubdivNames[idx], juce::dontSendNotification);
             } else {
-                lfoXSyncSubdivLabel_.setText("", juce::dontSendNotification);
+                lfoXSyncSubdivLabel_.setText(freeHzStr(lfoXRateSlider_.getValue()), juce::dontSendNotification);
             }
             if (ySyncOn) {
                 const int idx = juce::jlimit(0, 17, (int)std::round(lfoYRateSlider_.getValue()));
-                lfoYSyncSubdivLabel_.setText(hzLabel(bpm, kLfoSubdivBeats[idx]), juce::dontSendNotification);
+                lfoYSyncSubdivLabel_.setText(kSubdivNames[idx], juce::dontSendNotification);
             } else {
-                lfoYSyncSubdivLabel_.setText("", juce::dontSendNotification);
+                lfoYSyncSubdivLabel_.setText(freeHzStr(lfoYRateSlider_.getValue()), juce::dontSendNotification);
             }
         }
 

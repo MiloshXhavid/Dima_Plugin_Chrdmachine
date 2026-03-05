@@ -285,6 +285,8 @@ private:
     // Prepared in prepareToPlay(); target set each processBlock from dispatch atomic or APVTS.
     // juce_dsp excluded per requirements; SmoothedValue is in juce_core.
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedGateLength_;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedCcCut_;  // Bug 5: 30ms ramp on filter CC X
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedCcRes_;  // Bug 5: 30ms ramp on filter CC Y
 
     // ── CC dedup: last emitted integer values for CC74 and CC71 ──────────────
     // -2 = on-load sentinel: first filter activation initialises tracking silently

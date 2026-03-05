@@ -310,13 +310,13 @@ PluginProcessor::createParameterLayout()
     addBool (ParamID::lfoYSync,       "LFO Y Sync",       false);
     {
         // 18 items sorted slow→fast: slow left, fast right.
-        // Added 16/1, 8/1, 4/1 at slow end. 1/8 is at index 11 (default). Middle ≈ 1/4 (index 9).
+        // 18 subdivisions: 16/1..1/32T. 1/4 is at index 9 (middle, MOD FIX centre → index 8.5 rounds to 9).
         juce::StringArray subdivs { "16/1", "8/1", "4/1", "4/1T", "2/1", "2/1T",
                                     "1/1", "1/1T", "1/2", "1/4", "1/4T",
                                     "1/8",
                                     "1/16.", "1/8T", "1/16", "1/16T", "1/32", "1/32T" };
-        addChoice(ParamID::lfoXSubdiv, "LFO X Subdivision", subdivs, 11);  // default: 1/8
-        addChoice(ParamID::lfoYSubdiv, "LFO Y Subdivision", subdivs, 11);  // default: 1/8
+        addChoice(ParamID::lfoXSubdiv, "LFO X Subdivision", subdivs, 9);   // default: 1/4
+        addChoice(ParamID::lfoYSubdiv, "LFO Y Subdivision", subdivs, 9);   // default: 1/4
     }
     {
         const juce::StringArray ccDests { "Off","CC1 \xe2\x80\x93 Mod Wheel","CC2 \xe2\x80\x93 Breath",
@@ -383,6 +383,10 @@ void PluginProcessor::prepareToPlay(double sr, int /*blockSize*/)
     smoothedGateLength_.reset(sampleRate_, 0.015);  // 15ms — removes zipper noise without sluggish feel
     smoothedGateLength_.setCurrentAndTargetValue(
         apvts.getRawParameterValue("gateLength")->load());
+    smoothedCcCut_.reset(sampleRate_, 0.030);  // 30ms — eliminates deadzone-boundary jitter on filter CC
+    smoothedCcCut_.setCurrentAndTargetValue(64.0f);
+    smoothedCcRes_.reset(sampleRate_, 0.030);
+    smoothedCcRes_.setCurrentAndTargetValue(64.0f);
 }
 
 void PluginProcessor::releaseResources()
@@ -1050,7 +1054,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                         midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
                 }
             }
-            resetNoteCount();
+            // Do NOT call resetNoteCount() here — pad-held notes still have live counts.
+            // Individual looper note-offs above already decremented their entries correctly.
         }
         looperJustStarted = !prevLooperWasPlaying_ && looperNowPlaying;
         prevLooperWasPlaying_ = looperNowPlaying;
@@ -1078,7 +1083,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     midi.addEvent(juce::MidiMessage::noteOff(ch, subPitch, (uint8_t)0), 0);
             }
         }
-        resetNoteCount();
+        // Do NOT call resetNoteCount() — pad-held note counts must stay intact across looper reset.
         trigger_.syncRandomFreePhases();  // re-align all random-free voices to bar 0
     }
 
@@ -1779,27 +1784,47 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 prevBaseX_ = xOffset;
                 prevBaseY_ = yOffset;
 
-                // xOffset/yOffset are now -50..+50 centered at 0; add to MIDI centre 64.
-                const int ccCut = juce::jlimit(0, 127, (int)std::roundf(64.0f + xOffset + prevFilterX_ * 63.5f * (xAtten / 100.0f)));
-                const int ccRes = juce::jlimit(0, 127, (int)std::roundf(64.0f + yOffset + prevFilterY_ * 63.5f * (yAtten / 100.0f)));
+                // xOffset/yOffset are now -50..+50 centred at 0; add to MIDI centre 64.
+                const float ccCutF = juce::jlimit(0.0f, 127.0f, 64.0f + xOffset + prevFilterX_ * 63.5f * (xAtten / 100.0f));
+                const float ccResF = juce::jlimit(0.0f, 127.0f, 64.0f + yOffset + prevFilterY_ * 63.5f * (yAtten / 100.0f));
 
-                if (ccXnum >= 0)  // CC targets only
+                // On-load silent init: snap smoother to first value so no ramp from 64 on first use.
+                if (prevCcCut_.load(std::memory_order_relaxed) == -2)
+                {
+                    smoothedCcCut_.setCurrentAndTargetValue(ccCutF);
+                    prevCcCut_.store((int)std::roundf(ccCutF), std::memory_order_relaxed);
+                }
+                else
+                    smoothedCcCut_.setTargetValue(ccCutF);
+
+                if (prevCcRes_.load(std::memory_order_relaxed) == -2)
+                {
+                    smoothedCcRes_.setCurrentAndTargetValue(ccResF);
+                    prevCcRes_.store((int)std::roundf(ccResF), std::memory_order_relaxed);
+                }
+                else
+                    smoothedCcRes_.setTargetValue(ccResF);
+            }
+            // Advance smoothers every block so CC ramps continue between stick updates.
+            smoothedCcCut_.skip(blockSize);
+            smoothedCcRes_.skip(blockSize);
+            if (stickUpdated || baseChanged || smoothedCcCut_.isSmoothing() || smoothedCcRes_.isSmoothing())
+            {
+                const int ccCut = (int)std::roundf(smoothedCcCut_.getCurrentValue());
+                const int ccRes = (int)std::roundf(smoothedCcRes_.getCurrentValue());
+                if (ccXnum >= 0)
                 {
                     const int prev = prevCcCut_.load(std::memory_order_relaxed);
-                    if (prev == -2)
-                        prevCcCut_.store(ccCut, std::memory_order_relaxed);  // on-load: silent init
-                    else if (prev == -1 || ccCut != prev)
+                    if (prev == -1 || ccCut != prev)
                     {
                         midi.addEvent(juce::MidiMessage::controllerEvent(fCh, ccXnum, ccCut), 0);
                         prevCcCut_.store(ccCut, std::memory_order_relaxed);
                     }
                 }
-                if (ccYnum >= 0)  // CC targets only
+                if (ccYnum >= 0)
                 {
                     const int prev = prevCcRes_.load(std::memory_order_relaxed);
-                    if (prev == -2)
-                        prevCcRes_.store(ccRes, std::memory_order_relaxed);  // on-load: silent init
-                    else if (prev == -1 || ccRes != prev)
+                    if (prev == -1 || ccRes != prev)
                     {
                         midi.addEvent(juce::MidiMessage::controllerEvent(fCh, ccYnum, ccRes), 0);
                         prevCcRes_.store(ccRes, std::memory_order_relaxed);
@@ -1859,27 +1884,24 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f;
                             if (syncOn)
                             {
-                                // Index-based: stick right = faster (higher index = shorter subdiv). MOD FIX shifts center.
-                                // xOffset: -50..+50 → ±4 index steps at extremes.
-                                // stick: ±1 (after atten) → ±6 index steps at extremes.
-                                const int baseIdx = juce::jlimit(0, kMaxSubdivIdx,
-                                    (int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv));
-                                const float indexShift = stick * 6.0f + xOffset / 50.0f * 4.0f;
+                                // MOD FIX is the full base: -50..+50 → index 0..17.
+                                // Stick shifts ±6 steps around that base.
+                                const float baseIdxF = (xOffset + 50.0f) / 100.0f * 17.0f;
                                 const int effectiveIdx = juce::jlimit(0, kMaxSubdivIdx,
-                                    (int)std::roundf((float)baseIdx + indexShift));
+                                    (int)std::roundf(baseIdxF + stick * 6.0f));
+                                const int curIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv));
                                 lfoXSubdivMult_.store(
-                                    (float)(kLfoSubdivBeats[effectiveIdx] / kLfoSubdivBeats[baseIdx]),
+                                    (float)(kLfoSubdivBeats[effectiveIdx] / kLfoSubdivBeats[curIdx]),
                                     std::memory_order_relaxed);
                                 lfoXRateDisplay_.store((float)effectiveIdx, std::memory_order_relaxed);
                             }
                             else
                             {
-                                const float base = apvts.getRawParameterValue(ParamID::lfoXRate)->load();
-                                // MOD FIX shifts center; stick offsets from center (both in normalized space).
+                                // MOD FIX is the full normalized base: -50..+50 → 0..1. Stick ±0.5.
                                 static const juce::NormalisableRange<float> kLfoRange(0.01f, 20.0f, 0.0f, 0.35f);
-                                const float norm   = kLfoRange.convertTo0to1(base);
                                 const float actual = kLfoRange.convertFrom0to1(
-                                    juce::jlimit(0.0f, 1.0f, norm + xOffset / 50.0f * 0.2f + stick * 0.5f));
+                                    juce::jlimit(0.0f, 1.0f, (xOffset + 50.0f) / 100.0f + stick * 0.5f));
                                 lfoXRateDisplay_.store(actual, std::memory_order_relaxed);
                                 lfoXRateOverride_ = actual;
                             }
@@ -1924,23 +1946,21 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f;
                             if (syncOn)
                             {
-                                const int baseIdx = juce::jlimit(0, kMaxSubdivIdx,
-                                    (int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv));
-                                const float indexShift = stick * 6.0f + yOffset / 50.0f * 4.0f;
+                                const float baseIdxF = (yOffset + 50.0f) / 100.0f * 17.0f;
                                 const int effectiveIdx = juce::jlimit(0, kMaxSubdivIdx,
-                                    (int)std::roundf((float)baseIdx + indexShift));
+                                    (int)std::roundf(baseIdxF + stick * 6.0f));
+                                const int curIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv));
                                 lfoYSubdivMult_.store(
-                                    (float)(kLfoSubdivBeats[effectiveIdx] / kLfoSubdivBeats[baseIdx]),
+                                    (float)(kLfoSubdivBeats[effectiveIdx] / kLfoSubdivBeats[curIdx]),
                                     std::memory_order_relaxed);
                                 lfoYRateDisplay_.store((float)effectiveIdx, std::memory_order_relaxed);
                             }
                             else
                             {
-                                const float base = apvts.getRawParameterValue(ParamID::lfoYRate)->load();
                                 static const juce::NormalisableRange<float> kLfoRange(0.01f, 20.0f, 0.0f, 0.35f);
-                                const float norm   = kLfoRange.convertTo0to1(base);
                                 const float actual = kLfoRange.convertFrom0to1(
-                                    juce::jlimit(0.0f, 1.0f, norm + yOffset / 50.0f * 0.2f + stick * 0.5f));
+                                    juce::jlimit(0.0f, 1.0f, (yOffset + 50.0f) / 100.0f + stick * 0.5f));
                                 lfoYRateDisplay_.store(actual, std::memory_order_relaxed);
                                 lfoYRateOverride_ = actual;
                             }
