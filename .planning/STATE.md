@@ -87,10 +87,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 32 (IN PROGRESS — plan 01 built + installed, awaiting human checkpoint)
-Plan: 01 (built, installed — awaiting human-verify checkpoint: spring-damper inertia, perimeter arc, note-label compass)
-Status: Phase 32 plan 01 code complete; human visual verification required before plan closes
-Last activity: 2026-03-04 — Phase 32 plan 01 built (0 errors), installed to VST3 folder, awaiting human test
+Phase: 33.1 — IN PROGRESS (awaiting human verify checkpoint)
+Plan: 01/01 — tasks 1-8 complete, task 9 = human-verify checkpoint (STOP)
+Status: Phase 33.1 plan 01 code complete and built. VST3 installed. Awaiting human verification.
+Last activity: 2026-03-05 — Phase 33.1 plan 01 executed; 7 bug fixes committed (af5a82b..5f1d401)
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -98,6 +98,7 @@ v1.3 Polish [██████████] SHIPPED 2026-02-25
 v1.4 LFO    [██████████] SHIPPED 2026-02-26
 v1.5 Routing+Expression [██████████] SHIPPED 2026-03-02
 v1.6 Triplets & Fixes   [█████████ ] 4.5/5 phases complete
+v1.7 Visual + Gamepad   [███░░░░░░░] Phase 31+32+33.1 code complete
 ```
 
 ## Accumulated Context
@@ -148,6 +149,11 @@ Key v1.6 design decisions (locked):
 - [Phase 31]: Semitone grid replaces area-count grid: joystickXAtten/YAtten now mean exact semitone count with in/out-of-scale alpha differentiation
 - [Phase 31 plan 02]: BPM-driven glow phase advancement (bpm/3600 per tick) — one full cycle = one beat at any tempo; beat reset via resetGlowPhase() prevents drift
 - [Phase 31 plan 02]: Beat ownership rule — PluginEditor owns beatOccurred_ exchange, notifies JoystickPad via resetGlowPhase() only; JoystickPad never reads beatOccurred_
+- [Phase 33.1]: kDamping 0.90 (near-critical) chosen for spring return — no overshoot, ~150ms settle
+- [Phase 33.1]: LFO rate stick modulation in normalized log space (NormalisableRange skew=0.35, +/-0.5 offset) for perceptual symmetry
+- [Phase 33.1]: INV attachment swap guarded by prevInvState_ — fires once on toggle, not every 30Hz timer tick
+- [Phase 33.1]: Piano black key two-pass hit test — kBlackNotes[] checked first, then kWhiteNotes[]
+- [Phase 33.1]: Battery icon redesigned as 3 vertical stripe blocks; GamepadInput.cpp unchanged (paint-only fix)
 
 ### Pending Todos
 
@@ -159,6 +165,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-04
-Stopped at: Phase 32 plan 01 — code complete, built, installed; paused at human-verify checkpoint
-Next step: Human verifies spring-damper feel, arc, compass in DAW — then continue with Phase 32 plan 02 (if any) or close phase
+Last session: 2026-03-05
+Stopped at: Phase 33.1 plan 01 — Tasks 1-8 complete, paused at Task 9 (human-verify checkpoint).
+Next step: Human verifies 7 bug fixes in DAW, then Phase 33.1 plan 01 is approved/closed.
