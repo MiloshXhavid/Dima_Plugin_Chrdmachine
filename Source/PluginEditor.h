@@ -455,6 +455,7 @@ private:
     juce::ComboBox   lfoXShapeBox_,    lfoYShapeBox_;
     juce::ComboBox   lfoXCcDestBox_,   lfoYCcDestBox_;
     juce::Slider     lfoXRateSlider_,  lfoYRateSlider_;
+    juce::Label      lfoXSyncSubdivLabel_, lfoYSyncSubdivLabel_;
     juce::Slider     lfoXPhaseSlider_, lfoYPhaseSlider_;
     juce::Slider     lfoXLevelSlider_, lfoYLevelSlider_;
     juce::Slider     lfoXDistSlider_,  lfoYDistSlider_;

@@ -309,13 +309,14 @@ PluginProcessor::createParameterLayout()
     addBool (ParamID::lfoXSync,       "LFO X Sync",       false);
     addBool (ParamID::lfoYSync,       "LFO Y Sync",       false);
     {
-        // 13 items sorted slow→fast so slider 50% (index 6) = 1/8.
-        // 6 slow | 1/8 | 6 fast  — new 1/32T added to balance the fast side.
-        juce::StringArray subdivs { "4/1T", "2/1T", "1/1T", "1/2", "1/4", "1/4T",
+        // 18 items sorted slow→fast: slow left, fast right.
+        // Added 16/1, 8/1, 4/1 at slow end. 1/8 is at index 11 (default). Middle ≈ 1/4 (index 9).
+        juce::StringArray subdivs { "16/1", "8/1", "4/1", "4/1T", "2/1", "2/1T",
+                                    "1/1", "1/1T", "1/2", "1/4", "1/4T",
                                     "1/8",
                                     "1/16.", "1/8T", "1/16", "1/16T", "1/32", "1/32T" };
-        addChoice(ParamID::lfoXSubdiv, "LFO X Subdivision", subdivs, 6);  // default: 1/8
-        addChoice(ParamID::lfoYSubdiv, "LFO Y Subdivision", subdivs, 6);  // default: 1/8
+        addChoice(ParamID::lfoXSubdiv, "LFO X Subdivision", subdivs, 11);  // default: 1/8
+        addChoice(ParamID::lfoYSubdiv, "LFO Y Subdivision", subdivs, 11);  // default: 1/8
     }
     {
         const juce::StringArray ccDests { "Off","CC1 \xe2\x80\x93 Mod Wheel","CC2 \xe2\x80\x93 Breath",
@@ -763,13 +764,14 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     // ── LFO modulation ────────────────────────────────────────────────────────
     // Subdivision lookup: beats per cycle (quarter-note = 1.0 beat)
     // Maps lfoXSubdiv / lfoYSubdiv choice index to subdivBeats for LfoEngine
-    // 13 items sorted slow→fast matching the subdivs list above.
-    // 4/1T  2/1T   1/1T   1/2   1/4   1/4T  | 1/8 |  1/16. 1/8T  1/16  1/16T 1/32  1/32T
-    static constexpr double kLfoSubdivBeats[13] = {
-        32.0/3.0, 16.0/3.0, 8.0/3.0, 2.0, 1.0, 2.0/3.0,
+    // 18 items sorted slow→fast matching the subdivs list above.
+    // 16/1  8/1   4/1    4/1T       2/1   2/1T        1/1   1/1T       1/2   1/4   1/4T       | 1/8 |  1/16.  1/8T     1/16   1/16T    1/32    1/32T
+    static constexpr double kLfoSubdivBeats[18] = {
+        64.0, 32.0, 16.0, 32.0/3.0,  8.0, 16.0/3.0,   4.0, 8.0/3.0,   2.0,  1.0, 2.0/3.0,
         0.5,
         0.375, 1.0/3.0, 0.25, 1.0/6.0, 0.125, 1.0/12.0
     };
+    static constexpr int kMaxSubdivIdx = 17;
     {
         const bool  xEnabled = *apvts.getRawParameterValue(ParamID::lfoXEnabled) > 0.5f;
         const bool  yEnabled = *apvts.getRawParameterValue(ParamID::lfoYEnabled) > 0.5f;
@@ -805,7 +807,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             {
                 const int  xCurMode = (int)apvts.getRawParameterValue("filterXMode")->load();
                 xp.subdivBeats = kLfoSubdivBeats[
-                    juce::jlimit(0, 12, (int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv))];
+                    juce::jlimit(0, kMaxSubdivIdx, (int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv))];
                 if (xp.syncMode && xCurMode == 4)
                     xp.subdivBeats *= lfoXSubdivMult_.load(std::memory_order_relaxed);
             }
@@ -859,7 +861,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             {
                 const int  yCurMode = (int)apvts.getRawParameterValue("filterYMode")->load();
                 yp.subdivBeats = kLfoSubdivBeats[
-                    juce::jlimit(0, 12, (int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv))];
+                    juce::jlimit(0, kMaxSubdivIdx, (int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv))];
                 if (yp.syncMode && yCurMode == 4)
                     yp.subdivBeats *= lfoYSubdivMult_.load(std::memory_order_relaxed);
             }
@@ -1857,21 +1859,29 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f;
                             if (syncOn)
                             {
-                                const float mult = std::pow(4.0f, stick);
-                                lfoXSubdivMult_.store(mult, std::memory_order_relaxed);
+                                // Index-based: stick right = faster (higher index = shorter subdiv). MOD FIX shifts center.
+                                // xOffset: -50..+50 → ±4 index steps at extremes.
+                                // stick: ±1 (after atten) → ±6 index steps at extremes.
+                                const int baseIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv));
+                                const float indexShift = stick * 6.0f + xOffset / 50.0f * 4.0f;
+                                const int effectiveIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)std::roundf((float)baseIdx + indexShift));
+                                lfoXSubdivMult_.store(
+                                    (float)(kLfoSubdivBeats[effectiveIdx] / kLfoSubdivBeats[baseIdx]),
+                                    std::memory_order_relaxed);
+                                lfoXRateDisplay_.store((float)effectiveIdx, std::memory_order_relaxed);
                             }
                             else
                             {
-                                {
                                 const float base = apvts.getRawParameterValue(ParamID::lfoXRate)->load();
-                                // Apply stick offset in normalized log space for perceptual symmetry.
-                                // kLfoRange must match the NormalisableRange used in the APVTS layout (skew 0.35).
+                                // MOD FIX shifts center; stick offsets from center (both in normalized space).
                                 static const juce::NormalisableRange<float> kLfoRange(0.01f, 20.0f, 0.0f, 0.35f);
                                 const float norm   = kLfoRange.convertTo0to1(base);
-                                const float actual = kLfoRange.convertFrom0to1(juce::jlimit(0.0f, 1.0f, norm + stick * 0.5f));
+                                const float actual = kLfoRange.convertFrom0to1(
+                                    juce::jlimit(0.0f, 1.0f, norm + xOffset / 50.0f * 0.2f + stick * 0.5f));
                                 lfoXRateDisplay_.store(actual, std::memory_order_relaxed);
                                 lfoXRateOverride_ = actual;
-                                }
                             }
                             break;
                         }
@@ -1914,19 +1924,25 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f;
                             if (syncOn)
                             {
-                                const float mult = std::pow(4.0f, stick);
-                                lfoYSubdivMult_.store(mult, std::memory_order_relaxed);
+                                const int baseIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv));
+                                const float indexShift = stick * 6.0f + yOffset / 50.0f * 4.0f;
+                                const int effectiveIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)std::roundf((float)baseIdx + indexShift));
+                                lfoYSubdivMult_.store(
+                                    (float)(kLfoSubdivBeats[effectiveIdx] / kLfoSubdivBeats[baseIdx]),
+                                    std::memory_order_relaxed);
+                                lfoYRateDisplay_.store((float)effectiveIdx, std::memory_order_relaxed);
                             }
                             else
                             {
-                                {
                                 const float base = apvts.getRawParameterValue(ParamID::lfoYRate)->load();
                                 static const juce::NormalisableRange<float> kLfoRange(0.01f, 20.0f, 0.0f, 0.35f);
                                 const float norm   = kLfoRange.convertTo0to1(base);
-                                const float actual = kLfoRange.convertFrom0to1(juce::jlimit(0.0f, 1.0f, norm + stick * 0.5f));
+                                const float actual = kLfoRange.convertFrom0to1(
+                                    juce::jlimit(0.0f, 1.0f, norm + yOffset / 50.0f * 0.2f + stick * 0.5f));
                                 lfoYRateDisplay_.store(actual, std::memory_order_relaxed);
                                 lfoYRateOverride_ = actual;
-                                }
                             }
                             break;
                         }
@@ -1968,6 +1984,20 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 gateLengthDisplay_.store(
                     apvts.getRawParameterValue(ParamID::gateLength)->load(),
                     std::memory_order_relaxed);
+
+            // When not modulating via joystick, reset sync rate display to APVTS value
+            // so the rate slider shows the correct un-modulated position.
+            if (!liveGamepad)
+            {
+                if (xMode == 4 && *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f)
+                    lfoXRateDisplay_.store(
+                        (float)(int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv),
+                        std::memory_order_relaxed);
+                if (yMode == 4 && *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f)
+                    lfoYRateDisplay_.store(
+                        (float)(int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv),
+                        std::memory_order_relaxed);
+            }
         }
     }
 
@@ -1978,14 +2008,35 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const bool yOn   = *apvts.getRawParameterValue("lfoYEnabled") > 0.5f;
         const int xCcNum = ccDestToNumber((int)*apvts.getRawParameterValue("lfoXCcDest"));
         const int yCcNum = ccDestToNumber((int)*apvts.getRawParameterValue("lfoYCcDest"));
+
+        // LFO oscillates around the joystick's current CC position rather than a fixed 64.
+        // Determine which filter-joystick axis maps to each CC number.
+        const int  xFMode  = (int)apvts.getRawParameterValue("filterXMode")->load();
+        const int  yFMode  = (int)apvts.getRawParameterValue("filterYMode")->load();
+        const int  ccXfilt = (xFMode==0)?74:(xFMode==1)?12:(xFMode==2)?71:(xFMode==3)?76:-1;
+        const int  ccYfilt = (yFMode==0)?71:(yFMode==1)?76:(yFMode==2)?74:(yFMode==3)?12:-1;
+        const float xFAtten  = apvts.getRawParameterValue(ParamID::filterXAtten)->load() / 100.0f;
+        const float yFAtten  = apvts.getRawParameterValue(ParamID::filterYAtten)->load() / 100.0f;
+        const float xFOffset = apvts.getRawParameterValue(ParamID::filterXOffset)->load();
+        const float yFOffset = apvts.getRawParameterValue(ParamID::filterYOffset)->load();
+        const float safeFilterX = (prevFilterX_ > -2.0f) ? prevFilterX_ : 0.0f;
+        const float safeFilterY = (prevFilterY_ > -2.0f) ? prevFilterY_ : 0.0f;
+        auto joyCenterForCc = [&](int ccNum) -> float {
+            if (ccNum >= 0 && ccNum == ccXfilt)
+                return juce::jlimit(0.f, 127.f, 64.f + xFOffset + safeFilterX * 63.5f * xFAtten);
+            if (ccNum >= 0 && ccNum == ccYfilt)
+                return juce::jlimit(0.f, 127.f, 64.f + yFOffset + safeFilterY * 63.5f * yFAtten);
+            return 64.0f;
+        };
+
         if (xOn && xCcNum >= 0)
         {
-            const int v = juce::jlimit(0, 127, (int)std::roundf(64.0f + lfoXRampOut_ * 63.5f));
+            const int v = juce::jlimit(0, 127, (int)std::roundf(joyCenterForCc(xCcNum) + lfoXRampOut_ * 63.5f));
             if (v != prevLfoCcX_) { midi.addEvent(juce::MidiMessage::controllerEvent(fCh, xCcNum, v), 0); prevLfoCcX_ = v; }
         }
         if (yOn && yCcNum >= 0)
         {
-            const int v = juce::jlimit(0, 127, (int)std::roundf(64.0f + lfoYRampOut_ * 63.5f));
+            const int v = juce::jlimit(0, 127, (int)std::roundf(joyCenterForCc(yCcNum) + lfoYRampOut_ * 63.5f));
             if (v != prevLfoCcY_) { midi.addEvent(juce::MidiMessage::controllerEvent(fCh, yCcNum, v), 0); prevLfoCcY_ = v; }
         }
     }

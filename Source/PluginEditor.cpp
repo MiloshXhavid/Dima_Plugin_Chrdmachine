@@ -2936,6 +2936,11 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfoXRateSlider_.onDragStart = [this] { lfoXRateDragging_ = true;  };
     lfoXRateSlider_.onDragEnd   = [this] { lfoXRateDragging_ = false; lfoXRateAnchor_  = lfoXRateSlider_.getValue(); };
 
+    lfoXSyncSubdivLabel_.setFont(juce::Font(10.0f));
+    lfoXSyncSubdivLabel_.setJustificationType(juce::Justification::centredLeft);
+    lfoXSyncSubdivLabel_.setColour(juce::Label::textColourId, Clr::highlight);
+    addAndMakeVisible(lfoXSyncSubdivLabel_);
+
     // Phase slider
     lfoXPhaseSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
     lfoXPhaseSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -3002,12 +3007,13 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         lfoXRateAtt_.reset();
         if (syncOn)
         {
-            lfoXRateSlider_.setRange(0.0, 12.0, 1.0);
+            lfoXRateSlider_.setRange(0.0, 17.0, 1.0);
             lfoXRateSlider_.setNumDecimalPlacesToDisplay(0);
             lfoXRateSlider_.textFromValueFunction = [](double v) -> juce::String {
-                static const char* names[] = {"4/1T","2/1T","1/1T","1/2","1/4","1/4T",
+                static const char* names[] = {"16/1","8/1","4/1","4/1T","2/1","2/1T",
+                                              "1/1","1/1T","1/2","1/4","1/4T",
                                               "1/8","1/16.","1/8T","1/16","1/16T","1/32","1/32T"};
-                return names[juce::jlimit(0, 12, (int)std::round(v))];
+                return names[juce::jlimit(0, 17, (int)std::round(v))];
             };
             if (auto* param = proc_.apvts.getParameter("lfoXSubdiv"))
                 lfoXRateAtt_ = std::make_unique<juce::SliderParameterAttachment>(
@@ -3061,6 +3067,11 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         lfoYRateAtt_ = std::make_unique<juce::SliderParameterAttachment>(*param, lfoYRateSlider_, nullptr);
     lfoYRateSlider_.onDragStart = [this] { lfoYRateDragging_ = true;  };
     lfoYRateSlider_.onDragEnd   = [this] { lfoYRateDragging_ = false; lfoYRateAnchor_  = lfoYRateSlider_.getValue(); };
+
+    lfoYSyncSubdivLabel_.setFont(juce::Font(10.0f));
+    lfoYSyncSubdivLabel_.setJustificationType(juce::Justification::centredLeft);
+    lfoYSyncSubdivLabel_.setColour(juce::Label::textColourId, Clr::highlight);
+    addAndMakeVisible(lfoYSyncSubdivLabel_);
 
     // Phase slider
     lfoYPhaseSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
@@ -3128,12 +3139,13 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         lfoYRateAtt_.reset();
         if (syncOn)
         {
-            lfoYRateSlider_.setRange(0.0, 12.0, 1.0);
+            lfoYRateSlider_.setRange(0.0, 17.0, 1.0);
             lfoYRateSlider_.setNumDecimalPlacesToDisplay(0);
             lfoYRateSlider_.textFromValueFunction = [](double v) -> juce::String {
-                static const char* names[] = {"4/1T","2/1T","1/1T","1/2","1/4","1/4T",
+                static const char* names[] = {"16/1","8/1","4/1","4/1T","2/1","2/1T",
+                                              "1/1","1/1T","1/2","1/4","1/4T",
                                               "1/8","1/16.","1/8T","1/16","1/16T","1/32","1/32T"};
-                return names[juce::jlimit(0, 12, (int)std::round(v))];
+                return names[juce::jlimit(0, 17, (int)std::round(v))];
             };
             if (auto* param = proc_.apvts.getParameter("lfoYSubdiv"))
                 lfoYRateAtt_ = std::make_unique<juce::SliderParameterAttachment>(
@@ -3667,10 +3679,11 @@ void PluginEditor::resized()
         lfoXCcDestBox_.setBounds(col.removeFromTop(22));
         col.removeFromTop(4);
 
-        // Row 2: Rate slider (left 34px = label space in paint())
+        // Row 2: Rate slider (left 34px = label, right 32px = sync subdiv label when active)
         {
             auto row = col.removeFromTop(18);
             row.removeFromLeft(34);
+            lfoXSyncSubdivLabel_.setBounds(row.removeFromRight(40));
             lfoXRateSlider_.setBounds(row);
         }
         col.removeFromTop(4);
@@ -3744,10 +3757,11 @@ void PluginEditor::resized()
         lfoYCcDestBox_.setBounds(col.removeFromTop(22));
         col.removeFromTop(4);
 
-        // Row 2: Rate slider (left 34px = label space in paint())
+        // Row 2: Rate slider (left 34px = label, right 32px = sync subdiv label when active)
         {
             auto row = col.removeFromTop(18);
             row.removeFromLeft(34);
+            lfoYSyncSubdivLabel_.setBounds(row.removeFromRight(40));
             lfoYRateSlider_.setBounds(row);
         }
         col.removeFromTop(4);
@@ -4750,8 +4764,8 @@ void PluginEditor::timerCallback()
         {
             switch (xMode)
             {
-                case 4:  // LFO-X Freq — only update in free mode (sync mode has no rate slider to track)
-                    if (!xSyncOn && !lfoXRateDragging_)
+                case 4:  // LFO-X Freq — update in both free and sync mode to show modulated position
+                    if (!lfoXRateDragging_)
                         lfoXRateSlider_.setValue(
                             proc_.lfoXRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
@@ -4774,17 +4788,13 @@ void PluginEditor::timerCallback()
                             proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 0:  // Cutoff (CC74) — MOD FIX X tracks live offset in -50..+50 range
-                case 1:  // VCF LFO (CC12)
-                case 2:  // Resonance (CC71)
-                case 3:  // LFO Rate (CC76)
-                    if (!filterXOffsetDragging_)
-                        filterXOffsetKnob_.setValue(
-                            proc_.filterXOffsetDisplay_.load(std::memory_order_relaxed),
-                            juce::dontSendNotification);
-                    break;
                 default: break;
             }
+            // MOD FIX X knob tracks joystick for all modes (CC and LFO alike)
+            if (!filterXOffsetDragging_)
+                filterXOffsetKnob_.setValue(
+                    proc_.filterXOffsetDisplay_.load(std::memory_order_relaxed),
+                    juce::dontSendNotification);
         }
 
         // Y axis targets
@@ -4792,8 +4802,8 @@ void PluginEditor::timerCallback()
         {
             switch (yMode)
             {
-                case 4:  // LFO-Y Freq
-                    if (!ySyncOn && !lfoYRateDragging_)
+                case 4:  // LFO-Y Freq — update in both free and sync mode
+                    if (!lfoYRateDragging_)
                         lfoYRateSlider_.setValue(
                             proc_.lfoYRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
@@ -4816,16 +4826,40 @@ void PluginEditor::timerCallback()
                             proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 0:  // Resonance (CC71) — MOD FIX Y tracks live offset in -50..+50 range
-                case 1:  // LFO Rate (CC76)
-                case 2:  // Cutoff (CC74)
-                case 3:  // VCF LFO (CC12)
-                    if (!filterYOffsetDragging_)
-                        filterYOffsetKnob_.setValue(
-                            proc_.filterYOffsetDisplay_.load(std::memory_order_relaxed),
-                            juce::dontSendNotification);
-                    break;
                 default: break;
+            }
+            // MOD FIX Y knob tracks joystick for all modes (CC and LFO alike)
+            if (!filterYOffsetDragging_)
+                filterYOffsetKnob_.setValue(
+                    proc_.filterYOffsetDisplay_.load(std::memory_order_relaxed),
+                    juce::dontSendNotification);
+        }
+
+        // ── Sync subdivision label — shows actual Hz in sync mode ──
+        {
+            // Matches kLfoSubdivBeats in PluginProcessor.cpp (beats per cycle)
+            static constexpr double kLfoSubdivBeats[18] = {
+                64.0, 32.0, 16.0, 32.0/3.0, 8.0, 16.0/3.0, 4.0, 8.0/3.0, 2.0, 1.0, 2.0/3.0,
+                0.5, 0.375, 1.0/3.0, 0.25, 1.0/6.0, 0.125, 1.0/12.0
+            };
+            auto hzLabel = [](double bpm, double subdivBeats) -> juce::String {
+                const double hz = bpm / (60.0 * subdivBeats);
+                if (hz >= 10.0) return juce::String((int)std::round(hz)) + "Hz";
+                if (hz >= 1.0)  return juce::String(hz, 1) + "Hz";
+                return juce::String(hz, 2) + "Hz";
+            };
+            const double bpm = proc_.getEffectiveBpm();
+            if (xSyncOn) {
+                const int idx = juce::jlimit(0, 17, (int)std::round(lfoXRateSlider_.getValue()));
+                lfoXSyncSubdivLabel_.setText(hzLabel(bpm, kLfoSubdivBeats[idx]), juce::dontSendNotification);
+            } else {
+                lfoXSyncSubdivLabel_.setText("", juce::dontSendNotification);
+            }
+            if (ySyncOn) {
+                const int idx = juce::jlimit(0, 17, (int)std::round(lfoYRateSlider_.getValue()));
+                lfoYSyncSubdivLabel_.setText(hzLabel(bpm, kLfoSubdivBeats[idx]), juce::dontSendNotification);
+            } else {
+                lfoYSyncSubdivLabel_.setText("", juce::dontSendNotification);
             }
         }
 
@@ -4841,10 +4875,22 @@ void PluginEditor::timerCallback()
             const float ly = proc_.leftStickYDisplay_.load(std::memory_order_relaxed);
             constexpr float kThresh = 0.05f;
 
+            // Pre-set rate anchors from APVTS base on first stick engagement, before
+            // setValue() has already moved the slider to the modulated position.
+            if (xMode == 4 && std::abs(lx) > kThresh && std::isnan(lfoXRateAnchor_))
+                lfoXRateAnchor_ = xSyncOn
+                    ? proc_.apvts.getRawParameterValue("lfoXSubdiv")->load()
+                    : proc_.apvts.getRawParameterValue("lfoXRate")->load();
+            if (yMode == 4 && std::abs(ly) > kThresh && std::isnan(lfoYRateAnchor_))
+                lfoYRateAnchor_ = ySyncOn
+                    ? proc_.apvts.getRawParameterValue("lfoYSubdiv")->load()
+                    : proc_.apvts.getRawParameterValue("lfoYRate")->load();
+
             auto updateMod = [kThresh](juce::Slider& s, float delta, double& anchor) {
                 if (std::abs(delta) > kThresh)
                 {
-                    // First engagement: snap anchor to current value (no fill yet this tick)
+                    // First engagement: snap anchor to current value (no fill yet this tick).
+                    // Note: for rate sliders the anchor is pre-set above from APVTS base.
                     if (std::isnan(anchor))
                         anchor = s.getValue();
                     // Show fill from static anchor to current thumb
