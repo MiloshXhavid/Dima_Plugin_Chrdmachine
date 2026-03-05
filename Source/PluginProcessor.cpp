@@ -336,6 +336,10 @@ PluginProcessor::createParameterLayout()
     addBool("subOct2", "Sub Oct Fifth",   false);
     addBool("subOct3", "Sub Oct Tension", false);
 
+    // ── Stick routing overrides ───────────────────────────────────────────────
+    addBool("stickSwap",   "Stick Swap",   false);
+    addBool("stickInvert", "Stick Invert", false);
+
     return layout;
 }
 
@@ -423,9 +427,14 @@ ChordEngine::Params PluginProcessor::buildChordParams() const
 {
     ChordEngine::Params p;
 
-    // Apply gamepad right-stick on top of UI joystick
-    const float gpX = gamepad_.getPitchX();
-    const float gpY = gamepad_.getPitchY();
+    // Apply gamepad stick to chord engine with swap/invert:
+    // SWAP: left stick (filterX/Y) → pitch when active; INV: swap X↔Y axes
+    const bool  doSwap = stickSwap_.load();
+    const bool  doInv  = stickInvert_.load();
+    const float rawX = doSwap ? gamepad_.getFilterX() : gamepad_.getPitchX();
+    const float rawY = doSwap ? gamepad_.getFilterY() : gamepad_.getPitchY();
+    const float gpX = doInv ? rawY : rawX;
+    const float gpY = doInv ? rawX : rawY;
     const float jx  = joystickX.load();
     const float jy  = joystickY.load();
 
@@ -506,6 +515,17 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const float dz = apvts.getRawParameterValue(ParamID::joystickThreshold)->load();
         gamepad_.setDeadZone(dz);
     }
+
+    // Cache stick-routing params for this block
+    stickSwap_.store(*apvts.getRawParameterValue("stickSwap") > 0.5f);
+    stickInvert_.store(*apvts.getRawParameterValue("stickInvert") > 0.5f);
+    const bool blkSwap = stickSwap_.load();
+    const bool blkInv  = stickInvert_.load();
+    // Helpers: return filter-CC axis after swap (SWAP=right stick) and INV (X↔Y swap)
+    auto filtXRaw = [&]() -> float { return blkSwap ? gamepad_.getPitchX() : gamepad_.getFilterX(); };
+    auto filtYRaw = [&]() -> float { return blkSwap ? gamepad_.getPitchY() : gamepad_.getFilterY(); };
+    auto filtX = [&]() -> float { return blkInv ? filtYRaw() : filtXRaw(); };
+    auto filtY = [&]() -> float { return blkInv ? filtXRaw() : filtYRaw(); };
 
     const int blockSize = audio.getNumSamples();
 
@@ -1658,7 +1678,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
         // Record filter (left stick) into looper when REC FILTER is armed.
         if (gamepad_.isConnected() && gamepadActive_.load(std::memory_order_relaxed))
-            looper_.recordFilter(beatPos, gamepad_.getFilterX(), gamepad_.getFilterY());
+            looper_.recordFilter(beatPos, filtX(), filtY());
     }
 
     // ── Filter CC ─────────────────────────────────────────────────────────────
@@ -1729,9 +1749,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 const bool looperPlaying = looper_.isPlaying();
                 const bool recActive     = looper_.isRecording();
                 const float newGfx = (filterRecOn && !recActive && filterHasContent && loopOut.hasFilterX) ? loopOut.filterX
-                                   : ((liveGamepad && (!looperPlaying || !filterRecOn || recActive || !filterHasContent)) ? gamepad_.getFilterX() : prevFilterX_);
+                                   : ((liveGamepad && (!looperPlaying || !filterRecOn || recActive || !filterHasContent)) ? filtX() : prevFilterX_);
                 const float newGfy = (filterRecOn && !recActive && filterHasContent && loopOut.hasFilterY) ? loopOut.filterY
-                                   : ((liveGamepad && (!looperPlaying || !filterRecOn || recActive || !filterHasContent)) ? gamepad_.getFilterY() : prevFilterY_);
+                                   : ((liveGamepad && (!looperPlaying || !filterRecOn || recActive || !filterHasContent)) ? filtY() : prevFilterY_);
 
                 const bool looperUpdate = filterRecOn && !recActive && filterHasContent
                                           && (loopOut.hasFilterX || loopOut.hasFilterY);
@@ -1789,9 +1809,13 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
             // ── MOD FIX + live-stick display atomics (UI colour feedback) ─────────
             // Uses live stick (not S&H) so knob returns to offset when stick centered.
+            // SWAP: right stick (getPitchX/Y) drives filter in swap mode.
+            // INV:  X↔Y axes swapped.
             {
-                const float lx = gamepad_.getLeftStickXDisplay();
-                const float ly = gamepad_.getLeftStickYDisplay();
+                const float rawLx = blkSwap ? gamepad_.getPitchX() : gamepad_.getLeftStickXDisplay();
+                const float rawLy = blkSwap ? gamepad_.getPitchY() : gamepad_.getLeftStickYDisplay();
+                const float lx = blkInv ? rawLy : rawLx;
+                const float ly = blkInv ? rawLx : rawLy;
                 leftStickXDisplay_.store(lx, std::memory_order_relaxed);
                 leftStickYDisplay_.store(ly, std::memory_order_relaxed);
                 filterXOffsetDisplay_.store(
@@ -1816,8 +1840,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             if (liveGamepad)
             {
                 constexpr float kDeadzone = 0.12f;
-                const float liveX = gamepad_.getLeftStickXDisplay();
-                const float liveY = gamepad_.getLeftStickYDisplay();
+                const float rawLiveX = blkSwap ? gamepad_.getPitchX() : gamepad_.getLeftStickXDisplay();
+                const float rawLiveY = blkSwap ? gamepad_.getPitchY() : gamepad_.getLeftStickYDisplay();
+                const float liveX = blkInv ? rawLiveY : rawLiveX;
+                const float liveY = blkInv ? rawLiveX : rawLiveY;
 
                 if (xMode >= 4 && xMode <= 7)
                 {

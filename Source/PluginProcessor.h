@@ -254,6 +254,8 @@ private:
     std::atomic<bool> gamepadActive_    { true  };
     std::atomic<bool> filterModActive_  { true };   // left-joystick filter mod on/off (default ON)
     std::atomic<bool> midiMuted_        { false };  // true = block all MIDI output
+    std::atomic<bool> stickSwap_        { false };  // swap left ↔ right stick routing
+    std::atomic<bool> stickInvert_      { false };  // invert both stick axes
 
     bool gamepadVoiceWasHeld_[4] = {};  // audio thread only — tracks previous gamepad held state
     bool allNotesWasHeld_ = false;       // audio thread only — tracks previous L3 held state
