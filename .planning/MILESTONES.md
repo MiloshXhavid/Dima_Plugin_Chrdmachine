@@ -1,4 +1,13 @@
 # Milestones
+## v1.7 Space Joystick (Shipped: 2026-03-05)
+
+**Phases completed:** 22 phases, 45 plans, 4 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
 
 ## v1.5 Routing + Expression (Shipped: 2026-03-02)
 
