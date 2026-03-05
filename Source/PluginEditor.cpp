@@ -2007,10 +2007,15 @@ juce::Rectangle<float> ScaleKeyboard::noteRect(int note) const
 
 void ScaleKeyboard::mouseDown(const juce::MouseEvent& e)
 {
-    for (int n = 0; n < 12; ++n)
+    // Two-pass hit test: black keys first (painted on top), then white keys.
+    // Prevents the white-key rect from stealing clicks inside a black key's area.
+    static const int kBlackNotes[] = { 1, 3, 6, 8, 10 };
+    static const int kWhiteNotes[] = { 0, 2, 4, 5, 7, 9, 11 };
+
+    auto tryToggle = [&](int n) -> bool
     {
         if (!noteRect(n).contains(e.position))
-            continue;
+            return false;
 
         // Translate the visual (transposed) key position back to the base pitch class
         const int transpose = static_cast<int>(
@@ -2049,8 +2054,11 @@ void ScaleKeyboard::mouseDown(const juce::MouseEvent& e)
                 apvts_.getParameter("scaleNote" + juce::String(baseNote))))
             *p = !cur;
         repaint();
-        return;
-    }
+        return true;
+    };
+
+    for (int n : kBlackNotes) { if (tryToggle(n)) return; }
+    for (int n : kWhiteNotes) { if (tryToggle(n)) return; }
 }
 
 void ScaleKeyboard::paint(juce::Graphics& g)
