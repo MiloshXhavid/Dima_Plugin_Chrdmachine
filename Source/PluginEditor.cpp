@@ -4142,10 +4142,14 @@ void PluginEditor::paint(juce::Graphics& g)
 
         // "Y" label just above the line (left end) — marks the Y-axis (Joystick Y) knobs
         // "X" label just below the line (left end) — marks the X-axis (Joystick X) knobs
+        // In INV mode the axes are swapped so the labels must reflect that.
         g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 8.5f, juce::Font::bold));
         g.setColour(Clr::highlight.withAlpha(0.70f));
-        g.drawText("Y", (int)lineX1, (int)divY - 9, 10, 9, juce::Justification::left);
-        g.drawText("X", (int)lineX1, (int)divY + 2, 10, 9, juce::Justification::left);
+        {
+            const bool invOn = *proc_.apvts.getRawParameterValue("stickInvert") > 0.5f;
+            g.drawText(invOn ? "X" : "Y", (int)lineX1, (int)divY - 9, 10, 9, juce::Justification::left);
+            g.drawText(invOn ? "Y" : "X", (int)lineX1, (int)divY + 2, 10, 9, juce::Justification::left);
+        }
     }
 
     // LFO slider row labels (Rate, Phase, Level, Dist)
