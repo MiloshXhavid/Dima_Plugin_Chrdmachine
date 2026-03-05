@@ -4363,14 +4363,20 @@ void PluginEditor::paint(juce::Graphics& g)
                        juce::Justification::centred);
     };
     // "LEFT X" / "LEFT Y" — small red labels like the interval division Y / X markers
+    // In INV mode the labels are swapped to reflect the physical axis remapping.
     g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 8.5f, juce::Font::bold));
     g.setColour(Clr::highlight.withAlpha(0.70f));
-    if (filterYModeBox_.isVisible())
-        g.drawText("LEFT Y", filterYModeBox_.getX(), filterYModeBox_.getY() - 12,
-                   filterYModeBox_.getWidth(), 12, juce::Justification::centred);
-    if (filterXModeBox_.isVisible())
-        g.drawText("LEFT X", filterXModeBox_.getX(), filterXModeBox_.getY() - 12,
-                   filterXModeBox_.getWidth(), 12, juce::Justification::centred);
+    {
+        const bool invOn = *proc_.apvts.getRawParameterValue("stickInvert") > 0.5f;
+        if (filterYModeBox_.isVisible())
+            g.drawText(invOn ? "LEFT X" : "LEFT Y",
+                       filterYModeBox_.getX(), filterYModeBox_.getY() - 12,
+                       filterYModeBox_.getWidth(), 12, juce::Justification::centred);
+        if (filterXModeBox_.isVisible())
+            g.drawText(invOn ? "LEFT Y" : "LEFT X",
+                       filterXModeBox_.getX(), filterXModeBox_.getY() - 12,
+                       filterXModeBox_.getWidth(), 12, juce::Justification::centred);
+    }
 
     // "QUANTIZE TRIGGER" section label — spans from Off button left edge to subdiv box right edge
     if (quantizeOffBtn_.isVisible())
@@ -4477,6 +4483,33 @@ void PluginEditor::timerCallback()
         filterYModeLabel_.setText(invOn ? "Left X" : "Left Y", juce::dontSendNotification);
         joyXAttenLabel_.setText(invOn ? "SEMITONE Y" : "SEMITONE X", juce::dontSendNotification);
         joyYAttenLabel_.setText(invOn ? "SEMITONE X" : "SEMITONE Y", juce::dontSendNotification);
+
+        // INV attachment swap — fires only when INV state changes, not every timer tick.
+        if (invOn != prevInvState_)
+        {
+            prevInvState_ = invOn;
+
+            filterXModeAtt_.reset();
+            filterYModeAtt_.reset();
+            filterXAttenAtt_.reset();
+            filterYAttenAtt_.reset();
+
+            if (invOn)
+            {
+                // Physical stick X now drives logical Y axis — cross-wire the attachments.
+                filterXModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterYMode", filterXModeBox_);
+                filterYModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterXMode", filterYModeBox_);
+                filterXAttenAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYAtten", filterXAttenKnob_);
+                filterYAttenAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterXAtten", filterYAttenKnob_);
+            }
+            else
+            {
+                filterXModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterXMode", filterXModeBox_);
+                filterYModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterYMode", filterYModeBox_);
+                filterXAttenAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterXAtten", filterXAttenKnob_);
+                filterYAttenAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYAtten", filterYAttenKnob_);
+            }
+        }
     }
 
     // Routing panel visibility

@@ -377,6 +377,7 @@ private:
     int playWaitBlinkCounter_ = 0;  // blink PLAY button while wait-for-touch is armed
     int arpBlinkCounter_      = 0;  // blink ARP button while armed, waiting for DAW play
     float beatPulse_          = 0.0f;  // 0.0-1.0 — decays in timerCallback for beat dot
+    bool prevInvState_ = false;  // tracks last INV state for attachment swap in timerCallback
 
     // Divider line X positions — set in resized(), used in paint().
     int dividerX_  = 460;   // between left column and LFO columns
