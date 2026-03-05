@@ -1040,6 +1040,13 @@ void JoystickPad::resized()
     // Shuffle to random order — Population knob reveals stars in mixed size/brightness order
     for (int i = (int)starfield_.size() - 1; i > 0; --i)
         std::swap(starfield_[i], starfield_[(int)(rng.nextFloat() * (i + 1))]);
+
+    // Bug 1 fix: snap cursor to pad center on resize so it does not render at (0,0)
+    // until the first timerCallback fires with valid dimensions.
+    displayCx_  = getWidth()  * 0.5f;
+    displayCy_  = getHeight() * 0.5f;
+    springVelX_ = 0.0f;
+    springVelY_ = 0.0f;
 }
 
 void JoystickPad::resetGlowPhase() { glowPhase_ = 0.0f; }
