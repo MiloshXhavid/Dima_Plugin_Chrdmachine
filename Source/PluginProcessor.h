@@ -41,9 +41,9 @@ public:
 
     // ── Public state (read by UI, written by UI / gamepad) ────────────────────
     // Live joystick position from UI drag (-1..+1)
-    // Default: X = center (0.0), Y = bottom (-1.0 = lowest pitch)
+    // Default: center (0, 0)
     std::atomic<float> joystickX {0.0f};
-    std::atomic<float> joystickY {-1.0f};
+    std::atomic<float> joystickY {0.0f};
 
     // Touch-plate state (UI → processor)
     void setPadState(int voice, bool pressed) { trigger_.setPadState(voice, pressed); }

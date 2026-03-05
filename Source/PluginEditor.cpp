@@ -1123,14 +1123,27 @@ void JoystickPad::timerCallback()
     prevCx_ = cx;
     prevCy_ = cy;
 
-    // ── Cursor display position — exponential smoothing ──────────────────────
-    // 1-pole IIR: zero overshoot, guaranteed. kLerp=0.30 → ~150ms settle at 60Hz.
-    // cx/cy is the raw (LFO-aware) target pixel position.
-    // displayCx_/Cy_ is the smoothed position read by paint() for the cursor dot.
+    // ── Cursor display position — spring-damper ──────────────────────────────
+    // While dragging: snap instantly so the cursor never lags behind the mouse.
+    // On release: underdamped spring (ζ≈0.45) snaps back with visible overshoot.
+    if (mouseIsDown_)
     {
-        constexpr float kLerp = 0.30f;
-        displayCx_ += (cx - displayCx_) * kLerp;
-        displayCy_ += (cy - displayCy_) * kLerp;
+        displayCx_  = cx;
+        displayCy_  = cy;
+        springVelX_ = 0.0f;
+        springVelY_ = 0.0f;
+    }
+    else
+    {
+        constexpr float dt = 1.0f / 60.0f;
+        constexpr float k  = 320.0f;
+        constexpr float d  = 16.0f;   // ζ = d / (2*sqrt(k)) ≈ 0.45
+        const float ax = -k * (displayCx_ - cx) - d * springVelX_;
+        const float ay = -k * (displayCy_ - cy) - d * springVelY_;
+        springVelX_ += ax * dt;
+        springVelY_ += ay * dt;
+        displayCx_  += springVelX_ * dt;
+        displayCy_  += springVelY_ * dt;
     }
 
     // Visual position of the spring-smoothed cursor dot (for bursts + hold-glow).
