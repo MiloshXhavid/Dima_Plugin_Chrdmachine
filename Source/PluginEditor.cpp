@@ -4372,21 +4372,16 @@ void PluginEditor::paint(juce::Graphics& g)
             g.drawText(t, c.getX(), c.getY() - 12, c.getWidth(), 12,
                        juce::Justification::centred);
     };
-    // "LEFT X" / "LEFT Y" — small red labels like the interval division Y / X markers
-    // In INV mode the labels are swapped to reflect the physical axis remapping.
+    // "LEFT X" / "LEFT Y" — labels follow their component's position.
+    // Physical bounds swap in timerCallback (INV toggle) handles visual exchange.
     g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 8.5f, juce::Font::bold));
     g.setColour(Clr::highlight.withAlpha(0.70f));
-    {
-        const bool invOn = *proc_.apvts.getRawParameterValue("stickInvert") > 0.5f;
-        if (filterYModeBox_.isVisible())
-            g.drawText(invOn ? "LEFT X" : "LEFT Y",
-                       filterYModeBox_.getX(), filterYModeBox_.getY() - 12,
-                       filterYModeBox_.getWidth(), 12, juce::Justification::centred);
-        if (filterXModeBox_.isVisible())
-            g.drawText(invOn ? "LEFT Y" : "LEFT X",
-                       filterXModeBox_.getX(), filterXModeBox_.getY() - 12,
-                       filterXModeBox_.getWidth(), 12, juce::Justification::centred);
-    }
+    if (filterYModeBox_.isVisible())
+        g.drawText("LEFT Y", filterYModeBox_.getX(), filterYModeBox_.getY() - 12,
+                   filterYModeBox_.getWidth(), 12, juce::Justification::centred);
+    if (filterXModeBox_.isVisible())
+        g.drawText("LEFT X", filterXModeBox_.getX(), filterXModeBox_.getY() - 12,
+                   filterXModeBox_.getWidth(), 12, juce::Justification::centred);
 
     // "QUANTIZE TRIGGER" section label — spans from Off button left edge to subdiv box right edge
     if (quantizeOffBtn_.isVisible())
@@ -4491,8 +4486,8 @@ void PluginEditor::timerCallback()
         const bool invOn = *proc_.apvts.getRawParameterValue("stickInvert") > 0.5f;
         filterXModeLabel_.setText(invOn ? "Left Y" : "Left X", juce::dontSendNotification);
         filterYModeLabel_.setText(invOn ? "Left X" : "Left Y", juce::dontSendNotification);
-        joyXAttenLabel_.setText(invOn ? "SEMITONE Y" : "SEMITONE X", juce::dontSendNotification);
-        joyYAttenLabel_.setText(invOn ? "SEMITONE X" : "SEMITONE Y", juce::dontSendNotification);
+        joyXAttenLabel_.setText("SEMITONE X", juce::dontSendNotification);
+        joyYAttenLabel_.setText("SEMITONE Y", juce::dontSendNotification);
 
         // INV attachment swap — fires only when INV state changes, not every timer tick.
         if (invOn != prevInvState_)

@@ -178,7 +178,7 @@ public:
     // Beat-clock cross-thread signals — audio thread writes, UI timer reads
     std::atomic<bool>  beatOccurred_  { false };
     std::atomic<float> modulatedJoyX_ { 0.0f  };
-    std::atomic<float> modulatedJoyY_ { -1.0f };
+    std::atomic<float> modulatedJoyY_ { 0.0f  };
 
     // Subdivision multiplier for LFO sync mode when stick targets LFO Freq (mode index 2).
     // Written in filter dispatch block; read in LFO ProcessParams block.
