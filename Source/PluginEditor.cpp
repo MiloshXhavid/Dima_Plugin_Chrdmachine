@@ -2812,7 +2812,10 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     filterYModeBox_.addItem("LFO-Y Phase",      6);
     filterYModeBox_.addItem("LFO-Y Level",      7);
     filterYModeBox_.addItem("Gate Length",      8);
-    filterYModeBox_.setTooltip("Left Stick Y Mode  -  Resonance (CC71), LFO Rate (CC76), Cutoff (CC74), VCF LFO (CC12), LFO-Y Freq/Phase/Level, or Gate Length");
+    filterYModeBox_.addItem("LFO-X Freq",       9);
+    filterYModeBox_.addItem("LFO-X Phase",      10);
+    filterYModeBox_.addItem("LFO-X Level",      11);
+    filterYModeBox_.setTooltip("Left Stick Y Mode  -  Resonance (CC71), LFO Rate (CC76), Cutoff (CC74), VCF LFO (CC12), LFO-Y Freq/Phase/Level, Gate Length, or LFO-X Freq/Phase/Level");
     styleCombo(filterYModeBox_);
     addAndMakeVisible(filterYModeBox_);
     filterYModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterYMode", filterYModeBox_);
@@ -2825,7 +2828,10 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     filterXModeBox_.addItem("LFO-X Phase",      6);
     filterXModeBox_.addItem("LFO-X Level",      7);
     filterXModeBox_.addItem("Gate Length",      8);
-    filterXModeBox_.setTooltip("Left Stick X Mode  -  Cutoff (CC74), VCF LFO (CC12), Resonance (CC71), LFO Rate (CC76), LFO-X Freq/Phase/Level, or Gate Length");
+    filterXModeBox_.addItem("LFO-Y Freq",       9);
+    filterXModeBox_.addItem("LFO-Y Phase",      10);
+    filterXModeBox_.addItem("LFO-Y Level",      11);
+    filterXModeBox_.setTooltip("Left Stick X Mode  -  Cutoff (CC74), VCF LFO (CC12), Resonance (CC71), LFO Rate (CC76), LFO-X Freq/Phase/Level, Gate Length, or LFO-Y Freq/Phase/Level");
     styleCombo(filterXModeBox_);
     addAndMakeVisible(filterXModeBox_);
     filterXModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterXMode", filterXModeBox_);
@@ -3258,6 +3264,14 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
 PluginEditor::~PluginEditor()
 {
+    // Clear the onConnectionChangeUI callback BEFORE stopping the timer.
+    // The GamepadInput destructor (part of PluginProcessor teardown, which runs
+    // AFTER the editor is destroyed) calls closeController(), which fires this
+    // callback synchronously. If the lambda still captures `this` at that point,
+    // it enqueues a callAsync with a dangling PluginEditor pointer — crash on
+    // two-instance removal. Nulling the slot here makes the call a no-op.
+    proc_.getGamepad().onConnectionChangeUI = nullptr;
+
     setLookAndFeel(nullptr);
     stopTimer();
 }
