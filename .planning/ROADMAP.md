@@ -339,6 +339,8 @@ Plans:
   3. Selecting 1/32 produces audibly faster steps than 1/16 — basic subdivision ordering is correct
   4. Old presets saved with the 6-item arp param load without crashing; the arp rate defaults to 1/8 if the old index is out of range
 **Plans**: 1 plan
+Plans:
+- [ ] 35-01-PLAN.md — All 4 arpSubdiv change sites: APVTS 17-item param, kSubdivBeats[17], jlimit(0,16), gamepad stepWrappingParam(0,16), UI addItemList + human-verify checkpoint
 
 #### Phase 36: Arp + All Trigger Sources
 **Goal**: The arpeggiator works with all four trigger source modes (Pad, Joystick, Random Free, Random Hold) — removing the hardcoded TouchPlate-only guard that currently forces pad mode when the arp is active.
