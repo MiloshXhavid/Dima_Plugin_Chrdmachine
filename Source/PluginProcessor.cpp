@@ -2026,7 +2026,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 const float liveX = blkInv ? rawLiveY : rawLiveX;
                 const float liveY = blkInv ? rawLiveX : rawLiveY;
 
-                if (xMode >= 4 && xMode <= 7)
+                if (xMode >= 4 && xMode <= 10)
                 {
                     const float deadX = (std::abs(liveX) < kDeadzone) ? 0.0f : liveX;
                     const float stick = deadX * (xAtten / 100.0f);
@@ -2084,11 +2084,56 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             gateLengthDisplay_.store(actual, std::memory_order_relaxed);
                             break;
                         }
+                        case 8:  // LFO-Y Freq (X stick -> opposite LFO)
+                        {
+                            if (lfoY_.getRecState() == LfoRecState::Playback) break;
+                            const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f;
+                            if (syncOn)
+                            {
+                                const int curIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv));
+                                const int effectiveIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)std::roundf((float)curIdx + stick * 6.0f));
+                                lfoYSubdivMult_.store(
+                                    (float)(kLfoSubdivBeats[effectiveIdx] / kLfoSubdivBeats[curIdx]),
+                                    std::memory_order_relaxed);
+                                lfoYRateDisplay_.store((float)effectiveIdx, std::memory_order_relaxed);
+                            }
+                            else
+                            {
+                                static const juce::NormalisableRange<float> kLfoRange(0.01f, 20.0f, 0.0f, 0.35f);
+                                const float base = apvts.getRawParameterValue(ParamID::lfoYRate)->load();
+                                const float norm = kLfoRange.convertTo0to1(base);
+                                const float actual = kLfoRange.convertFrom0to1(
+                                    juce::jlimit(0.0f, 1.0f, norm + stick * 0.5f));
+                                lfoYRateDisplay_.store(actual, std::memory_order_relaxed);
+                                lfoYRateOverride_ = actual;
+                            }
+                            break;
+                        }
+                        case 9:  // LFO-Y Phase (X stick -> opposite LFO)
+                        {
+                            if (lfoY_.getRecState() == LfoRecState::Playback) break;
+                            const float base   = apvts.getRawParameterValue(ParamID::lfoYPhase)->load();
+                            const float actual = juce::jlimit(0.0f, 360.0f, base + stick * 180.0f);
+                            lfoYPhaseDisplay_.store(actual, std::memory_order_relaxed);
+                            lfoYPhaseOverride_ = actual;
+                            break;
+                        }
+                        case 10: // LFO-Y Level (X stick -> opposite LFO)
+                        {
+                            if (lfoY_.getRecState() == LfoRecState::Playback) break;
+                            const float base   = apvts.getRawParameterValue(ParamID::lfoYLevel)->load();
+                            const float actual = juce::jlimit(0.0f, 1.0f, base + stick * 0.5f);
+                            lfoYLevelDisplay_.store(actual, std::memory_order_relaxed);
+                            lfoYLevelOverride_ = actual;
+                            break;
+                        }
                         default: break;
                     }
                 }
 
-                if (yMode >= 4 && yMode <= 7)
+                if (yMode >= 4 && yMode <= 10)
                 {
                     const float deadY = (std::abs(liveY) < kDeadzone) ? 0.0f : liveY;
                     const float stick = deadY * (yAtten / 100.0f);
@@ -2143,13 +2188,60 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             gateLengthDisplay_.store(actual, std::memory_order_relaxed);
                             break;
                         }
+                        case 8:  // LFO-X Freq (Y stick -> opposite LFO)
+                        {
+                            if (lfoX_.getRecState() == LfoRecState::Playback) break;
+                            const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f;
+                            if (syncOn)
+                            {
+                                const int curIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv));
+                                const int effectiveIdx = juce::jlimit(0, kMaxSubdivIdx,
+                                    (int)std::roundf((float)curIdx + stick * 6.0f));
+                                lfoXSubdivMult_.store(
+                                    (float)(kLfoSubdivBeats[effectiveIdx] / kLfoSubdivBeats[curIdx]),
+                                    std::memory_order_relaxed);
+                                lfoXRateDisplay_.store((float)effectiveIdx, std::memory_order_relaxed);
+                            }
+                            else
+                            {
+                                static const juce::NormalisableRange<float> kLfoRange(0.01f, 20.0f, 0.0f, 0.35f);
+                                const float base = apvts.getRawParameterValue(ParamID::lfoXRate)->load();
+                                const float norm = kLfoRange.convertTo0to1(base);
+                                const float actual = kLfoRange.convertFrom0to1(
+                                    juce::jlimit(0.0f, 1.0f, norm + stick * 0.5f));
+                                lfoXRateDisplay_.store(actual, std::memory_order_relaxed);
+                                lfoXRateOverride_ = actual;
+                            }
+                            break;
+                        }
+                        case 9:  // LFO-X Phase (Y stick -> opposite LFO)
+                        {
+                            if (lfoX_.getRecState() == LfoRecState::Playback) break;
+                            const float base   = apvts.getRawParameterValue(ParamID::lfoXPhase)->load();
+                            const float actual = juce::jlimit(0.0f, 360.0f, base + stick * 180.0f);
+                            lfoXPhaseDisplay_.store(actual, std::memory_order_relaxed);
+                            lfoXPhaseOverride_ = actual;
+                            break;
+                        }
+                        case 10: // LFO-X Level (Y stick -> opposite LFO)
+                        {
+                            if (lfoX_.getRecState() == LfoRecState::Playback) break;
+                            const float base   = apvts.getRawParameterValue(ParamID::lfoXLevel)->load();
+                            const float actual = juce::jlimit(0.0f, 1.0f, base + stick * 0.5f);
+                            lfoXLevelDisplay_.store(actual, std::memory_order_relaxed);
+                            lfoXLevelOverride_ = actual;
+                            break;
+                        }
                         default: break;
                     }
                 }
 
                 // Reset subdivision multiplier when not in sync-mode LFO Freq target
-                if (xMode != 4) lfoXSubdivMult_.store(1.0f, std::memory_order_relaxed);
-                if (yMode != 4) lfoYSubdivMult_.store(1.0f, std::memory_order_relaxed);
+                // lfoXSubdivMult_: driven by xMode==4 (X->LFO-X sync) OR yMode==8 (Y->LFO-X sync)
+                if (xMode != 4 && yMode != 8) lfoXSubdivMult_.store(1.0f, std::memory_order_relaxed);
+                // lfoYSubdivMult_: driven by yMode==4 (Y->LFO-Y sync) OR xMode==8 (X->LFO-Y sync)
+                if (yMode != 4 && xMode != 8) lfoYSubdivMult_.store(1.0f, std::memory_order_relaxed);
             }
 
             // When gate mode is selected but joystick is idle, keep gateLengthDisplay_
