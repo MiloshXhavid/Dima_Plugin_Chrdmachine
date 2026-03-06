@@ -1,5 +1,18 @@
 ---
 gsd_state_version: 1.0
+milestone: v1.8
+milestone_name: Modulation Expansion + Arp/Looper Fixes
+status: unknown
+last_updated: "2026-03-06T17:37:59.435Z"
+progress:
+  total_phases: 29
+  completed_phases: 27
+  total_plans: 62
+  completed_plans: 60
+---
+
+---
+gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Triplets & Fixes
 status: unknown
@@ -100,11 +113,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 33-version-sync — COMPLETE (plan 01 complete)
-Phase: 33.1 — COMPLETE (human verification approved 2026-03-05)
-Plan: 01/01 — all tasks complete including human-verify checkpoint
-Status: All v1.7 phases complete. v1.7 shipped. Awaiting next milestone direction.
-Last activity: 2026-03-05 — Phase 33.1 approved: all 7 UI bug fixes verified in DAW
+Phase: 34-cross-lfo-modulation-targets — Plan 01/01 COMPLETE (2026-03-06)
+Plan: 01/01 — all 5 tasks complete, 3 commits
+Status: Phase 34 plan 01 complete. filterXMode/filterYMode extended to 11 choices with cross-LFO targets.
+Last activity: 2026-03-06 — Phase 34-01 cross-LFO modulation dispatch implemented
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -170,6 +182,8 @@ Key v1.6 design decisions (locked):
 - [Phase 33.1]: Battery icon redesigned as 3 vertical stripe blocks; GamepadInput.cpp unchanged (paint-only fix)
 - [Phase 33]: Plugin release tag convention: v1.7 (no patch) pushed to plugin remote only; gh release create --latest supersedes v1.6 as Latest
 - [Phase 33]: DIST-06 (v1.6 desktop backup) marked skipped — superseded by DIST-08 (v1.7 backup)
+- [Phase 34]: Cross-LFO case 8 reads curIdx from target LFO APVTS subdiv param (no MOD FIX offset) — modulates around current knob position
+- [Phase 34]: subdivMult reset guards extended with cross-axis conditions: lfoXSubdivMult_ skips reset when yMode==8; lfoYSubdivMult_ skips reset when xMode==8
 
 ### Pending Todos
 
@@ -181,6 +195,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-05
-Stopped at: Phase 33.1 complete — all 7 bug fixes approved by human.
-Next step: All v1.7 phases complete. Start new milestone or add phases as needed.
+Last session: 2026-03-06
+Stopped at: Completed 34-01-PLAN.md — cross-LFO modulation targets (filterXMode/filterYMode 11 choices, processBlock dispatch cases 8-10 on both axes).
+Next step: Build and install by user to verify. Proceed to next phase 34 plan if exists, or next milestone.
