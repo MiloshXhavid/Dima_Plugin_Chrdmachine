@@ -2263,6 +2263,16 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     lfoYRateDisplay_.store(
                         (float)(int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv),
                         std::memory_order_relaxed);
+                // Cross-LFO: X stick drives LFO-Y Freq sync -> reset lfoYRateDisplay_ when idle
+                if (xMode == 8 && *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f)
+                    lfoYRateDisplay_.store(
+                        (float)(int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv),
+                        std::memory_order_relaxed);
+                // Cross-LFO: Y stick drives LFO-X Freq sync -> reset lfoXRateDisplay_ when idle
+                if (yMode == 8 && *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f)
+                    lfoXRateDisplay_.store(
+                        (float)(int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv),
+                        std::memory_order_relaxed);
             }
         }
     }
