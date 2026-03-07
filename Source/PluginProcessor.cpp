@@ -1658,12 +1658,6 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     tp.randomClockSync = (*apvts.getRawParameterValue("randomClockSync") > 0.5f);
     tp.randomFreeTempo = *apvts.getRawParameterValue("randomFreeTempo");
 
-    // When arp is on, suppress joystick/random auto-triggers so arp has full
-    // sequencing control. Pads (TouchPlate) still fire live notes and choke arp.
-    if (arpOn)
-        for (int v = 0; v < 4; ++v)
-            tp.sources[v] = TriggerSource::TouchPlate;
-
     trigger_.processBlock(tp);
 
     // ── Arpeggiator ───────────────────────────────────────────────────────────
