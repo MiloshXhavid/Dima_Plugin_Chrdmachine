@@ -113,10 +113,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 34-cross-lfo-modulation-targets — Plan 02 tasks 1-3 complete, awaiting human-verify checkpoint
-Plan: 02/02 — tasks 1/2/3 committed (f55bd0e, b9e0e5b), Task 4 is checkpoint:human-verify
-Status: Phase 34 plan 02 code complete. filterXModeBox_/filterYModeBox_ 11 items each; timerCallback cross-LFO tracking added.
-Last activity: 2026-03-06 — Phase 34-02 UI items + timerCallback tracking implemented
+Phase: 44-instrument-type-conversion — Plan 01 complete
+Plan: 01/01 — all code changes committed (9ad14bf)
+Status: Phase 44 plan 01 code complete. Plugin converted from MIDI effect to instrument type. Awaiting user build + install.
+Last activity: 2026-03-07 — Phase 44-01 instrument type conversion code changes
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -184,6 +184,10 @@ Key v1.6 design decisions (locked):
 - [Phase 33]: DIST-06 (v1.6 desktop backup) marked skipped — superseded by DIST-08 (v1.7 backup)
 - [Phase 34]: Cross-LFO case 8 reads curIdx from target LFO APVTS subdiv param (no MOD FIX offset) — modulates around current knob position
 - [Phase 34]: subdivMult reset guards extended with cross-axis conditions: lfoXSubdivMult_ skips reset when yMode==8; lfoYSubdivMult_ skips reset when xMode==8
+- [Phase 44]: IS_MIDI_EFFECT FALSE in CMakeLists required — JUCE VST3 wrapper ignores C++ isMidiEffect() for bus configuration
+- [Phase 44]: Output bus enabled (true) in BusesProperties — instrument slot visibility in FL Studio, Cakewalk, Logic requires active output bus
+- [Phase 44]: .withInput() removed entirely — instruments don't consume audio input; inactive input bus would confuse host routing
+- [Phase 44]: isBusesLayoutSupported accepts numOut=0 — DAWs may probe with zero outputs during instrument discovery
 
 ### Pending Todos
 
@@ -195,6 +199,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-06
-Stopped at: 34-02-PLAN.md Task 4 checkpoint:human-verify — build + install required before verification.
-Next step: User runs build32.ps1 + do-reinstall.ps1, verifies 7 tests in checkpoint, then resumes.
+Last session: 2026-03-07
+Stopped at: Completed 44-01-PLAN.md — all code changes committed (9ad14bf).
+Next step: User runs build32.ps1 + do-reinstall.ps1, verifies plugin appears in instrument slot in target DAWs.
