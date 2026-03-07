@@ -8,7 +8,7 @@
 - ✅ **v1.5 Routing + Expression** — Phases 17-25 (shipped 2026-03-02)
 - ✅ **v1.6 Triplets & Fixes** — Phases 26-30 (shipped 2026-03-03)
 - ✅ **v1.7 Space Joystick** — Phases 31-33.1 (shipped 2026-03-05)
-- 🔲 **v1.8 Modulation Expansion + Arp/Looper Fixes** — Phases 34-37, 44 (planned)
+- ✅ **v1.8 Modulation Expansion + Arp/Looper Fixes** — Phases 34-37, 44 (shipped 2026-03-07)
 - 🔲 **v1.9 Living Interface** — Phases 38-43 (planned)
 
 ## Phases
@@ -311,60 +311,18 @@ Plans:
 - [x] 25-01-PLAN.md — Update .iss for v1.5 (DIMEA branding, [Messages] section, remove LicenseFile), clean Release build, recompile installer, smoke test checkpoint (completed 2026-03-02)
 - [x] 25-02-PLAN.md — Create v1.5 git tag, push to plugin remote, create GitHub pre-release, desktop backup (completed 2026-03-02)
 
-### v1.8 Modulation Expansion + Arp/Looper Fixes
+<details>
+<summary>✅ v1.8 Modulation Expansion + Arp/Looper Fixes (Phases 34-37, 44) — SHIPPED 2026-03-07</summary>
 
-**Milestone Goal:** Extend the left-joystick modulation matrix to support cross-LFO targeting (X stick → LFO-Y params, Y stick → LFO-X params), expand arp subdivisions to the full 17-item set matching Random, allow the arpeggiator to work with all trigger sources (not just TouchPlate), and fix the looper internalBeat_ double-scan bug that causes hanging notes after overdub recording.
+- [x] Phase 34: Cross-LFO Modulation Targets (2/2 plans) — completed 2026-03-06
+- [x] Phase 35: Arp Subdivision Expansion (1/1 plans) — completed 2026-03-07
+- [x] Phase 36: Arp + All Trigger Sources (1/1 plans) — completed 2026-03-07
+- [x] Phase 37: Looper internalBeat_ Fix (1/1 plans) — completed 2026-03-07
+- [x] Phase 44: Instrument Type Conversion (2/2 plans) — completed 2026-03-07
 
-#### Phase 34: Cross-LFO Modulation Targets
-**Goal**: Left Joystick X can target LFO-Y Frequency, Phase, and Level; Left Joystick Y can target LFO-X Frequency, Phase, and Level — extending the APVTS filterXMode/filterYMode choice params from 8 to 11 items each and adding the corresponding processBlock dispatch branches.
-**Depends on**: Phase 33 (v1.7 shipped)
-**Key change**: `filterXMode`/`filterYMode` APVTS params extend from 8→11 choices. New modes 8–10 on each axis dispatch to the opposite LFO's freq/phase/level in processBlock.
-**Success Criteria**:
-  1. Left Joystick X dropdown shows 11 options including "LFO-Y Freq", "LFO-Y Phase", "LFO-Y Level" as the last three entries; same for Left Joystick Y with "LFO-X" variants
-  2. Selecting "LFO-Y Level" as the Left Joystick X target and moving the left stick left-right visibly changes the LFO Y Level slider in real time — confirmed by slider thumb movement and audible LFO depth change
-  3. Cross-LFO modulation stops emitting CC74/CC71 — no leftover filter CC messages after switching to a cross-LFO target
-  4. Existing modes 0–7 continue working unchanged on both axes; old presets with mode indices 0–7 load correctly without mapping shift
-**Plans**: 2 plans
-Plans:
-- [ ] 34-01-PLAN.md — PluginProcessor: extend APVTS to 11 items, cases 8/9/10 on both dispatch blocks, subdivMult guards, !liveGamepad sync reset
-- [ ] 34-02-PLAN.md — PluginEditor: 11-item ComboBox population + timerCallback cross-LFO visual tracking (wave 2)
+Full details: `.planning/milestones/v1.8-ROADMAP.md`
 
-#### Phase 35: Arp Subdivision Expansion
-**Goal**: The arpeggiator subdivision selector is replaced with the full 17-item set already used by Random Trigger, giving players access to all straight + triplet subdivisions (1/1 through 1/32T) in the arp.
-**Depends on**: Phase 34
-**Key change**: `arpSubdiv` APVTS param (currently 6 items: 1/4, 1/8, 1/16, 1/32, 1/4T, 1/8T) is replaced with the full `kSubdivBeats[17]` array. Breaking change for old presets — acceptable per design decision.
-**Success Criteria**:
-  1. The Arp Rate dropdown shows 17 subdivision options matching the Random trigger list exactly (1/1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64, 1/1T, 1/2T, 1/4T, 1/8T, 1/16T, 1/32T, and dotted variants if present)
-  2. Selecting 1/8T in the arp with DAW sync active produces triplet-timing note steps — confirmed against DAW piano roll showing notes at 2/3 of an eighth note duration
-  3. Selecting 1/32 produces audibly faster steps than 1/16 — basic subdivision ordering is correct
-  4. Old presets saved with the 6-item arp param load without crashing; the arp rate defaults to 1/8 if the old index is out of range
-**Plans**: 1 plan
-Plans:
-- [ ] 35-01-PLAN.md — All 4 arpSubdiv change sites: APVTS 17-item param, kSubdivBeats[17], jlimit(0,16), gamepad stepWrappingParam(0,16), UI addItemList + human-verify checkpoint
-
-#### Phase 36: Arp + All Trigger Sources
-**Goal**: The arpeggiator works with all four trigger source modes (Pad, Joystick, Random Free, Random Hold) — removing the hardcoded TouchPlate-only guard that currently forces pad mode when the arp is active.
-**Depends on**: Phase 35
-**Key change**: Remove `PluginProcessor.cpp` lines 1586–1588 (`if (arpOn) force TouchPlate`). Safe because the arp already gates on `trigger_.isGateOpen()` — no hanging notes result.
-**Success Criteria**:
-  1. With trigger source set to Joystick and arp enabled, arp steps fire while the joystick is outside the dead zone — no forced fallback to pad mode
-  2. With trigger source set to Random Free and arp enabled, arp steps fire when the random gate fires — no forced pad mode
-  3. With trigger source set to Pad (normal), arp behavior is unchanged from before this fix
-  4. No hanging notes occur in any trigger mode when the arp is disabled mid-phrase
-**Plans**: 1 plan
-
-#### Phase 37: Looper internalBeat_ Fix
-**Goal**: Fix the LooperEngine double-scan bug where resetting `internalBeat_` to 0.0 at beat boundaries causes beat-0 events to be scanned twice, producing hanging notes and "resets to beginning" artifacts after overdub recording.
-**Depends on**: Phase 36
-**Key change**: Remove `LooperEngine.cpp` line 773 (`internalBeat_ = 0.0`). One-line fix.
-**Success Criteria**:
-  1. Recording an overdub loop and letting it play back produces no extra note-ons at the loop start boundary — DAW MIDI monitor shows exactly the recorded notes, no duplicates at beat 0
-  2. The looper does not jump back to the beginning of the loop mid-phrase after an overdub recording completes
-  3. Multiple consecutive overdub records do not accumulate phantom events — each overdub adds exactly the newly played notes
-  4. Existing looper behavior (quantized record start, perimeter bar, sync) is unaffected
-**Plans**: 1 plan
-
----
+</details>
 
 ### v1.9 Living Interface
 
@@ -431,24 +389,6 @@ Plans:
   4. Scale factor persists across plugin save/load
 **Plans**: 2 plans
 
-#### Phase 44: Instrument Type Conversion
-**Goal**: Convert the plugin from `isMidiEffect()=true` to a VST3 instrument with a silent stereo audio output bus — achieving universal DAW compatibility (Cakewalk, Logic, FL Studio, Bitwig, etc.) while preserving all existing functionality and the Ableton/Reaper workflow.
-**Depends on**: Phase 37 (v1.8 looper fix)
-**Key change**: `isMidiEffect()` → false, `isSynth()` → true, add stereo output bus (always silent), update CMakeLists plugin category to "Instrument|Fx".
-**Success Criteria**:
-  1. Plugin appears in Cakewalk's instrument slot and can be inserted — no "not detected" issue
-  2. In Ableton, plugin sits in the instrument slot on a MIDI track; its MIDI output can be routed to a second instrument track — same 2-track workflow as before, different slot
-  3. In Reaper, plugin continues to work stacked on the same track before an instrument — no regression
-  4. All existing features (chord engine, LFO, looper, arp, gamepad, random triggers) produce identical MIDI output after the change — verified with DAW MIDI monitor
-  5. The silent audio output produces no audible signal at any sample rate — `buffer.clear()` confirmed
-  6. Existing presets load without any parameter changes or state corruption
-**Plans**: 2 plans (2/2 complete — code changes committed 2026-03-07, DAW verification approved 2026-03-07)
-Plans:
-- [x] 44-01-PLAN.md — CMakeLists + PluginProcessor: IS_MIDI_EFFECT FALSE, IS_SYNTH TRUE, output bus enabled
-- [x] 44-02-PLAN.md — Build + DAW smoke test: Ableton, Reaper verified
-
----
-
 ## Progress
 
 | Phase | Milestone | Status | Completed |
@@ -459,5 +399,5 @@ Plans:
 | 17–25 | v1.5 | Complete | 2026-03-02 |
 | 26–30 | v1.6 | Complete | 2026-03-03 |
 | 31–33.1 | v1.7 | Complete | 2026-03-05 |
-| 34–37, 44 | v1.8 | Planned | — |
+| 34–37, 44 | v1.8 | Complete | 2026-03-07 |
 | 38–43 | v1.9 | Planned | — |

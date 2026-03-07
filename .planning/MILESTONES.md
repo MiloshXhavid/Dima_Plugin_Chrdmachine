@@ -1,4 +1,18 @@
 # Milestones
+## v1.8 Modulation Expansion + Arp/Looper Fixes (Shipped: 2026-03-07)
+
+**Phases completed:** Phases 34, 35, 36, 37, 44 (5 phases, 7 plans)
+
+**Key accomplishments:**
+- Cross-LFO modulation: left stick X/Y can target the opposite LFO's Freq, Phase, or Level — 11-item filterXMode/filterYMode with real-time visual slider tracking and Playback guard
+- Arp subdivision expansion: arpSubdiv APVTS param extended from 6 → 17 items (4/1 to 1/64T, all triplets) — parity with Random Trigger system
+- Arp all trigger sources: removed force-TouchPlate guard — Joystick and Random Free now work with arpeggiator active
+- Looper overdub fix: removed internalBeat_=0 double-scan sentinel — fmod absorbs overshoot correctly; TC 14 regression guard added
+- Instrument type conversion: IS_MIDI_EFFECT FALSE + IS_SYNTH TRUE + silent stereo output bus — plugin now loads in instrument slot in Ableton, Reaper, Cakewalk, FL Studio
+- UAT: 12/12 tests passed; GitHub pre-release v1.8 published; desktop backup created
+
+---
+
 ## v1.7 Space Joystick (Shipped: 2026-03-05)
 
 **Phases completed:** Phases 31–33.1 (4 phases including decimal)
