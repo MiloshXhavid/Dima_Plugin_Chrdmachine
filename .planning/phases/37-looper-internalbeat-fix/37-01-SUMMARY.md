@@ -49,8 +49,8 @@ completed: 2026-03-07
 - **Duration:** 8 min
 - **Started:** 2026-03-07T~02:40:00Z
 - **Completed:** 2026-03-07T~02:48:00Z
-- **Tasks:** 2/3 (Task 3 is checkpoint:human-verify — awaiting user)
-- **Files modified:** 2
+- **Tasks:** 3/3 (all complete — DAW smoke test approved)
+- **Files modified:** 2 (+ pre-existing test fixes in 3 additional commits)
 
 ## Accomplishments
 - Removed `internalBeat_ = 0.0` (line 773) — the single-line root cause of duplicate beat-0 events after overdub recording auto-stops in free-running mode
@@ -63,7 +63,12 @@ Each task was committed atomically:
 
 1. **Task 1: Remove internalBeat_=0 and update comment** - `3c54b2c` (fix)
 2. **Task 2: Add TC 14 regression test** - `6c251fd` (test)
-3. **Task 3: checkpoint:human-verify** - awaiting user build + DAW smoke test
+3. **Task 3: checkpoint:human-verify** - approved (build + all 14 tests + DAW smoke test)
+
+Pre-existing test fixes (deviation — Rule 1, out-of-scope tests broken before phase 37):
+- `69e99be` fix(37): update TC 4/5/6/10/11 for recordPending_ activation
+- `a7cc0eb` fix(37): fix TC 11 pArm compile error
+- `acacc9a` fix(37): fix all 5 pre-existing test failures
 
 ## Files Created/Modified
 - `Source/LooperEngine.cpp` - Removed line 773 (`internalBeat_ = 0.0`); updated comment block at lines 778-780
@@ -75,7 +80,19 @@ Each task was committed atomically:
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 1 - Bug] Fixed 5 pre-existing test failures (TC 4/5/6/10/11)**
+- **Found during:** Task 3 (user ran build32.ps1 for checkpoint verification)
+- **Issue:** 5 Catch2 tests broken before phase 37 — recordPending_ activation required a 1-sample process() call after `record()` before `recordGate()` could be called; TC 11 pArm had undeclared variable references
+- **Fix:** Added activation process() call in TC 4/5/6/10/11; fixed TC 11 compile error with hardcoded sampleRate/bpm values; corrected TC5 reset assertions
+- **Files modified:** Tests/LooperEngineTests.cpp (3 commits: 69e99be, a7cc0eb, acacc9a)
+- **Note:** These failures pre-existed phase 37 — TC 14 is the only test added by this plan
+
+---
+
+**Total deviations:** 1 auto-fixed (Rule 1 — pre-existing test failures surfaced during checkpoint build)
+**Impact on plan:** Required to get a clean test run for checkpoint verification. TC 14 (the planned test) passes GREEN.
 
 ## Issues Encountered
 
@@ -100,10 +117,10 @@ Then DAW smoke test:
 - SC3: Multiple consecutive overdubs — confirm no phantom duplicates
 
 ## Next Phase Readiness
-- Code fix and regression test are committed and ready to build
-- All prior TCs (01-13) unaffected — no LooperEngine logic changed except removal of the one faulty line
-- Awaiting: user build confirmation + DAW smoke test approval (checkpoint)
+- Fix built, installed, and DAW-verified — all 14 Catch2 tests pass (TC 14 GREEN)
+- No looper API changes — downstream phases unaffected
+- Ready for next phase
 
 ---
 *Phase: 37-looper-internalbeat-fix*
-*Completed: 2026-03-07 (pending checkpoint approval)*
+*Completed: 2026-03-07*

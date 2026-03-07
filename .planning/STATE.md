@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Modulation Expansion + Arp/Looper Fixes
 status: unknown
-stopped_at: "37-01 checkpoint:human-verify — Tasks 1+2 committed, awaiting build+DAW approval"
-last_updated: "2026-03-07T02:55:21.308Z"
+stopped_at: Completed 37-01-PLAN.md — internalBeat_ double-scan fix built+installed+DAW approved
+last_updated: "2026-03-07T03:32:01.025Z"
 last_activity: 2026-03-07 — Phase 44-02 DAW verification approved, phase closed
 progress:
   total_phases: 26
@@ -128,10 +128,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 44-instrument-type-conversion — COMPLETE (2/2 plans)
-Plan: 02/02 — build verified, DAW tests approved (Ableton + Reaper)
-Status: Phase 44 complete. Plugin converted to VST3 instrument type and verified in target DAWs.
-Last activity: 2026-03-07 — Phase 44-02 DAW verification approved, phase closed
+Phase: 37-looper-internalbeat-fix — COMPLETE (1/1 plans)
+Plan: 01/01 — built, all 14 tests pass (TC 14 GREEN), DAW smoke test approved
+Status: Phase 37 complete. internalBeat_ double-scan bug fixed; regression test TC 14 added.
+Last activity: 2026-03-07 — Phase 37-01 DAW verification approved, phase closed
 
 ```
 v1.0 MVP    [██████████] SHIPPED 2026-02-23
@@ -215,6 +215,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-07T02:55:18.896Z
-Stopped at: 37-01 checkpoint:human-verify — Tasks 1+2 committed, awaiting build+DAW approval
+Last session: 2026-03-07T03:32:01.020Z
+Stopped at: Completed 37-01-PLAN.md — internalBeat_ double-scan fix built+installed+DAW approved
 Next step: Phases 34-37 (cross-LFO modulation, arp subdivision, arp trigger sources, looper fix) for v1.8 completion.
