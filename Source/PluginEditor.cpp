@@ -345,9 +345,11 @@ juce::Font PixelLookAndFeel::getTextButtonFont(juce::TextButton& button, int but
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Sticks must exceed this threshold (post-dead-zone rescaling) to be treated as
-// "intentionally active" for mouse-bypass. GamepadInput now rescales pitchX/Y to 0
-// inside the dead zone, so a small threshold suffices without jitter risk.
-static constexpr float kStickBypassThreshold = 0.05f;
+// "intentionally active" for mouse-bypass. GamepadInput rescales pitchX/Y to 0
+// inside the dead zone; this threshold catches hardware drift that sneaks just past
+// the dead zone. Must be > dead_zone_default to avoid overriding mouse clicks.
+// Raised from 0.05 to 0.10: raw drift ~0.145 or below no longer triggers override.
+static constexpr float kStickBypassThreshold = 0.10f;
 
 void GamepadDisplayComponent::setGamepadState(uint32_t mask, float lx, float ly,
                                                float rx, float ry, bool connected)
