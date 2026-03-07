@@ -492,3 +492,73 @@ TEST_CASE("LooperEngine - BUG-01: DAW sync beat 0 after auto-stop record cycle",
     eng.process(p4);
     CHECK(eng.getPlaybackBeat() == Catch::Approx(0.0).epsilon(0.01));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TC 14 — double-scan regression: internalBeat_ must retain fmod overshoot
+//         after recording auto-stops in free-running mode.
+//
+// BUG (line 773): internalBeat_ = 0.0 overwrites the fmod-absorbed overshoot,
+//   causing the next block to start at beat 0.0 and fire beat-0 events twice.
+// FIX: Line 773 removed; fmod at line 758 already sets internalBeat_ = overshoot.
+//
+// Observable symptom: getPlaybackBeat() returns 0.0 on the block immediately
+//   after recording ends (with bug). With fix it returns the overshoot value > 0.
+//
+// Setup:
+//   - 4/4, 1 bar (loopLen = 4.0 beats), free-running (no DAW sync)
+//   - blockSize = 512 samples, 44100 Hz, 120 BPM
+//   - blockBeats = 512 / 22050 ≈ 0.02322 (non-integer fraction of loopLen → guaranteed overshoot)
+//   - Recording auto-stops after ≈ 173 blocks (recordedBeats_ >= 4.0)
+//   - overshoot ≈ 0.017 beats → internalBeat_ = 0.017 after fix
+// ─────────────────────────────────────────────────────────────────────────────
+TEST_CASE("LooperEngine - TC14: internalBeat_ retains fmod overshoot after auto-stop (free-running)", "[looper][bug-double-scan]")
+{
+    LooperEngine eng;
+    eng.setSubdiv(LooperSubdiv::FourFour);
+    eng.setLoopLengthBars(1);   // loopLen = 4.0 beats
+    eng.setRecGates(true);
+
+    const double sampleRate  = 44100.0;
+    const double bpm         = 120.0;
+    const int    blockSize   = 512;   // small blocks ensure non-zero overshoot at recording end
+    const double blockBeats  = blockSize / (sampleRate * 60.0 / bpm);  // ≈ 0.02322
+
+    // Sanity: blockBeats must NOT be an exact divisor of loopLen (4.0).
+    // If it were, overshoot = 0 and the test would be vacuous.
+    // 4.0 / 0.02322 ≈ 172.27 — not an integer, overshoot is guaranteed.
+    REQUIRE(std::fmod(4.0, blockBeats) > 1e-6);
+
+    eng.startStop();   // playing_ = true (free-running)
+    eng.record();      // arm recording → recordPending_ = true
+
+    LooperEngine::ProcessParams p { sampleRate, bpm, -1.0, blockSize, false };
+
+    // Drive blocks until recording auto-stops.
+    // First block activates recordPending_ → recording_ = true.
+    // Subsequent blocks accumulate recordedBeats_; auto-stop fires when >= 4.0.
+    // Safety limit: 300 blocks >> expected ≈ 173 blocks.
+    int driven = 0;
+    for (int i = 0; i < 300; ++i)
+    {
+        eng.process(p);
+        ++driven;
+        if (!eng.isRecording())
+            break;
+    }
+
+    REQUIRE_FALSE(eng.isRecording());   // recording must have auto-stopped
+    REQUIRE(eng.isPlaying());           // looper stays in playback mode
+    REQUIRE(driven < 300);              // safety: confirm auto-stop fired, not limit hit
+
+    // Drive ONE more block — this is the first-playback block where the bug manifests.
+    // With bug:  internalBeat_ = 0.0 → beatAtBlockStart = 0.0 → playbackBeat_ = 0.0
+    // With fix:  internalBeat_ = overshoot ≈ 0.017 → beatAtBlockStart = 0.017 > 0.0
+    eng.process(p);
+    const double beatAfterStop = eng.getPlaybackBeat();
+
+    // Fix: beat position must reflect the overshoot, not be reset to 0.0
+    // Lower bound: slightly above 0 to catch the reset-to-zero bug
+    // Upper bound: less than blockBeats (overshoot < one block worth)
+    CHECK(beatAfterStop > 1e-4);         // must be non-zero (bug: 0.0)
+    CHECK(beatAfterStop < blockBeats);   // must be less than one block (sane overshoot)
+}
