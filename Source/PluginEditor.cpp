@@ -4054,7 +4054,6 @@ void PluginEditor::resized()
             lfoXSisterAttenSlider_.setVisible(xHasTarget);
             if (xHasTarget)
             {
-                lfoXSisterBox_.changeItemText(1, "None");
                 lfoXSisterBox_.changeItemText(2, "Rate");
                 lfoXSisterBox_.changeItemText(3, "Phase");
                 lfoXSisterBox_.changeItemText(4, "Level");
@@ -4064,13 +4063,15 @@ void PluginEditor::resized()
             }
             else
             {
-                lfoXSisterBox_.changeItemText(1, "Sister: None");
                 lfoXSisterBox_.changeItemText(2, "Sister: Rate");
                 lfoXSisterBox_.changeItemText(3, "Sister: Phase");
                 lfoXSisterBox_.changeItemText(4, "Sister: Level");
                 lfoXSisterBox_.changeItemText(5, "Sister: Dist");
                 lfoXSisterAttenSlider_.setBounds({});
             }
+            // Force combo to re-fetch display text after changeItemText
+            lfoXSisterBox_.setSelectedId(lfoXSisterBox_.getSelectedId(),
+                                         juce::dontSendNotification);
             lfoXSisterBox_.setBounds(row);
         }
         col.removeFromTop(4);
@@ -4177,7 +4178,6 @@ void PluginEditor::resized()
             lfoYSisterAttenSlider_.setVisible(yHasTarget);
             if (yHasTarget)
             {
-                lfoYSisterBox_.changeItemText(1, "None");
                 lfoYSisterBox_.changeItemText(2, "Rate");
                 lfoYSisterBox_.changeItemText(3, "Phase");
                 lfoYSisterBox_.changeItemText(4, "Level");
@@ -4187,13 +4187,15 @@ void PluginEditor::resized()
             }
             else
             {
-                lfoYSisterBox_.changeItemText(1, "Sister: None");
                 lfoYSisterBox_.changeItemText(2, "Sister: Rate");
                 lfoYSisterBox_.changeItemText(3, "Sister: Phase");
                 lfoYSisterBox_.changeItemText(4, "Sister: Level");
                 lfoYSisterBox_.changeItemText(5, "Sister: Dist");
                 lfoYSisterAttenSlider_.setBounds({});
             }
+            // Force combo to re-fetch display text after changeItemText
+            lfoYSisterBox_.setSelectedId(lfoYSisterBox_.getSelectedId(),
+                                         juce::dontSendNotification);
             lfoYSisterBox_.setBounds(row);
         }
         col.removeFromTop(4);
