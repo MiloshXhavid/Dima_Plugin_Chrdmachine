@@ -3130,6 +3130,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     styleCombo(arpLengthBox_);
     addAndMakeVisible(arpLengthBox_);
     arpLengthAtt_ = std::make_unique<ComboAtt>(p.apvts, "arpLength", arpLengthBox_);
+    arpLengthBox_.onChange = [this] { repaint(arpBlockBounds_); };
 
     // ── LFO X panel ───────────────────────────────────────────────────────────
     // Shape ComboBox

@@ -1956,10 +1956,10 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             }
 
             if (seqLen == 0) continue;
-            if (arpStep_ >= seqLen) arpStep_ = 0;
+            if (arpStep_ >= arpLen) arpStep_ = 0;
 
-            const int voice = seq[arpStep_];
-            arpStep_ = (arpStep_ + 1) % seqLen;
+            const int voice = seq[arpStep_ % seqLen];
+            arpStep_ = (arpStep_ + 1) % arpLen;
 
             // Store current step for UI highlighting
             arpCurrentStep_.store(patStep, std::memory_order_relaxed);
