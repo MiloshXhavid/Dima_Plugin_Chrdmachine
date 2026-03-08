@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "CustomCcRoutingHelpers.h"
 #include <cmath>
 
 // ─── Parameter IDs ────────────────────────────────────────────────────────────
@@ -224,6 +225,18 @@ PluginProcessor::createParameterLayout()
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         ParamID::filterYOffset, "MOD FIX Y",
         juce::NormalisableRange<float>(-50.0f, 50.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "lfoXCustomCc", "LFO X Custom CC",
+        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 74.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "lfoYCustomCc", "LFO Y Custom CC",
+        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 71.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "filterXCustomCc", "Filter X Custom CC",
+        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 74.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        "filterYCustomCc", "Filter Y Custom CC",
+        juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 71.0f));
     addInt  (ParamID::filterMidiCh, "Filter MIDI Channel",  1, 16, 1);
     {
         // X: 0=CC74, 1=CC12, 2=CC71, 3=CC76, 4=LFO-X Freq, 5=LFO-X Phase, 6=LFO-X Level, 7=Gate
@@ -231,20 +244,24 @@ PluginProcessor::createParameterLayout()
         // X/Y: 0-17=CC (shared list), 18=direct LFO Freq, 19=Phase, 20=Level, 21=Gate,
         //      22=cross LFO Freq, 23=cross LFO Phase, 24=cross LFO Level
         static const juce::StringArray kFilterCcChoices {
-            "CC1 \xe2\x80\x93 Mod Wheel",   "CC2 \xe2\x80\x93 Breath",       "CC5 \xe2\x80\x93 Portamento",
-            "CC7 \xe2\x80\x93 Volume",       "CC10 \xe2\x80\x93 Pan",          "CC11 \xe2\x80\x93 Expression",
-            "CC12 \xe2\x80\x93 VCF LFO",     "CC16 \xe2\x80\x93 GenPurp 1",   "CC17 \xe2\x80\x93 GenPurp 2",
-            "CC71 \xe2\x80\x93 Resonance",   "CC72 \xe2\x80\x93 Release",      "CC73 \xe2\x80\x93 Attack",
-            "CC74 \xe2\x80\x93 Filter Cut",  "CC75 \xe2\x80\x93 Decay",        "CC76 \xe2\x80\x93 Vibrato Rate",
-            "CC77 \xe2\x80\x93 Vibrato Depth","CC91 \xe2\x80\x93 Reverb",      "CC93 \xe2\x80\x93 Chorus" };
-        juce::StringArray xModes = kFilterCcChoices;
-        xModes.addArray(juce::StringArray { "LFO-X Freq", "LFO-X Phase", "LFO-X Level", "Gate Length",
-                                            "LFO-Y Freq", "LFO-Y Phase", "LFO-Y Level" });
-        juce::StringArray yModes = kFilterCcChoices;
-        yModes.addArray(juce::StringArray { "LFO-Y Freq", "LFO-Y Phase", "LFO-Y Level", "Gate Length",
-                                            "LFO-X Freq", "LFO-X Phase", "LFO-X Level" });
-        addChoice("filterXMode", "Left Stick X Mode", xModes, 9);  // default: CC71 Resonance (index 9)
-        addChoice("filterYMode", "Left Stick Y Mode", yModes, 12); // default: CC74 Filter Cut (index 12)
+            "CC1 - Mod Wheel",   "CC2 - Breath",       "CC5 - Portamento",
+            "CC7 - Volume",      "CC10 - Pan",          "CC11 - Expression",
+            "CC12 - VCF LFO",    "CC16 - GenPurp 1",   "CC17 - GenPurp 2",
+            "CC71 - Resonance",  "CC72 - Release",      "CC73 - Attack",
+            "CC74 - Filter Cut", "CC75 - Decay",        "CC76 - Vibrato Rate",
+            "CC77 - Vibrato Depth","CC91 - Reverb",     "CC93 - Chorus" };
+        // LFO targets first (indices 0-6), then 18 CCs (indices 7-24).
+        // This ordering ensures backward compatibility: LFO modes stay at low indices.
+        juce::StringArray xModes { "LFO-X Freq", "LFO-X Phase", "LFO-X Level", "Gate Length",
+                                   "LFO-Y Freq", "LFO-Y Phase", "LFO-Y Level" };
+        xModes.addArray(kFilterCcChoices);
+        xModes.add("Custom CC...");   // index 25 = kCustomFilterModeIdx
+        juce::StringArray yModes { "LFO-Y Freq", "LFO-Y Phase", "LFO-Y Level", "Gate Length",
+                                   "LFO-X Freq", "LFO-X Phase", "LFO-X Level" };
+        yModes.addArray(kFilterCcChoices);
+        yModes.add("Custom CC...");   // index 25 = kCustomFilterModeIdx
+        addChoice("filterXMode", "Left Stick X Mode", xModes, 16); // default: CC71 Resonance (index 16 = 7+9)
+        addChoice("filterYMode", "Left Stick Y Mode", yModes, 19); // default: CC74 Filter Cut (index 19 = 7+12)
     }
 
     // ── MIDI routing ──────────────────────────────────────────────────────────
@@ -340,14 +357,15 @@ PluginProcessor::createParameterLayout()
         addChoice(ParamID::lfoYSubdiv, "LFO Y Subdivision", subdivs, 9);   // default: 1/4
     }
     {
-        const juce::StringArray ccDests { "Off","CC1 \xe2\x80\x93 Mod Wheel","CC2 \xe2\x80\x93 Breath",
-            "CC5 \xe2\x80\x93 Portamento","CC7 \xe2\x80\x93 Volume","CC10 \xe2\x80\x93 Pan",
-            "CC11 \xe2\x80\x93 Expression","CC12 \xe2\x80\x93 VCF LFO",
-            "CC16 \xe2\x80\x93 GenPurp 1","CC17 \xe2\x80\x93 GenPurp 2",
-            "CC71 \xe2\x80\x93 Resonance","CC72 \xe2\x80\x93 Release",
-            "CC73 \xe2\x80\x93 Attack","CC74 \xe2\x80\x93 Filter Cut","CC75 \xe2\x80\x93 Decay",
-            "CC76 \xe2\x80\x93 Vibrato Rate","CC77 \xe2\x80\x93 Vibrato Depth",
-            "CC91 \xe2\x80\x93 Reverb","CC93 \xe2\x80\x93 Chorus" };
+        const juce::StringArray ccDests { "Off","CC1 - Mod Wheel","CC2 - Breath",
+            "CC5 - Portamento","CC7 - Volume","CC10 - Pan",
+            "CC11 - Expression","CC12 - VCF LFO",
+            "CC16 - GenPurp 1","CC17 - GenPurp 2",
+            "CC71 - Resonance","CC72 - Release",
+            "CC73 - Attack","CC74 - Filter Cut","CC75 - Decay",
+            "CC76 - Vibrato Rate","CC77 - Vibrato Depth",
+            "CC91 - Reverb","CC93 - Chorus",
+            "Custom CC..." };   // index 19 = kCustomCcDestIdx
         layout.add(std::make_unique<juce::AudioParameterChoice>("lfoXCcDest","LFO X CC Dest",ccDests,0));
         layout.add(std::make_unique<juce::AudioParameterChoice>("lfoYCcDest","LFO Y CC Dest",ccDests,0));
     }
@@ -598,14 +616,6 @@ void PluginProcessor::resetNoteCount() noexcept
         looperActiveSubPitch_[v] = -1;
         subOctSounding_[v].store(false, std::memory_order_relaxed);
     }
-}
-
-// ─── processBlock helpers ─────────────────────────────────────────────────────
-
-static int ccDestToNumber(int idx)
-{
-    static const int t[] = {-1,1,2,5,7,10,11,12,16,17,71,72,73,74,75,76,77,91,93};
-    return (idx >= 0 && idx < (int)std::size(t)) ? t[idx] : -1;
 }
 
 // ─── processBlock ─────────────────────────────────────────────────────────────
@@ -966,9 +976,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         0.375, 1.0/3.0, 0.25, 1.0/6.0, 0.125, 1.0/12.0
     };
     static constexpr int kMaxSubdivIdx = 17;
-    // filterXMode / filterYMode: indices 0-17 are CC modes, 18+ are LFO/Gate modes.
-    static constexpr int kFilterCcNums[18] = { 1, 2, 5, 7, 10, 11, 12, 16, 17, 71, 72, 73, 74, 75, 76, 77, 91, 93 };
-    static constexpr int kNumFilterCcModes = 18;
+    // filterXMode / filterYMode: indices 0-6 are LFO/Gate targets, 7-24 are CC modes, 25=Custom CC.
+    // kNumLfoTargetModes, kFilterCcNums, kNumFilterCcModes are in CustomCcRoutingHelpers.h.
     {
         const bool  xEnabled = *apvts.getRawParameterValue(ParamID::lfoXEnabled) > 0.5f;
         const bool  yEnabled = *apvts.getRawParameterValue(ParamID::lfoYEnabled) > 0.5f;
@@ -1049,7 +1058,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 const int  xCurMode = (int)apvts.getRawParameterValue("filterXMode")->load();
                 xp.subdivBeats = kLfoSubdivBeats[
                     juce::jlimit(0, kMaxSubdivIdx, (int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv))];
-                if (xp.syncMode && xCurMode == 18)
+                if (xp.syncMode && xCurMode == 0)
                     xp.subdivBeats *= lfoXSubdivMult_.load(std::memory_order_relaxed);
             }
             xp.maxCycleBeats = xp.syncMode
@@ -1109,7 +1118,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 const int  yCurMode = (int)apvts.getRawParameterValue("filterYMode")->load();
                 yp.subdivBeats = kLfoSubdivBeats[
                     juce::jlimit(0, kMaxSubdivIdx, (int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv))];
-                if (yp.syncMode && yCurMode == 18)
+                if (yp.syncMode && yCurMode == 0)
                     yp.subdivBeats *= lfoYSubdivMult_.load(std::memory_order_relaxed);
             }
             yp.maxCycleBeats = yp.syncMode
@@ -1675,7 +1684,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     {
         const int xGateMode = static_cast<int>(apvts.getRawParameterValue("filterXMode")->load());
         const int yGateMode = static_cast<int>(apvts.getRawParameterValue("filterYMode")->load());
-        const bool gateFromJoystick = (xGateMode == 21 || yGateMode == 21);
+        const bool gateFromJoystick = (xGateMode == 3 || yGateMode == 3);
         const float targetGate = gateFromJoystick
             ? gateLengthDisplay_.load(std::memory_order_relaxed)
             : apvts.getRawParameterValue("gateLength")->load();
@@ -2017,9 +2026,11 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
             const int xMode  = (int)apvts.getRawParameterValue("filterXMode")->load();
             const int yMode  = (int)apvts.getRawParameterValue("filterYMode")->load();
-            // X: 0=CC74, 1=CC12, 2=CC71, 3=CC76; Y: 0=CC71, 1=CC76, 2=CC74, 3=CC12
-            const int ccXnum = (xMode < kNumFilterCcModes) ? kFilterCcNums[xMode] : -1;
-            const int ccYnum = (yMode < kNumFilterCcModes) ? kFilterCcNums[yMode] : -1;
+            // X/Y: indices 0-6 are LFO/Gate targets (-1 = no CC); 7-24 are named CC modes; 25=Custom CC.
+            const int filterXCustom = (int)apvts.getRawParameterValue("filterXCustomCc")->load();
+            const int filterYCustom = (int)apvts.getRawParameterValue("filterYCustomCc")->load();
+            const int ccXnum = resolveFilterCcMode(xMode, filterXCustom);
+            const int ccYnum = resolveFilterCcMode(yMode, filterYCustom);
 
             if (xMode != prevXMode_) { prevCcCut_.store(-1, std::memory_order_relaxed); prevXMode_ = xMode; }
             if (yMode != prevYMode_) { prevCcRes_.store(-1, std::memory_order_relaxed); prevYMode_ = yMode; }
@@ -2161,14 +2172,14 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 const float liveX = blkInv ? rawLiveY : rawLiveX;
                 const float liveY = blkInv ? rawLiveX : rawLiveY;
 
-                if (xMode >= 18 && xMode <= 24)
+                if (xMode < kNumLfoTargetModes)
                 {
                     const float deadX = (std::abs(liveX) < kDeadzone) ? 0.0f : liveX;
                     const float stick = deadX * (xAtten / 100.0f);
 
                     switch (xMode)
                     {
-                        case 18:  // LFO-X Freq
+                        case 0:  // LFO-X Freq
                         {
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f;
                             if (syncOn)
@@ -2199,7 +2210,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             }
                             break;
                         }
-                        case 19:  // LFO-X Phase (0–360°)
+                        case 1:  // LFO-X Phase (0–360°)
                         {
                             const float base   = apvts.getRawParameterValue(ParamID::lfoXPhase)->load();
                             const float actual = juce::jlimit(0.0f, 360.0f, base + (xOffset / 50.0f) * 180.0f + stick * 180.0f);
@@ -2207,7 +2218,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoXPhaseOverride_ = actual;
                             break;
                         }
-                        case 20:  // LFO-X Level (0–1)
+                        case 2:  // LFO-X Level (0–1)
                         {
                             const float base   = apvts.getRawParameterValue(ParamID::lfoXLevel)->load();
                             const float actual = juce::jlimit(0.0f, 1.0f, base + (xOffset / 50.0f) * 0.5f + stick * 0.5f);
@@ -2215,14 +2226,14 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoXLevelOverride_ = actual;
                             break;
                         }
-                        case 21:  // Gate Length (0–1)
+                        case 3:  // Gate Length (0–1)
                         {
                             const float base   = apvts.getRawParameterValue(ParamID::gateLength)->load();
                             const float actual = juce::jlimit(0.0f, 1.0f, base + stick * 0.5f);
                             gateLengthDisplay_.store(actual, std::memory_order_relaxed);
                             break;
                         }
-                        case 22:  // LFO-Y Freq (X stick -> opposite LFO)
+                        case 4:  // LFO-Y Freq (X stick -> opposite LFO)
                         {
                             if (lfoY_.getRecState() == LfoRecState::Playback) break;
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f;
@@ -2249,7 +2260,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             }
                             break;
                         }
-                        case 23:  // LFO-Y Phase (X stick -> opposite LFO)
+                        case 5:  // LFO-Y Phase (X stick -> opposite LFO)
                         {
                             if (lfoY_.getRecState() == LfoRecState::Playback) break;
                             const float base   = apvts.getRawParameterValue(ParamID::lfoYPhase)->load();
@@ -2258,7 +2269,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoYPhaseOverride_ = actual;
                             break;
                         }
-                        case 24: // LFO-Y Level (X stick -> opposite LFO)
+                        case 6: // LFO-Y Level (X stick -> opposite LFO)
                         {
                             if (lfoY_.getRecState() == LfoRecState::Playback) break;
                             const float base   = apvts.getRawParameterValue(ParamID::lfoYLevel)->load();
@@ -2271,14 +2282,14 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     }
                 }
 
-                if (yMode >= 18 && yMode <= 24)
+                if (yMode < kNumLfoTargetModes)
                 {
                     const float deadY = (std::abs(liveY) < kDeadzone) ? 0.0f : liveY;
                     const float stick = deadY * (yAtten / 100.0f);
 
                     switch (yMode)
                     {
-                        case 18:  // LFO-Y Freq
+                        case 0:  // LFO-Y Freq
                         {
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f;
                             if (syncOn)
@@ -2306,7 +2317,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             }
                             break;
                         }
-                        case 19:  // LFO-Y Phase (0–360°)
+                        case 1:  // LFO-Y Phase (0–360°)
                         {
                             const float base   = apvts.getRawParameterValue(ParamID::lfoYPhase)->load();
                             const float actual = juce::jlimit(0.0f, 360.0f, base + (yOffset / 50.0f) * 180.0f + stick * 180.0f);
@@ -2314,7 +2325,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoYPhaseOverride_ = actual;
                             break;
                         }
-                        case 20:  // LFO-Y Level (0–1)
+                        case 2:  // LFO-Y Level (0–1)
                         {
                             const float base   = apvts.getRawParameterValue(ParamID::lfoYLevel)->load();
                             const float actual = juce::jlimit(0.0f, 1.0f, base + (yOffset / 50.0f) * 0.5f + stick * 0.5f);
@@ -2322,14 +2333,14 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoYLevelOverride_ = actual;
                             break;
                         }
-                        case 21:  // Gate Length (0–1)
+                        case 3:  // Gate Length (0–1)
                         {
                             const float base   = apvts.getRawParameterValue(ParamID::gateLength)->load();
                             const float actual = juce::jlimit(0.0f, 1.0f, base + stick * 0.5f);
                             gateLengthDisplay_.store(actual, std::memory_order_relaxed);
                             break;
                         }
-                        case 22:  // LFO-X Freq (Y stick -> opposite LFO)
+                        case 4:  // LFO-X Freq (Y stick -> opposite LFO)
                         {
                             if (lfoX_.getRecState() == LfoRecState::Playback) break;
                             const bool syncOn = *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f;
@@ -2356,7 +2367,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             }
                             break;
                         }
-                        case 23:  // LFO-X Phase (Y stick -> opposite LFO)
+                        case 5:  // LFO-X Phase (Y stick -> opposite LFO)
                         {
                             if (lfoX_.getRecState() == LfoRecState::Playback) break;
                             const float base   = apvts.getRawParameterValue(ParamID::lfoXPhase)->load();
@@ -2365,7 +2376,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoXPhaseOverride_ = actual;
                             break;
                         }
-                        case 24: // LFO-X Level (Y stick -> opposite LFO)
+                        case 6: // LFO-X Level (Y stick -> opposite LFO)
                         {
                             if (lfoX_.getRecState() == LfoRecState::Playback) break;
                             const float base   = apvts.getRawParameterValue(ParamID::lfoXLevel)->load();
@@ -2379,15 +2390,15 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 }
 
                 // Reset subdivision multiplier when not in sync-mode LFO Freq target
-                // lfoXSubdivMult_: driven by xMode==18 (X->LFO-X sync) OR yMode==22 (Y->LFO-X sync)
-                if (xMode != 18 && yMode != 22) lfoXSubdivMult_.store(1.0f, std::memory_order_relaxed);
-                // lfoYSubdivMult_: driven by yMode==18 (Y->LFO-Y sync) OR xMode==22 (X->LFO-Y sync)
-                if (yMode != 18 && xMode != 22) lfoYSubdivMult_.store(1.0f, std::memory_order_relaxed);
+                // lfoXSubdivMult_: driven by xMode==0 (X->LFO-X sync) OR yMode==4 (Y->LFO-X sync)
+                if (xMode != 0 && yMode != 4) lfoXSubdivMult_.store(1.0f, std::memory_order_relaxed);
+                // lfoYSubdivMult_: driven by yMode==0 (Y->LFO-Y sync) OR xMode==4 (X->LFO-Y sync)
+                if (yMode != 0 && xMode != 4) lfoYSubdivMult_.store(1.0f, std::memory_order_relaxed);
             }
 
             // When gate mode is selected but joystick is idle, keep gateLengthDisplay_
             // in sync with the APVTS knob so the arp Gate Length slider always works.
-            if (!liveGamepad && (xMode == 21 || yMode == 21))
+            if (!liveGamepad && (xMode == 3 || yMode == 3))
                 gateLengthDisplay_.store(
                     apvts.getRawParameterValue(ParamID::gateLength)->load(),
                     std::memory_order_relaxed);
@@ -2396,21 +2407,21 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             // so the rate slider shows the correct un-modulated position.
             if (!liveGamepad)
             {
-                if (xMode == 18 && *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f)
+                if (xMode == 0 && *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f)
                     lfoXRateDisplay_.store(
                         (float)(int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv),
                         std::memory_order_relaxed);
-                if (yMode == 18 && *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f)
+                if (yMode == 0 && *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f)
                     lfoYRateDisplay_.store(
                         (float)(int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv),
                         std::memory_order_relaxed);
                 // Cross-LFO: X stick drives LFO-Y Freq sync -> reset lfoYRateDisplay_ when idle
-                if (xMode == 22 && *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f)
+                if (xMode == 4 && *apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f)
                     lfoYRateDisplay_.store(
                         (float)(int)*apvts.getRawParameterValue(ParamID::lfoYSubdiv),
                         std::memory_order_relaxed);
                 // Cross-LFO: Y stick drives LFO-X Freq sync -> reset lfoXRateDisplay_ when idle
-                if (yMode == 22 && *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f)
+                if (yMode == 4 && *apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f)
                     lfoXRateDisplay_.store(
                         (float)(int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv),
                         std::memory_order_relaxed);
@@ -2429,7 +2440,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 // ── X mode ─────────────────────────────────────────────────────────────
                 switch (xMode)
                 {
-                    case 18:  // X -> LFO-X Freq
+                    case 0:  // X -> LFO-X Freq
                         if (!(*apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f))
                         {
                             const float base = apvts.getRawParameterValue(ParamID::lfoXRate)->load();
@@ -2440,7 +2451,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoXRateOverride_ = actual;
                         }
                         break;
-                    case 19:  // X -> LFO-X Phase
+                    case 1:  // X -> LFO-X Phase
                     {
                         const float base   = apvts.getRawParameterValue(ParamID::lfoXPhase)->load();
                         const float actual = juce::jlimit(0.0f, 360.0f, base + (xOffset / 50.0f) * 180.0f);
@@ -2448,7 +2459,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                         lfoXPhaseOverride_ = actual;
                         break;
                     }
-                    case 20:  // X -> LFO-X Level
+                    case 2:  // X -> LFO-X Level
                     {
                         const float base   = apvts.getRawParameterValue(ParamID::lfoXLevel)->load();
                         const float actual = juce::jlimit(0.0f, 1.0f, base + (xOffset / 50.0f) * 0.5f);
@@ -2456,7 +2467,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                         lfoXLevelOverride_ = actual;
                         break;
                     }
-                    case 22:  // X -> LFO-Y Freq (cross-axis)
+                    case 4:  // X -> LFO-Y Freq (cross-axis)
                         if (!(*apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f))
                         {
                             const float base = apvts.getRawParameterValue(ParamID::lfoYRate)->load();
@@ -2467,7 +2478,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoYRateOverride_ = actual;
                         }
                         break;
-                    case 23:  // X -> LFO-Y Phase (cross-axis)
+                    case 5:  // X -> LFO-Y Phase (cross-axis)
                     {
                         const float base   = apvts.getRawParameterValue(ParamID::lfoYPhase)->load();
                         const float actual = juce::jlimit(0.0f, 360.0f, base + (xOffset / 50.0f) * 180.0f);
@@ -2475,7 +2486,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                         lfoYPhaseOverride_ = actual;
                         break;
                     }
-                    case 24: // X -> LFO-Y Level (cross-axis)
+                    case 6: // X -> LFO-Y Level (cross-axis)
                     {
                         const float base   = apvts.getRawParameterValue(ParamID::lfoYLevel)->load();
                         const float actual = juce::jlimit(0.0f, 1.0f, base + (xOffset / 50.0f) * 0.5f);
@@ -2489,7 +2500,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 // ── Y mode ─────────────────────────────────────────────────────────────
                 switch (yMode)
                 {
-                    case 18:  // Y -> LFO-Y Freq
+                    case 0:  // Y -> LFO-Y Freq
                         if (!(*apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f))
                         {
                             const float base = apvts.getRawParameterValue(ParamID::lfoYRate)->load();
@@ -2500,7 +2511,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoYRateOverride_ = actual;
                         }
                         break;
-                    case 19:  // Y -> LFO-Y Phase
+                    case 1:  // Y -> LFO-Y Phase
                     {
                         const float base   = apvts.getRawParameterValue(ParamID::lfoYPhase)->load();
                         const float actual = juce::jlimit(0.0f, 360.0f, base + (yOffset / 50.0f) * 180.0f);
@@ -2508,7 +2519,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                         lfoYPhaseOverride_ = actual;
                         break;
                     }
-                    case 20:  // Y -> LFO-Y Level
+                    case 2:  // Y -> LFO-Y Level
                     {
                         const float base   = apvts.getRawParameterValue(ParamID::lfoYLevel)->load();
                         const float actual = juce::jlimit(0.0f, 1.0f, base + (yOffset / 50.0f) * 0.5f);
@@ -2516,7 +2527,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                         lfoYLevelOverride_ = actual;
                         break;
                     }
-                    case 22:  // Y -> LFO-X Freq (cross-axis)
+                    case 4:  // Y -> LFO-X Freq (cross-axis)
                         if (!(*apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f))
                         {
                             const float base = apvts.getRawParameterValue(ParamID::lfoXRate)->load();
@@ -2527,7 +2538,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                             lfoXRateOverride_ = actual;
                         }
                         break;
-                    case 23:  // Y -> LFO-X Phase (cross-axis)
+                    case 5:  // Y -> LFO-X Phase (cross-axis)
                     {
                         const float base   = apvts.getRawParameterValue(ParamID::lfoXPhase)->load();
                         const float actual = juce::jlimit(0.0f, 360.0f, base + (yOffset / 50.0f) * 180.0f);
@@ -2535,7 +2546,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                         lfoXPhaseOverride_ = actual;
                         break;
                     }
-                    case 24: // Y -> LFO-X Level (cross-axis)
+                    case 6: // Y -> LFO-X Level (cross-axis)
                     {
                         const float base   = apvts.getRawParameterValue(ParamID::lfoXLevel)->load();
                         const float actual = juce::jlimit(0.0f, 1.0f, base + (yOffset / 50.0f) * 0.5f);
@@ -2554,15 +2565,19 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const int fCh    = effectiveFilterChannel();
         const bool xOn   = *apvts.getRawParameterValue("lfoXEnabled") > 0.5f;
         const bool yOn   = *apvts.getRawParameterValue("lfoYEnabled") > 0.5f;
-        const int xCcNum = ccDestToNumber((int)*apvts.getRawParameterValue("lfoXCcDest"));
-        const int yCcNum = ccDestToNumber((int)*apvts.getRawParameterValue("lfoYCcDest"));
+        const int lfoXCustom = (int)apvts.getRawParameterValue("lfoXCustomCc")->load();
+        const int lfoYCustom = (int)apvts.getRawParameterValue("lfoYCustomCc")->load();
+        const int xCcNum = ccDestToNumber((int)*apvts.getRawParameterValue("lfoXCcDest"), lfoXCustom);
+        const int yCcNum = ccDestToNumber((int)*apvts.getRawParameterValue("lfoYCcDest"), lfoYCustom);
 
         // LFO oscillates around the joystick's current CC position rather than a fixed 64.
         // Determine which filter-joystick axis maps to each CC number.
         const int  xFMode  = (int)apvts.getRawParameterValue("filterXMode")->load();
         const int  yFMode  = (int)apvts.getRawParameterValue("filterYMode")->load();
-        const int  ccXfilt = (xFMode < kNumFilterCcModes) ? kFilterCcNums[xFMode] : -1;
-        const int  ccYfilt = (yFMode < kNumFilterCcModes) ? kFilterCcNums[yFMode] : -1;
+        const int  fxCustom = (int)apvts.getRawParameterValue("filterXCustomCc")->load();
+        const int  fyCustom = (int)apvts.getRawParameterValue("filterYCustomCc")->load();
+        const int  ccXfilt = resolveFilterCcMode(xFMode, fxCustom);
+        const int  ccYfilt = resolveFilterCcMode(yFMode, fyCustom);
         const float xFAtten  = apvts.getRawParameterValue(ParamID::filterXAtten)->load() / 100.0f;
         const float yFAtten  = apvts.getRawParameterValue(ParamID::filterYAtten)->load() / 100.0f;
         const float xFOffset = apvts.getRawParameterValue(ParamID::filterXOffset)->load();
