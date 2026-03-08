@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
-status: unknown
-stopped_at: Completed 39-01-PLAN.md — VelocityKnob+VelocitySlider, dot indicators, hover ring — build clean
-last_updated: "2026-03-08T23:19:42.867Z"
-last_activity: 2026-03-07 — v1.8 milestone completion archived
+status: in-progress
+stopped_at: Completed 39-02-PLAN.md — Phase 39 knob UX complete, UAT approved
+last_updated: "2026-03-09T00:25:00.000Z"
+last_activity: 2026-03-09 — Phase 39 knob UX (velocity drag, EMA, hover ring, 12-dot indicators) UAT approved
 progress:
   total_phases: 26
-  completed_phases: 21
+  completed_phases: 22
   total_plans: 49
-  completed_plans: 48
-  percent: 97
+  completed_plans: 49
+  percent: 100
 ---
 
 ---
@@ -319,6 +319,7 @@ Key v1.6 design decisions (locked):
 - [Phase 45]: arpLengthAtt_ uses full type in header (not ComboAtt alias) — alias not visible before its declaration site
 - [Phase 45]: TIE suppression checks upcoming step at (arpStep_+1)%arpLen — not the current step; arpStep wraps at arpLen (not seqLen) for pattern index
 - [Phase 39-01]: VelocityKnob/VelocitySlider defined before PluginEditor in header; ScaleSnapSlider rebased to VelocityKnob; isDotMode check uses interval==1.0 guard; hover ring drawn last for correct z-order
+- [Phase 39-02]: Build and install handled by cmake post-build step; all 4 UAT success criteria (velocity drag, EMA smoothing, hover ring, 12-dot indicators) approved by human tester 2026-03-09
 
 ### Pending Todos
 
@@ -330,6 +331,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T23:19:42.862Z
-Stopped at: Completed 39-01-PLAN.md — VelocityKnob+VelocitySlider, dot indicators, hover ring — build clean
-Next step: Phases 34-37 (cross-LFO modulation, arp subdivision, arp trigger sources, looper fix) for v1.8 completion.
+Last session: 2026-03-09T00:25:00.000Z
+Stopped at: Completed 39-02-PLAN.md — build+install+UAT approved, Phase 39 complete
+Next step: Continue v1.9 Living Interface — next phase after Phase 39.

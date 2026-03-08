@@ -405,8 +405,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 39-01-PLAN.md — VelocityKnob + VelocitySlider classes, ScaleSnapSlider base change, drawRotarySlider dots + hover ring, wire all in-scope members
-- [ ] 39-02-PLAN.md — Build + install + UAT checkpoint (all 4 SC)
+- [x] 39-01-PLAN.md — VelocityKnob + VelocitySlider classes, ScaleSnapSlider base change, drawRotarySlider dots + hover ring, wire all in-scope members (completed 2026-03-09)
+- [x] 39-02-PLAN.md — Build + install + UAT checkpoint (all 4 SC) (completed 2026-03-09)
 
 #### Phase 40: Pitch Axis Crosshair Visualization
 **Goal**: Two subtle lines extend from the cursor to the joystick pad edges with quantized note names — giving the player immediate pitch feedback without cluttering the space visual.
