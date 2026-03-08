@@ -3,6 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
 status: unknown
+stopped_at: Completed 45-01-PLAN.md — 10 new APVTS params, randomSyncMode 3-state, arp step gating, migration shim, build clean
+last_updated: "2026-03-08T21:39:23.128Z"
+last_activity: 2026-03-07 — v1.8 milestone completion archived
+progress:
+  total_phases: 26
+  completed_phases: 20
+  total_plans: 47
+  completed_plans: 46
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.9
+milestone_name: Living Interface
+status: unknown
 stopped_at: Completed 44-38-3-01-PLAN.md
 last_updated: "2026-03-08T19:30:57.177Z"
 last_activity: 2026-03-07 — v1.8 milestone completion archived
@@ -280,6 +295,10 @@ Key v1.6 design decisions (locked):
 - [Phase 38.2-custom-cc-routing]: filterXCustomCcParamId_ / filterYCustomCcParamId_ strings swapped on INV toggle so physical labels write to the correct APVTS param after axis swap
 - [Phase 44-38-3]: APVTS param tests restructured to skip PluginProcessor instantiation — test target has no JUCE audio processor infrastructure; use inline constant checks instead
 - [Phase 44-38-3]: ATT label drawn inline via g.drawText inside paint() at slider left edge to avoid 34px-left overlap with combo box
+- Phase 45 added: Arpeggiator Step Patterns + UI Redesign + LFO Heart Preset (8-step grid with ON/TIE/OFF, arp length 1-8, arp UI layout overhaul, RND SYNC button polish, LFO heart preset)
+- [Phase 45]: randomSyncMode==0=FREE, ==1=INT, ==2=DAW replaces randomClockSync bool; old bool true maps to INT(1)
+- [Phase 45]: arpLength APVTS choice index+1=actual length; arpStepState0..7 read as patStep=arpStep_%arpLen
+- [Phase 45]: TIE isTie=stepState==1&&arpActivePitch_>=0; OFF sends immediate noteOff+continue; ON uses existing note-on path
 
 ### Pending Todos
 
@@ -291,6 +310,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T19:30:52.421Z
-Stopped at: Completed 44-38-3-01-PLAN.md
+Last session: 2026-03-08T21:39:16.998Z
+Stopped at: Completed 45-01-PLAN.md — 10 new APVTS params, randomSyncMode 3-state, arp step gating, migration shim, build clean
 Next step: Phases 34-37 (cross-LFO modulation, arp subdivision, arp trigger sources, looper fix) for v1.8 completion.

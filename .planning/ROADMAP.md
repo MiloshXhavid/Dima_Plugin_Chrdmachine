@@ -177,7 +177,7 @@ Plans:
 **Goal:** Add an 8-step pattern grid (ON/TIE/OFF per cell) to the arpeggiator within the unchanged 84px box, redesign the controls row to 4 equal-width items (Rate/Order/LEN/Gate), and convert RND SYNC to a 3-state cycling button (FREE/INT/DAW).
 **Requirements**: ARP-01, ARP-02, ARP-03
 **Depends on:** Phase 44
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 45-01-PLAN.md — Processor: 10 new APVTS params (arpStepState0..7, arpLength, randomSyncMode), TIE/OFF step loop, preset migration shim, TriggerSystem bool-to-int migration
