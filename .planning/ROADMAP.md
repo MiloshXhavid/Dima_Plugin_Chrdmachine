@@ -162,6 +162,16 @@ Plans:
 - [x] 16-01-PLAN.md — Update .iss for v1.4, rebuild installer, smoke test checkpoint (completed 2026-02-26)
 - [x] 16-02-PLAN.md — Retag v1.4 to HEAD, create GitHub release, desktop backup (completed 2026-02-26)
 
+### Phase 44: 38.3 Sister LFO attenuation inline slider
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 43
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 44 to break down)
+
 ---
 
 ### Phase 17: Bug Fixes
@@ -362,6 +372,14 @@ Plans:
 - [ ] 38.2-02-PLAN.md — Processor: CustomCcRoutingHelpers.h, 4 APVTS params, StringArray extensions, kFilterCcNums[] OOB guards
 - [ ] 38.2-03-PLAN.md — Editor: 4 inline Label members, onChange show/hide, resized() row-split, timerCallback "CC [n]" sync, INV swap extension
 - [ ] 38.2-04-PLAN.md — Build + install + human smoke test (5 scenarios: custom entry, MIDI routing, preset round-trip, INV swap, all 4 combos)
+
+### Phase 38.3: Sister LFO Attenuation Inline Slider (INSERTED)
+
+**Goal:** When a Sister LFO cross-modulation target is selected, shrink the Sister combo to half-width and show a bipolar attenuator slider (−1..+1) in the freed right half. "None" selected = full-width combo, slider hidden.
+**Depends on:** Phase 38.2
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 38.3 to break down)
 
 #### Phase 39: Knob UX — Velocity Drag & Visual Indicators
 **Goal**: Knob interaction feels professional — slow drag gives fine control, fast drag sweeps broadly, hovering shows a subtle highlight, and octave/interval buttons display 12 subdivision dots instead of the red ring indicator.

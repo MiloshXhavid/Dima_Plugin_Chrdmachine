@@ -193,6 +193,7 @@ v1.7 Visual + Gamepad   [███░░░░░░░] Phase 31+32+33.1 code c
 ### Roadmap Evolution
 
 - Phase 38.1 inserted after Phase 38: Modulation Polish and CC Routing (URGENT) — custom CC dropdown, BPM editable field, additive filter CC model
+- Phase 38.3 inserted after Phase 38.2: Sister LFO attenuator inline slider — bipolar −1..+1, inline with combo, hidden when None selected
 - v1.5 ended at Phase 25; v1.6 starts at Phase 26
 - v1.6 roadmap: 5 phases (26-30), 16 requirements (14 feature + 2 distribution)
 
