@@ -2942,7 +2942,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             param->setValueNotifyingHost(param->convertTo0to1((float)val));
         filterYModeBox_.setText("CC " + juce::String(val), juce::dontSendNotification);
     };
-    addAndMakeVisible(filterYCustomCcLabel_);
+    addChildComponent(filterYCustomCcLabel_);
 
     filterYModeBox_.onChange = [this]() {
         const bool customActive = (filterYModeBox_.getSelectedId() == 26);
@@ -3003,7 +3003,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             param->setValueNotifyingHost(param->convertTo0to1((float)val));
         filterXModeBox_.setText("CC " + juce::String(val), juce::dontSendNotification);
     };
-    addAndMakeVisible(filterXCustomCcLabel_);
+    addChildComponent(filterXCustomCcLabel_);
 
     filterXModeBox_.onChange = [this]() {
         const bool customActive = (filterXModeBox_.getSelectedId() == 26);
@@ -3193,7 +3193,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             param->setValueNotifyingHost(param->convertTo0to1((float)val));
         lfoXCcDestBox_.setText("CC " + juce::String(val), juce::dontSendNotification);
     };
-    addAndMakeVisible(lfoXCustomCcLabel_);
+    addChildComponent(lfoXCustomCcLabel_);
 
     lfoXCcDestBox_.onChange = [this]() {
         const bool customActive = (lfoXCcDestBox_.getSelectedId() == 20);
@@ -3379,7 +3379,7 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             param->setValueNotifyingHost(param->convertTo0to1((float)val));
         lfoYCcDestBox_.setText("CC " + juce::String(val), juce::dontSendNotification);
     };
-    addAndMakeVisible(lfoYCustomCcLabel_);
+    addChildComponent(lfoYCustomCcLabel_);
 
     lfoYCcDestBox_.onChange = [this]() {
         const bool customActive = (lfoYCcDestBox_.getSelectedId() == 20);
