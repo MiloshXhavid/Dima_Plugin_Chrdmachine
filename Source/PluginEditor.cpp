@@ -4069,9 +4069,6 @@ void PluginEditor::resized()
                 lfoXSisterBox_.changeItemText(5, "Sister: Dist");
                 lfoXSisterAttenSlider_.setBounds({});
             }
-            // Force combo to re-fetch display text after changeItemText
-            lfoXSisterBox_.setSelectedId(lfoXSisterBox_.getSelectedId(),
-                                         juce::dontSendNotification);
             lfoXSisterBox_.setBounds(row);
         }
         col.removeFromTop(4);
@@ -4193,9 +4190,6 @@ void PluginEditor::resized()
                 lfoYSisterBox_.changeItemText(5, "Sister: Dist");
                 lfoYSisterAttenSlider_.setBounds({});
             }
-            // Force combo to re-fetch display text after changeItemText
-            lfoYSisterBox_.setSelectedId(lfoYSisterBox_.getSelectedId(),
-                                         juce::dontSendNotification);
             lfoYSisterBox_.setBounds(row);
         }
         col.removeFromTop(4);
@@ -4657,14 +4651,6 @@ void PluginEditor::paint(juce::Graphics& g)
         drawSliderLabel(lfoXPhaseSlider_.getBounds(), "Phase");
         drawSliderLabel(lfoXLevelSlider_.getBounds(), "Level");
         drawSliderLabel(lfoXDistSlider_.getBounds(),  "Dist");
-        if (lfoXSisterAttenSlider_.isVisible())
-        {
-            g.setFont(juce::Font(9.0f));
-            g.setColour(Clr::textDim);
-            const auto sb = lfoXSisterAttenSlider_.getBounds();
-            g.drawText("Att", sb.getX() + 2, sb.getY(), 18, sb.getHeight(),
-                       juce::Justification::centredLeft, false);
-        }
     }
     if (!lfoYPanelBounds_.isEmpty())
     {
@@ -4672,14 +4658,6 @@ void PluginEditor::paint(juce::Graphics& g)
         drawSliderLabel(lfoYPhaseSlider_.getBounds(), "Phase");
         drawSliderLabel(lfoYLevelSlider_.getBounds(), "Level");
         drawSliderLabel(lfoYDistSlider_.getBounds(),  "Dist");
-        if (lfoYSisterAttenSlider_.isVisible())
-        {
-            g.setFont(juce::Font(9.0f));
-            g.setColour(Clr::textDim);
-            const auto sb = lfoYSisterAttenSlider_.getBounds();
-            g.drawText("Att", sb.getX() + 2, sb.getY(), 18, sb.getHeight(),
-                       juce::Justification::centredLeft, false);
-        }
     }
 
     // ── LFO waveform visualizers ──────────────────────────────────────────────
