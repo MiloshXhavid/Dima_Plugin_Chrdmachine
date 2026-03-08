@@ -1902,8 +1902,19 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
         for (int s = 0; s < stepsToFire; ++s)
         {
-            // Cut any still-sounding note at step boundary.
-            if (arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
+            // ── Read step-pattern state BEFORE step-boundary noteOff ──────────────
+            const int arpLen  = juce::jlimit(1, 8,
+                static_cast<int>(*apvts.getRawParameterValue("arpLength")) + 1);
+            const int patStep = arpStep_ % arpLen;
+            const int stepState = static_cast<int>(
+                *apvts.getRawParameterValue("arpStepState" + juce::String(patStep)));
+            // stepState: 0=ON, 1=TIE, 2=OFF
+
+            // TIE with an active note: suppress step-boundary noteOff (sustain through this step)
+            const bool isTie = (stepState == 1) && (arpActivePitch_ >= 0);
+
+            // Cut any still-sounding note at step boundary — skipped for TIE.
+            if (!isTie && arpActivePitch_ >= 0 && arpActiveVoice_ >= 0)
             {
                 const int ch = arpActiveCh_;
                 if (noteCount_[ch - 1][arpActivePitch_] > 0 &&
@@ -1950,9 +1961,35 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             const int voice = seq[arpStep_];
             arpStep_ = (arpStep_ + 1) % seqLen;
 
+            // Store current step for UI highlighting
+            arpCurrentStep_.store(patStep, std::memory_order_relaxed);
+
             // Skip voices where a pad is held (pad has priority).
             if (trigger_.isGateOpen(voice)) continue;
 
+            // ── Apply step state ──────────────────────────────────────────────────
+            if (stepState == 2)  // OFF: immediate note-off + skip note-on
+            {
+                if (arpActivePitch_ >= 0 && arpActiveCh_ > 0)
+                {
+                    if (noteCount_[arpActiveCh_ - 1][arpActivePitch_] > 0 &&
+                        --noteCount_[arpActiveCh_ - 1][arpActivePitch_] == 0)
+                        midi.addEvent(juce::MidiMessage::noteOff(arpActiveCh_, arpActivePitch_, (uint8_t)0), 0);
+                    arpActivePitch_ = -1;
+                    arpActiveVoice_ = -1;
+                    arpCurrentVoice_.store(-1, std::memory_order_relaxed);
+                    arpNoteOffRemaining_ = 0.0;
+                }
+                continue;
+            }
+
+            if (isTie)  // TIE: extend gate, no re-trigger
+            {
+                arpNoteOffRemaining_ = gateBeats;
+                continue;
+            }
+
+            // stepState == ON (or TIE with no previous note → treat as ON) → existing note-on path
             const int pitch = heldPitch_[voice];
             const int ch = effectiveChannel(voice);
             arpActiveCh_ = ch;
@@ -2652,7 +2689,18 @@ void PluginProcessor::setStateInformation(const void* data, int size)
 {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, size));
     if (xml && xml->hasTagName(apvts.state.getType()))
+    {
+        // ── Migration: randomClockSync (bool) → randomSyncMode (Choice 0=FREE/1=INT/2=DAW)
+        if (auto* oldParam = xml->getChildByAttribute("id", "randomClockSync"))
+        {
+            const bool wasSync = (oldParam->getDoubleAttribute("value") > 0.5);
+            xml->removeChildElement(oldParam, true);
+            auto* newParam = xml->createNewChildElement("PARAM");
+            newParam->setAttribute("id", "randomSyncMode");
+            newParam->setAttribute("value", wasSync ? 1.0 : 0.0);  // INT=1, FREE=0
+        }
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
+    }
 }
 
 // ─── Factory ──────────────────────────────────────────────────────────────────

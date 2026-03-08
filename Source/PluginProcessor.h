@@ -172,6 +172,7 @@ public:
     // -1 = no arp note sounding; 0-3 = voice currently being arped
     std::atomic<int> arpCurrentVoice_ { -1 };
     int getArpCurrentVoice() const { return arpCurrentVoice_.load(std::memory_order_relaxed); }
+    std::atomic<int> arpCurrentStep_  { 0 };   // audio thread writes; timer reads for grid highlight
 
     // Looper voice active: true while the looper has a gate-on note sounding for this voice.
     // Read by UI for pad highlight (best-effort, display-only).
