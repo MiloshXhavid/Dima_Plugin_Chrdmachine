@@ -164,13 +164,13 @@ Plans:
 
 ### Phase 44: 38.3 Sister LFO attenuation inline slider
 
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 43
-**Plans:** 0 plans
+**Goal:** When a Sister LFO cross-modulation target is selected, shrink the Sister combo to half-width and show a bipolar attenuator slider (-1..+1) in the freed right half. "None" selected = full-width combo, slider hidden.
+**Requirements**: REQ-01, REQ-02, REQ-03, REQ-04, REQ-05, REQ-06, REQ-07, REQ-08
+**Depends on:** Phase 38.2
+**Plans:** 1 plan
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 44 to break down)
+- [ ] 44-38-3-01-PLAN.md — Processor params + Editor slider construction/layout/paint + drawLinearSlider bipolar fill + Catch2 tests + UAT checkpoint
 
 ---
 
@@ -375,11 +375,13 @@ Plans:
 
 ### Phase 38.3: Sister LFO Attenuation Inline Slider (INSERTED)
 
-**Goal:** When a Sister LFO cross-modulation target is selected, shrink the Sister combo to half-width and show a bipolar attenuator slider (−1..+1) in the freed right half. "None" selected = full-width combo, slider hidden.
+**Goal:** When a Sister LFO cross-modulation target is selected, shrink the Sister combo to half-width and show a bipolar attenuator slider (-1..+1) in the freed right half. "None" selected = full-width combo, slider hidden.
+**Requirements**: REQ-01, REQ-02, REQ-03, REQ-04, REQ-05, REQ-06, REQ-07, REQ-08
 **Depends on:** Phase 38.2
+**Plans:** 1 plan
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 38.3 to break down)
+- [ ] 44-38-3-01-PLAN.md — Processor params + Editor slider construction/layout/paint + drawLinearSlider bipolar fill + Catch2 tests + UAT checkpoint
 
 #### Phase 39: Knob UX — Velocity Drag & Visual Indicators
 **Goal**: Knob interaction feels professional — slow drag gives fine control, fast drag sweeps broadly, hovering shows a subtle highlight, and octave/interval buttons display 12 subdivision dots instead of the red ring indicator.
