@@ -374,6 +374,8 @@ PluginProcessor::createParameterLayout()
         layout.add(std::make_unique<juce::AudioParameterChoice>("lfoXSister","LFO X Sister Dest",sisterDests,0));
         layout.add(std::make_unique<juce::AudioParameterChoice>("lfoYSister","LFO Y Sister Dest",sisterDests,0));
     }
+    addFloat("lfoXSisterAtten", "LFO X Sister Atten", -1.0f, 1.0f, 1.0f);
+    addFloat("lfoYSisterAtten", "LFO Y Sister Atten", -1.0f, 1.0f, 1.0f);
 
     // ── Sub Octave (Phase 19) ─────────────────────────────────────────────────
     addBool("subOct0", "Sub Oct Root",    false);
@@ -994,6 +996,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         const float prevYRampOut = lfoYRampOut_;
         const int xSisterDest = (int)*apvts.getRawParameterValue("lfoXSister"); // X→Y target
         const int ySisterDest = (int)*apvts.getRawParameterValue("lfoYSister"); // Y→X target
+        const float xSisterAtten = *apvts.getRawParameterValue("lfoXSisterAtten");
+        const float ySisterAtten = *apvts.getRawParameterValue("lfoYSisterAtten");
 
         // Rate range used for free-mode normalized modulation (mirrors createParameterLayout).
         static const juce::NormalisableRange<float> kLfoRateRange(0.01f, 20.0f, 0.0f, 0.35f);
@@ -1081,7 +1085,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     : 0.0f;
             }
             // Sister mod: LFO Y modulates LFO X using last frame's ramped Y output.
-            applySisterMod(xp, ySisterDest, prevYRampOut);
+            applySisterMod(xp, ySisterDest, prevYRampOut * ySisterAtten);
             xTarget = lfoX_.process(xp);
             lfoXOutputDisplay_.store(xTarget, std::memory_order_relaxed);
         }
@@ -1141,7 +1145,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     : 0.0f;
             }
             // Sister mod: LFO X modulates LFO Y using this frame's xTarget (same-frame, clean).
-            applySisterMod(yp, xSisterDest, xTarget);
+            applySisterMod(yp, xSisterDest, xTarget * xSisterAtten);
             yTarget = lfoY_.process(yp);
             lfoYOutputDisplay_.store(yTarget, std::memory_order_relaxed);
         }
