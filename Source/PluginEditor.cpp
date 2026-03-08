@@ -2641,7 +2641,18 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     bpmDisplayLabel_.setText("120.0 BPM", juce::dontSendNotification);
     bpmDisplayLabel_.setJustificationType(juce::Justification::centred);
     bpmDisplayLabel_.setFont(juce::Font(11.0f));
-    bpmDisplayLabel_.setColour(juce::Label::textColourId, Clr::text.withAlpha(0.75f));
+    bpmDisplayLabel_.setColour(juce::Label::textColourId, Clr::textDim);
+    bpmDisplayLabel_.setColour(juce::Label::backgroundWhenEditingColourId, Clr::panel.darker(0.3f));
+    bpmDisplayLabel_.setColour(juce::Label::textWhenEditingColourId, Clr::text);
+    bpmDisplayLabel_.setEditable(false, true);  // double-click to edit
+    bpmDisplayLabel_.setTooltip("Free BPM  -  double-click to type a value (30-240)");
+    bpmDisplayLabel_.onTextChange = [this]() {
+        const float val = bpmDisplayLabel_.getText().retainCharacters("0123456789.").getFloatValue();
+        if (val >= 30.0f && val <= 240.0f) {
+            auto* param = proc_.apvts.getParameter("randomFreeTempo");
+            param->setValueNotifyingHost(param->convertTo0to1(val));
+        }
+    };
     addAndMakeVisible(bpmDisplayLabel_);
 
     loopSubdivBox_.addItem("3/4", 1); loopSubdivBox_.addItem("4/4", 2);
@@ -2883,68 +2894,127 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(panicBtn_);
 
     // Gamepad left-stick axis mode toggles — pill style: left=default, right=alt
-    // Y: 0-17=CC (IDs 1-18), 18=LFO-Y Freq (ID 19) .. 24=LFO-X Level (ID 25)
-    filterYModeBox_.addItem("CC1 \xe2\x80\x93 Mod Wheel",    1);
-    filterYModeBox_.addItem("CC2 \xe2\x80\x93 Breath",        2);
-    filterYModeBox_.addItem("CC5 \xe2\x80\x93 Portamento",    3);
-    filterYModeBox_.addItem("CC7 \xe2\x80\x93 Volume",        4);
-    filterYModeBox_.addItem("CC10 \xe2\x80\x93 Pan",          5);
-    filterYModeBox_.addItem("CC11 \xe2\x80\x93 Expression",   6);
-    filterYModeBox_.addItem("CC12 \xe2\x80\x93 VCF LFO",      7);
-    filterYModeBox_.addItem("CC16 \xe2\x80\x93 GenPurp 1",    8);
-    filterYModeBox_.addItem("CC17 \xe2\x80\x93 GenPurp 2",    9);
-    filterYModeBox_.addItem("CC71 \xe2\x80\x93 Resonance",    10);
-    filterYModeBox_.addItem("CC72 \xe2\x80\x93 Release",      11);
-    filterYModeBox_.addItem("CC73 \xe2\x80\x93 Attack",       12);
-    filterYModeBox_.addItem("CC74 \xe2\x80\x93 Filter Cut",   13);
-    filterYModeBox_.addItem("CC75 \xe2\x80\x93 Decay",        14);
-    filterYModeBox_.addItem("CC76 \xe2\x80\x93 Vibrato Rate", 15);
-    filterYModeBox_.addItem("CC77 \xe2\x80\x93 Vibrato Depth",16);
-    filterYModeBox_.addItem("CC91 \xe2\x80\x93 Reverb",       17);
-    filterYModeBox_.addItem("CC93 \xe2\x80\x93 Chorus",       18);
-    filterYModeBox_.addItem("LFO-Y Freq",                     19);
-    filterYModeBox_.addItem("LFO-Y Phase",                    20);
-    filterYModeBox_.addItem("LFO-Y Level",                    21);
-    filterYModeBox_.addItem("Gate Length",                    22);
-    filterYModeBox_.addItem("LFO-X Freq",                     23);
-    filterYModeBox_.addItem("LFO-X Phase",                    24);
-    filterYModeBox_.addItem("LFO-X Level",                    25);
-    filterYModeBox_.setTooltip("Left Stick Y Mode  -  CC1-CC93 range, LFO-Y Freq/Phase/Level, Gate Length, or LFO-X Freq/Phase/Level");
+    // LFO targets first (IDs 1-7 = APVTS indices 0-6), then CCs (IDs 8-25 = APVTS indices 7-24)
+    filterYModeBox_.addItem("LFO-Y Freq",          1);
+    filterYModeBox_.addItem("LFO-Y Phase",         2);
+    filterYModeBox_.addItem("LFO-Y Level",         3);
+    filterYModeBox_.addItem("Gate Length",         4);
+    filterYModeBox_.addItem("LFO-X Freq",          5);
+    filterYModeBox_.addItem("LFO-X Phase",         6);
+    filterYModeBox_.addItem("LFO-X Level",         7);
+    filterYModeBox_.addItem("CC1 - Mod Wheel",     8);
+    filterYModeBox_.addItem("CC2 - Breath",        9);
+    filterYModeBox_.addItem("CC5 - Portamento",    10);
+    filterYModeBox_.addItem("CC7 - Volume",        11);
+    filterYModeBox_.addItem("CC10 - Pan",          12);
+    filterYModeBox_.addItem("CC11 - Expression",   13);
+    filterYModeBox_.addItem("CC12 - VCF LFO",      14);
+    filterYModeBox_.addItem("CC16 - GenPurp 1",    15);
+    filterYModeBox_.addItem("CC17 - GenPurp 2",    16);
+    filterYModeBox_.addItem("CC71 - Resonance",    17);
+    filterYModeBox_.addItem("CC72 - Release",      18);
+    filterYModeBox_.addItem("CC73 - Attack",       19);
+    filterYModeBox_.addItem("CC74 - Filter Cut",   20);
+    filterYModeBox_.addItem("CC75 - Decay",        21);
+    filterYModeBox_.addItem("CC76 - Vibrato Rate", 22);
+    filterYModeBox_.addItem("CC77 - Vibrato Depth",23);
+    filterYModeBox_.addItem("CC91 - Reverb",       24);
+    filterYModeBox_.addItem("CC93 - Chorus",       25);
+    filterYModeBox_.addItem("Custom CC...",        26);
+    filterYModeBox_.setTooltip("Left Stick Y Mode  -  LFO-Y/X Freq/Phase/Level, Gate Length, or CC1-CC93");
     styleCombo(filterYModeBox_);
     addAndMakeVisible(filterYModeBox_);
     filterYModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterYMode", filterYModeBox_);
 
-    // X: 0-17=CC (IDs 1-18), 18=LFO-X Freq (ID 19) .. 24=LFO-Y Level (ID 25)
-    filterXModeBox_.addItem("CC1 \xe2\x80\x93 Mod Wheel",    1);
-    filterXModeBox_.addItem("CC2 \xe2\x80\x93 Breath",        2);
-    filterXModeBox_.addItem("CC5 \xe2\x80\x93 Portamento",    3);
-    filterXModeBox_.addItem("CC7 \xe2\x80\x93 Volume",        4);
-    filterXModeBox_.addItem("CC10 \xe2\x80\x93 Pan",          5);
-    filterXModeBox_.addItem("CC11 \xe2\x80\x93 Expression",   6);
-    filterXModeBox_.addItem("CC12 \xe2\x80\x93 VCF LFO",      7);
-    filterXModeBox_.addItem("CC16 \xe2\x80\x93 GenPurp 1",    8);
-    filterXModeBox_.addItem("CC17 \xe2\x80\x93 GenPurp 2",    9);
-    filterXModeBox_.addItem("CC71 \xe2\x80\x93 Resonance",    10);
-    filterXModeBox_.addItem("CC72 \xe2\x80\x93 Release",      11);
-    filterXModeBox_.addItem("CC73 \xe2\x80\x93 Attack",       12);
-    filterXModeBox_.addItem("CC74 \xe2\x80\x93 Filter Cut",   13);
-    filterXModeBox_.addItem("CC75 \xe2\x80\x93 Decay",        14);
-    filterXModeBox_.addItem("CC76 \xe2\x80\x93 Vibrato Rate", 15);
-    filterXModeBox_.addItem("CC77 \xe2\x80\x93 Vibrato Depth",16);
-    filterXModeBox_.addItem("CC91 \xe2\x80\x93 Reverb",       17);
-    filterXModeBox_.addItem("CC93 \xe2\x80\x93 Chorus",       18);
-    filterXModeBox_.addItem("LFO-X Freq",                     19);
-    filterXModeBox_.addItem("LFO-X Phase",                    20);
-    filterXModeBox_.addItem("LFO-X Level",                    21);
-    filterXModeBox_.addItem("Gate Length",                    22);
-    filterXModeBox_.addItem("LFO-Y Freq",                     23);
-    filterXModeBox_.addItem("LFO-Y Phase",                    24);
-    filterXModeBox_.addItem("LFO-Y Level",                    25);
-    filterXModeBox_.setTooltip("Left Stick X Mode  -  CC1-CC93 range, LFO-X Freq/Phase/Level, Gate Length, or LFO-Y Freq/Phase/Level");
+    // Custom CC inline label for Filter Y Mode
+    filterYCustomCcLabel_.setColour(juce::Label::backgroundColourId,           Clr::panel.darker(0.3f));
+    filterYCustomCcLabel_.setColour(juce::Label::backgroundWhenEditingColourId, Clr::panel.darker(0.3f));
+    filterYCustomCcLabel_.setColour(juce::Label::textColourId,                 Clr::text);
+    filterYCustomCcLabel_.setColour(juce::Label::textWhenEditingColourId,      Clr::text);
+    filterYCustomCcLabel_.setEditable(false, true);
+    filterYCustomCcLabel_.setJustificationType(juce::Justification::centred);
+    filterYCustomCcLabel_.setVisible(false);
+    filterYCustomCcLabel_.onTextChange = [this]() {
+        const int val = juce::jlimit(0, 127,
+            filterYCustomCcLabel_.getText().retainCharacters("0123456789").getIntValue());
+        filterYCustomCcLabel_.setText(juce::String(val), juce::dontSendNotification);
+        if (auto* param = proc_.apvts.getParameter(filterYCustomCcParamId_))
+            param->setValueNotifyingHost(param->convertTo0to1((float)val));
+        filterYModeBox_.setText("CC " + juce::String(val), juce::dontSendNotification);
+    };
+    addAndMakeVisible(filterYCustomCcLabel_);
+
+    filterYModeBox_.onChange = [this]() {
+        const bool customActive = (filterYModeBox_.getSelectedId() == 26);
+        filterYCustomCcLabel_.setVisible(customActive);
+        if (customActive) {
+            const int lastCc = (int)*proc_.apvts.getRawParameterValue(filterYCustomCcParamId_);
+            filterYCustomCcLabel_.setText(juce::String(lastCc), juce::dontSendNotification);
+            filterYModeBox_.setText("CC " + juce::String(lastCc), juce::dontSendNotification);
+        }
+        resized();
+    };
+
+    filterXModeBox_.addItem("LFO-X Freq",          1);
+    filterXModeBox_.addItem("LFO-X Phase",         2);
+    filterXModeBox_.addItem("LFO-X Level",         3);
+    filterXModeBox_.addItem("Gate Length",         4);
+    filterXModeBox_.addItem("LFO-Y Freq",          5);
+    filterXModeBox_.addItem("LFO-Y Phase",         6);
+    filterXModeBox_.addItem("LFO-Y Level",         7);
+    filterXModeBox_.addItem("CC1 - Mod Wheel",     8);
+    filterXModeBox_.addItem("CC2 - Breath",        9);
+    filterXModeBox_.addItem("CC5 - Portamento",    10);
+    filterXModeBox_.addItem("CC7 - Volume",        11);
+    filterXModeBox_.addItem("CC10 - Pan",          12);
+    filterXModeBox_.addItem("CC11 - Expression",   13);
+    filterXModeBox_.addItem("CC12 - VCF LFO",      14);
+    filterXModeBox_.addItem("CC16 - GenPurp 1",    15);
+    filterXModeBox_.addItem("CC17 - GenPurp 2",    16);
+    filterXModeBox_.addItem("CC71 - Resonance",    17);
+    filterXModeBox_.addItem("CC72 - Release",      18);
+    filterXModeBox_.addItem("CC73 - Attack",       19);
+    filterXModeBox_.addItem("CC74 - Filter Cut",   20);
+    filterXModeBox_.addItem("CC75 - Decay",        21);
+    filterXModeBox_.addItem("CC76 - Vibrato Rate", 22);
+    filterXModeBox_.addItem("CC77 - Vibrato Depth",23);
+    filterXModeBox_.addItem("CC91 - Reverb",       24);
+    filterXModeBox_.addItem("CC93 - Chorus",       25);
+    filterXModeBox_.addItem("Custom CC...",        26);
+    filterXModeBox_.setTooltip("Left Stick X Mode  -  LFO-X/Y Freq/Phase/Level, Gate Length, or CC1-CC93");
     styleCombo(filterXModeBox_);
     addAndMakeVisible(filterXModeBox_);
     filterXModeAtt_ = std::make_unique<ComboAtt>(p.apvts, "filterXMode", filterXModeBox_);
     // MOD FIX offset intentionally NOT reset on mode switch — value persists across destinations.
+
+    // Custom CC inline label for Filter X Mode
+    filterXCustomCcLabel_.setColour(juce::Label::backgroundColourId,           Clr::panel.darker(0.3f));
+    filterXCustomCcLabel_.setColour(juce::Label::backgroundWhenEditingColourId, Clr::panel.darker(0.3f));
+    filterXCustomCcLabel_.setColour(juce::Label::textColourId,                 Clr::text);
+    filterXCustomCcLabel_.setColour(juce::Label::textWhenEditingColourId,      Clr::text);
+    filterXCustomCcLabel_.setEditable(false, true);
+    filterXCustomCcLabel_.setJustificationType(juce::Justification::centred);
+    filterXCustomCcLabel_.setVisible(false);
+    filterXCustomCcLabel_.onTextChange = [this]() {
+        const int val = juce::jlimit(0, 127,
+            filterXCustomCcLabel_.getText().retainCharacters("0123456789").getIntValue());
+        filterXCustomCcLabel_.setText(juce::String(val), juce::dontSendNotification);
+        if (auto* param = proc_.apvts.getParameter(filterXCustomCcParamId_))
+            param->setValueNotifyingHost(param->convertTo0to1((float)val));
+        filterXModeBox_.setText("CC " + juce::String(val), juce::dontSendNotification);
+    };
+    addAndMakeVisible(filterXCustomCcLabel_);
+
+    filterXModeBox_.onChange = [this]() {
+        const bool customActive = (filterXModeBox_.getSelectedId() == 26);
+        filterXCustomCcLabel_.setVisible(customActive);
+        if (customActive) {
+            const int lastCc = (int)*proc_.apvts.getRawParameterValue(filterXCustomCcParamId_);
+            filterXCustomCcLabel_.setText(juce::String(lastCc), juce::dontSendNotification);
+            filterXModeBox_.setText("CC " + juce::String(lastCc), juce::dontSendNotification);
+        }
+        resized();
+    };
 
     // ── Filter Mod hint label (bottom-right) ─────────────────────────────────
     filterModHintLabel_.setText(
@@ -3091,20 +3161,50 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     // CC Dest ComboBox
     {
-        static const juce::StringArray ccDests { "Off","CC1 \xe2\x80\x93 Mod Wheel","CC2 \xe2\x80\x93 Breath",
-            "CC5 \xe2\x80\x93 Portamento","CC7 \xe2\x80\x93 Volume","CC10 \xe2\x80\x93 Pan",
-            "CC11 \xe2\x80\x93 Expression","CC12 \xe2\x80\x93 VCF LFO",
-            "CC16 \xe2\x80\x93 GenPurp 1","CC17 \xe2\x80\x93 GenPurp 2",
-            "CC71 \xe2\x80\x93 Resonance","CC72 \xe2\x80\x93 Release",
-            "CC73 \xe2\x80\x93 Attack","CC74 \xe2\x80\x93 Filter Cut","CC75 \xe2\x80\x93 Decay",
-            "CC76 \xe2\x80\x93 Vibrato Rate","CC77 \xe2\x80\x93 Vibrato Depth",
-            "CC91 \xe2\x80\x93 Reverb","CC93 \xe2\x80\x93 Chorus" };
+        static const juce::StringArray ccDests { "Off","CC1 - Mod Wheel","CC2 - Breath",
+            "CC5 - Portamento","CC7 - Volume","CC10 - Pan",
+            "CC11 - Expression","CC12 - VCF LFO",
+            "CC16 - GenPurp 1","CC17 - GenPurp 2",
+            "CC71 - Resonance","CC72 - Release",
+            "CC73 - Attack","CC74 - Filter Cut","CC75 - Decay",
+            "CC76 - Vibrato Rate","CC77 - Vibrato Depth",
+            "CC91 - Reverb","CC93 - Chorus" };
         lfoXCcDestBox_.addItemList(ccDests, 1);
+        lfoXCcDestBox_.addItem("Custom CC...", 20);
         styleCombo(lfoXCcDestBox_);
         lfoXCcDestBox_.setTooltip("LFO X CC Dest  -  route LFO X to a MIDI CC on the filter channel instead of driving joystick X");
         addAndMakeVisible(lfoXCcDestBox_);
         lfoXCcDestAtt_ = std::make_unique<ComboAtt>(p.apvts, "lfoXCcDest", lfoXCcDestBox_);
     }
+
+    // Custom CC inline label for LFO X CC Dest
+    lfoXCustomCcLabel_.setColour(juce::Label::backgroundColourId,           Clr::panel.darker(0.3f));
+    lfoXCustomCcLabel_.setColour(juce::Label::backgroundWhenEditingColourId, Clr::panel.darker(0.3f));
+    lfoXCustomCcLabel_.setColour(juce::Label::textColourId,                 Clr::text);
+    lfoXCustomCcLabel_.setColour(juce::Label::textWhenEditingColourId,      Clr::text);
+    lfoXCustomCcLabel_.setEditable(false, true);
+    lfoXCustomCcLabel_.setJustificationType(juce::Justification::centred);
+    lfoXCustomCcLabel_.setVisible(false);
+    lfoXCustomCcLabel_.onTextChange = [this]() {
+        const int val = juce::jlimit(0, 127,
+            lfoXCustomCcLabel_.getText().retainCharacters("0123456789").getIntValue());
+        lfoXCustomCcLabel_.setText(juce::String(val), juce::dontSendNotification);
+        if (auto* param = proc_.apvts.getParameter("lfoXCustomCc"))
+            param->setValueNotifyingHost(param->convertTo0to1((float)val));
+        lfoXCcDestBox_.setText("CC " + juce::String(val), juce::dontSendNotification);
+    };
+    addAndMakeVisible(lfoXCustomCcLabel_);
+
+    lfoXCcDestBox_.onChange = [this]() {
+        const bool customActive = (lfoXCcDestBox_.getSelectedId() == 20);
+        lfoXCustomCcLabel_.setVisible(customActive);
+        if (customActive) {
+            const int lastCc = (int)*proc_.apvts.getRawParameterValue("lfoXCustomCc");
+            lfoXCustomCcLabel_.setText(juce::String(lastCc), juce::dontSendNotification);
+            lfoXCcDestBox_.setText("CC " + juce::String(lastCc), juce::dontSendNotification);
+        }
+        resized();
+    };
 
     // Sister dest: LFO X output → LFO Y parameter
     lfoXSisterBox_.addItem("Sister: None",  1);
@@ -3247,20 +3347,50 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     // CC Dest ComboBox
     {
-        static const juce::StringArray ccDests { "Off","CC1 \xe2\x80\x93 Mod Wheel","CC2 \xe2\x80\x93 Breath",
-            "CC5 \xe2\x80\x93 Portamento","CC7 \xe2\x80\x93 Volume","CC10 \xe2\x80\x93 Pan",
-            "CC11 \xe2\x80\x93 Expression","CC12 \xe2\x80\x93 VCF LFO",
-            "CC16 \xe2\x80\x93 GenPurp 1","CC17 \xe2\x80\x93 GenPurp 2",
-            "CC71 \xe2\x80\x93 Resonance","CC72 \xe2\x80\x93 Release",
-            "CC73 \xe2\x80\x93 Attack","CC74 \xe2\x80\x93 Filter Cut","CC75 \xe2\x80\x93 Decay",
-            "CC76 \xe2\x80\x93 Vibrato Rate","CC77 \xe2\x80\x93 Vibrato Depth",
-            "CC91 \xe2\x80\x93 Reverb","CC93 \xe2\x80\x93 Chorus" };
+        static const juce::StringArray ccDests { "Off","CC1 - Mod Wheel","CC2 - Breath",
+            "CC5 - Portamento","CC7 - Volume","CC10 - Pan",
+            "CC11 - Expression","CC12 - VCF LFO",
+            "CC16 - GenPurp 1","CC17 - GenPurp 2",
+            "CC71 - Resonance","CC72 - Release",
+            "CC73 - Attack","CC74 - Filter Cut","CC75 - Decay",
+            "CC76 - Vibrato Rate","CC77 - Vibrato Depth",
+            "CC91 - Reverb","CC93 - Chorus" };
         lfoYCcDestBox_.addItemList(ccDests, 1);
+        lfoYCcDestBox_.addItem("Custom CC...", 20);
         styleCombo(lfoYCcDestBox_);
         lfoYCcDestBox_.setTooltip("LFO Y CC Dest  -  route LFO Y to a MIDI CC on the filter channel instead of driving joystick Y");
         addAndMakeVisible(lfoYCcDestBox_);
         lfoYCcDestAtt_ = std::make_unique<ComboAtt>(p.apvts, "lfoYCcDest", lfoYCcDestBox_);
     }
+
+    // Custom CC inline label for LFO Y CC Dest
+    lfoYCustomCcLabel_.setColour(juce::Label::backgroundColourId,           Clr::panel.darker(0.3f));
+    lfoYCustomCcLabel_.setColour(juce::Label::backgroundWhenEditingColourId, Clr::panel.darker(0.3f));
+    lfoYCustomCcLabel_.setColour(juce::Label::textColourId,                 Clr::text);
+    lfoYCustomCcLabel_.setColour(juce::Label::textWhenEditingColourId,      Clr::text);
+    lfoYCustomCcLabel_.setEditable(false, true);
+    lfoYCustomCcLabel_.setJustificationType(juce::Justification::centred);
+    lfoYCustomCcLabel_.setVisible(false);
+    lfoYCustomCcLabel_.onTextChange = [this]() {
+        const int val = juce::jlimit(0, 127,
+            lfoYCustomCcLabel_.getText().retainCharacters("0123456789").getIntValue());
+        lfoYCustomCcLabel_.setText(juce::String(val), juce::dontSendNotification);
+        if (auto* param = proc_.apvts.getParameter("lfoYCustomCc"))
+            param->setValueNotifyingHost(param->convertTo0to1((float)val));
+        lfoYCcDestBox_.setText("CC " + juce::String(val), juce::dontSendNotification);
+    };
+    addAndMakeVisible(lfoYCustomCcLabel_);
+
+    lfoYCcDestBox_.onChange = [this]() {
+        const bool customActive = (lfoYCcDestBox_.getSelectedId() == 20);
+        lfoYCustomCcLabel_.setVisible(customActive);
+        if (customActive) {
+            const int lastCc = (int)*proc_.apvts.getRawParameterValue("lfoYCustomCc");
+            lfoYCustomCcLabel_.setText(juce::String(lastCc), juce::dontSendNotification);
+            lfoYCcDestBox_.setText("CC " + juce::String(lastCc), juce::dontSendNotification);
+        }
+        resized();
+    };
 
     // Sister dest: LFO Y output → LFO X parameter
     lfoYSisterBox_.addItem("Sister: None",  1);
@@ -3531,12 +3661,22 @@ void PluginEditor::resized()
             filterYModeLabel_.setBounds(0, 0, 0, 0);
         }
 
-        // Row 3: filterXModeBox_ | filterYModeBox_
+        // Row 3: filterXModeBox_ | filterYModeBox_ (with optional custom labels)
         {
             auto comboRow = modBox.removeFromTop(22);
             const int hw = comboRow.getWidth() / 2;
-            filterXModeBox_.setBounds(comboRow.removeFromLeft(hw).reduced(1, 0));
-            filterYModeBox_.setBounds(comboRow.reduced(1, 0));
+            auto xHalf = comboRow.removeFromLeft(hw).reduced(1, 0);
+            auto yHalf = comboRow.reduced(1, 0);
+            if (filterXCustomCcLabel_.isVisible())
+                filterXCustomCcLabel_.setBounds(xHalf.removeFromRight(50));
+            else
+                filterXCustomCcLabel_.setBounds({});
+            filterXModeBox_.setBounds(xHalf);
+            if (filterYCustomCcLabel_.isVisible())
+                filterYCustomCcLabel_.setBounds(yHalf.removeFromRight(50));
+            else
+                filterYCustomCcLabel_.setBounds({});
+            filterYModeBox_.setBounds(yHalf);
         }
 
         modBox.removeFromTop(3);
@@ -3845,8 +3985,15 @@ void PluginEditor::resized()
         lfoXShapeBox_.setBounds(col.removeFromTop(22));
         col.removeFromTop(4);
 
-        // Row 1b: CC Dest ComboBox
-        lfoXCcDestBox_.setBounds(col.removeFromTop(22));
+        // Row 1b: CC Dest ComboBox (with optional custom label)
+        {
+            auto row = col.removeFromTop(22);
+            if (lfoXCustomCcLabel_.isVisible())
+                lfoXCustomCcLabel_.setBounds(row.removeFromRight(60));
+            else
+                lfoXCustomCcLabel_.setBounds({});
+            lfoXCcDestBox_.setBounds(row);
+        }
         col.removeFromTop(4);
 
         // Row 1c: Sister dest ComboBox
@@ -3937,8 +4084,15 @@ void PluginEditor::resized()
         lfoYShapeBox_.setBounds(col.removeFromTop(22));
         col.removeFromTop(4);
 
-        // Row 1b: CC Dest ComboBox
-        lfoYCcDestBox_.setBounds(col.removeFromTop(22));
+        // Row 1b: CC Dest ComboBox (with optional custom label)
+        {
+            auto row = col.removeFromTop(22);
+            if (lfoYCustomCcLabel_.isVisible())
+                lfoYCustomCcLabel_.setBounds(row.removeFromRight(60));
+            else
+                lfoYCustomCcLabel_.setBounds({});
+            lfoYCcDestBox_.setBounds(row);
+        }
         col.removeFromTop(4);
 
         // Row 1c: Sister dest ComboBox
@@ -4760,6 +4914,16 @@ void PluginEditor::timerCallback()
                 a.setBounds(b.getBounds());
                 b.setBounds(tmp);
             };
+            // Swap which APVTS param the filter custom CC labels write to (mirrors attachment swap)
+            if (invOn) {
+                // Physical X stick now drives logical Y param — X label writes filterYCustomCc
+                filterXCustomCcParamId_ = "filterYCustomCc";
+                filterYCustomCcParamId_ = "filterXCustomCc";
+            } else {
+                filterXCustomCcParamId_ = "filterXCustomCc";
+                filterYCustomCcParamId_ = "filterYCustomCc";
+            }
+
             swapBounds(filterXModeBox_,     filterYModeBox_);
             swapBounds(filterXAttenLabel_,  filterYAttenLabel_);
             swapBounds(filterXAttenKnob_,   filterYAttenKnob_);
@@ -4767,6 +4931,7 @@ void PluginEditor::timerCallback()
             swapBounds(filterXOffsetKnob_,  filterYOffsetKnob_);
             swapBounds(joyXAttenLabel_,     joyYAttenLabel_);
             swapBounds(joyXAttenKnob_,      joyYAttenKnob_);
+            swapBounds(filterXCustomCcLabel_, filterYCustomCcLabel_);
             std::swap(filterCutGroupBounds_, filterResGroupBounds_);
             repaint();
         }
@@ -4997,25 +5162,25 @@ void PluginEditor::timerCallback()
         {
             switch (xMode)
             {
-                case 4:  // LFO-X Freq — update in both free and sync mode to show modulated position
+                case 0:  // LFO-X Freq — update in both free and sync mode to show modulated position
                     if (!lfoXRateDragging_)
                         lfoXRateSlider_.setValue(
                             proc_.lfoXRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 5:  // LFO-X Phase
+                case 1:  // LFO-X Phase
                     if (!lfoXPhaseDragging_)
                         lfoXPhaseSlider_.setValue(
                             proc_.lfoXPhaseDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 6:  // LFO-X Level
+                case 2:  // LFO-X Level
                     if (!lfoXLevelDragging_)
                         lfoXLevelSlider_.setValue(
                             proc_.lfoXLevelDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 7:  // Gate Length
+                case 3:  // Gate Length
                     if (!gateDragging_)
                         arpGateTimeKnob_.setValue(
                             proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
@@ -5036,25 +5201,25 @@ void PluginEditor::timerCallback()
         {
             switch (yMode)
             {
-                case 4:  // LFO-Y Freq — update in both free and sync mode
+                case 0:  // LFO-Y Freq — update in both free and sync mode
                     if (!lfoYRateDragging_)
                         lfoYRateSlider_.setValue(
                             proc_.lfoYRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 5:  // LFO-Y Phase
+                case 1:  // LFO-Y Phase
                     if (!lfoYPhaseDragging_)
                         lfoYPhaseSlider_.setValue(
                             proc_.lfoYPhaseDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 6:  // LFO-Y Level
+                case 2:  // LFO-Y Level
                     if (!lfoYLevelDragging_)
                         lfoYLevelSlider_.setValue(
                             proc_.lfoYLevelDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 7:  // Gate Length — Y also writes gateLengthDisplay_; last writer wins (known limitation)
+                case 3:  // Gate Length — Y also writes gateLengthDisplay_; last writer wins (known limitation)
                     if (!gateDragging_)
                         arpGateTimeKnob_.setValue(
                             proc_.gateLengthDisplay_.load(std::memory_order_relaxed),
@@ -5063,24 +5228,24 @@ void PluginEditor::timerCallback()
                 default: break;
             }
         }
-        // Cross-LFO: xMode 8/9/10 drives LFO-Y sliders — guard by yPlayback (target LFO)
+        // Cross-LFO: xMode 4/5/6 drives LFO-Y sliders — guard by yPlayback (target LFO)
         if (!yPlayback)
         {
             switch (xMode)
             {
-                case 8:  // LFO-Y Freq (from X stick cross-modulation)
+                case 4:  // LFO-Y Freq (from X stick cross-modulation)
                     if (!lfoYRateDragging_)
                         lfoYRateSlider_.setValue(
                             proc_.lfoYRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 9:  // LFO-Y Phase (from X stick cross-modulation)
+                case 5:  // LFO-Y Phase (from X stick cross-modulation)
                     if (!lfoYPhaseDragging_)
                         lfoYPhaseSlider_.setValue(
                             proc_.lfoYPhaseDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 10: // LFO-Y Level (from X stick cross-modulation)
+                case 6:  // LFO-Y Level (from X stick cross-modulation)
                     if (!lfoYLevelDragging_)
                         lfoYLevelSlider_.setValue(
                             proc_.lfoYLevelDisplay_.load(std::memory_order_relaxed),
@@ -5090,24 +5255,24 @@ void PluginEditor::timerCallback()
             }
         }
 
-        // Cross-LFO: yMode 8/9/10 drives LFO-X sliders — guard by xPlayback (target LFO)
+        // Cross-LFO: yMode 4/5/6 drives LFO-X sliders — guard by xPlayback (target LFO)
         if (!xPlayback)
         {
             switch (yMode)
             {
-                case 8:  // LFO-X Freq (from Y stick cross-modulation)
+                case 4:  // LFO-X Freq (from Y stick cross-modulation)
                     if (!lfoXRateDragging_)
                         lfoXRateSlider_.setValue(
                             proc_.lfoXRateDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 9:  // LFO-X Phase (from Y stick cross-modulation)
+                case 5:  // LFO-X Phase (from Y stick cross-modulation)
                     if (!lfoXPhaseDragging_)
                         lfoXPhaseSlider_.setValue(
                             proc_.lfoXPhaseDisplay_.load(std::memory_order_relaxed),
                             juce::dontSendNotification);
                     break;
-                case 10: // LFO-X Level (from Y stick cross-modulation)
+                case 6:  // LFO-X Level (from Y stick cross-modulation)
                     if (!lfoXLevelDragging_)
                         lfoXLevelSlider_.setValue(
                             proc_.lfoXLevelDisplay_.load(std::memory_order_relaxed),
@@ -5164,11 +5329,11 @@ void PluginEditor::timerCallback()
 
             // Pre-set rate anchors from APVTS base on first stick engagement, before
             // setValue() has already moved the slider to the modulated position.
-            if (xMode == 4 && std::abs(lx) > kThresh && std::isnan(lfoXRateAnchor_))
+            if (xMode == 0 && std::abs(lx) > kThresh && std::isnan(lfoXRateAnchor_))
                 lfoXRateAnchor_ = xSyncOn
                     ? proc_.apvts.getRawParameterValue("lfoXSubdiv")->load()
                     : proc_.apvts.getRawParameterValue("lfoXRate")->load();
-            if (yMode == 4 && std::abs(ly) > kThresh && std::isnan(lfoYRateAnchor_))
+            if (yMode == 0 && std::abs(ly) > kThresh && std::isnan(lfoYRateAnchor_))
                 lfoYRateAnchor_ = ySyncOn
                     ? proc_.apvts.getRawParameterValue("lfoYSubdiv")->load()
                     : proc_.apvts.getRawParameterValue("lfoYRate")->load();
@@ -5192,12 +5357,48 @@ void PluginEditor::timerCallback()
                 }
             };
 
-            updateMod(lfoXRateSlider_,  xMode == 4 ? lx : 0.0f, lfoXRateAnchor_);
-            updateMod(lfoXPhaseSlider_, xMode == 5 ? lx : 0.0f, lfoXPhaseAnchor_);
-            updateMod(lfoXLevelSlider_, xMode == 6 ? lx : 0.0f, lfoXLevelAnchor_);
-            updateMod(lfoYRateSlider_,  yMode == 4 ? ly : 0.0f, lfoYRateAnchor_);
-            updateMod(lfoYPhaseSlider_, yMode == 5 ? ly : 0.0f, lfoYPhaseAnchor_);
-            updateMod(lfoYLevelSlider_, yMode == 6 ? ly : 0.0f, lfoYLevelAnchor_);
+            updateMod(lfoXRateSlider_,  xMode == 0 ? lx : 0.0f, lfoXRateAnchor_);
+            updateMod(lfoXPhaseSlider_, xMode == 1 ? lx : 0.0f, lfoXPhaseAnchor_);
+            updateMod(lfoXLevelSlider_, xMode == 2 ? lx : 0.0f, lfoXLevelAnchor_);
+            updateMod(lfoYRateSlider_,  yMode == 0 ? ly : 0.0f, lfoYRateAnchor_);
+            updateMod(lfoYPhaseSlider_, yMode == 1 ? ly : 0.0f, lfoYPhaseAnchor_);
+            updateMod(lfoYLevelSlider_, yMode == 2 ? ly : 0.0f, lfoYLevelAnchor_);
+        }
+    }
+
+    // ── Custom CC combo text sync (30 Hz) ────────────────────────────────────
+    // Keeps "CC [n]" display text in sync when custom CC is active
+    // (handles preset load, automation, external param change)
+    if (lfoXCcDestBox_.getSelectedId() == 20) {
+        const int n = (int)*proc_.apvts.getRawParameterValue("lfoXCustomCc");
+        lfoXCcDestBox_.setText("CC " + juce::String(n), juce::dontSendNotification);
+        if (!lfoXCustomCcLabel_.isVisible()) {
+            lfoXCustomCcLabel_.setVisible(true);
+            resized();
+        }
+    }
+    if (lfoYCcDestBox_.getSelectedId() == 20) {
+        const int n = (int)*proc_.apvts.getRawParameterValue("lfoYCustomCc");
+        lfoYCcDestBox_.setText("CC " + juce::String(n), juce::dontSendNotification);
+        if (!lfoYCustomCcLabel_.isVisible()) {
+            lfoYCustomCcLabel_.setVisible(true);
+            resized();
+        }
+    }
+    if (filterXModeBox_.getSelectedId() == 26) {
+        const int n = (int)*proc_.apvts.getRawParameterValue(filterXCustomCcParamId_);
+        filterXModeBox_.setText("CC " + juce::String(n), juce::dontSendNotification);
+        if (!filterXCustomCcLabel_.isVisible()) {
+            filterXCustomCcLabel_.setVisible(true);
+            resized();
+        }
+    }
+    if (filterYModeBox_.getSelectedId() == 26) {
+        const int n = (int)*proc_.apvts.getRawParameterValue(filterYCustomCcParamId_);
+        filterYModeBox_.setText("CC " + juce::String(n), juce::dontSendNotification);
+        if (!filterYCustomCcLabel_.isVisible()) {
+            filterYCustomCcLabel_.setVisible(true);
+            resized();
         }
     }
 
@@ -5264,10 +5465,10 @@ void PluginEditor::timerCallback()
     // Modes 2-5 are LFO/Gate targets (show unit label, no "%" suffix).
     {
         const int xMode = (int)*proc_.apvts.getRawParameterValue("filterXMode");
-        const juce::String xLabel = (xMode == 4) ? "Hz"
-                                  : (xMode == 5) ? "Phase"
-                                  : (xMode == 6) ? "Level"
-                                  : (xMode == 7) ? "Gate"
+        const juce::String xLabel = (xMode == 0) ? "Hz"
+                                  : (xMode == 1) ? "Phase"
+                                  : (xMode == 2) ? "Level"
+                                  : (xMode == 3) ? "Gate"
                                   : "-/+ MOD X";
         if (filterXAttenLabel_.getText() != xLabel)
             styleLabel(filterXAttenLabel_, xLabel);
@@ -5276,10 +5477,10 @@ void PluginEditor::timerCallback()
             filterXAttenKnob_.setTextValueSuffix(xSuffix);
 
         const int yMode = (int)*proc_.apvts.getRawParameterValue("filterYMode");
-        const juce::String yLabel = (yMode == 4) ? "Hz"
-                                  : (yMode == 5) ? "Phase"
-                                  : (yMode == 6) ? "Level"
-                                  : (yMode == 7) ? "Gate"
+        const juce::String yLabel = (yMode == 0) ? "Hz"
+                                  : (yMode == 1) ? "Phase"
+                                  : (yMode == 2) ? "Level"
+                                  : (yMode == 3) ? "Gate"
                                   : "-/+ MOD Y";
         if (filterYAttenLabel_.getText() != yLabel)
             styleLabel(filterYAttenLabel_, yLabel);
@@ -5328,7 +5529,8 @@ void PluginEditor::timerCallback()
         capFlashCounter = 0;
     }
 
-    // Update BPM display
+    // Update BPM display (skip if user is editing the label)
+    if (!bpmDisplayLabel_.isBeingEdited())
     {
         const float bpm = proc_.getEffectiveBpm();
         bpmDisplayLabel_.setText(juce::String(bpm, 1) + " BPM", juce::dontSendNotification);
