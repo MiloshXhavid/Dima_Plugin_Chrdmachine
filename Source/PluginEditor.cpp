@@ -73,39 +73,63 @@ void PixelLookAndFeel::drawRotarySlider(juce::Graphics& g,
     const float endAngle = rotaryStartAngle
         + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
 
-    // Detect bipolar knobs (min == -max, e.g. MOD FIX -50..+50).
-    // For these, draw the arc from noon (centre angle) to current position,
-    // coloured red (positive) or blue (negative).
-    const float sMin = (float)slider.getMinimum();
-    const float sMax = (float)slider.getMaximum();
-    const bool isBipolar = (sMin < 0.0f && sMax > 0.0f &&
-                            std::abs(sMin + sMax) < 0.01f);
-    if (isBipolar)
+    // ── Dot-mode indicator check ──────────────────────────────────────────────
+    // Knobs with range 0..11 step 1 (octave, interval, transpose) render 12
+    // evenly-spaced snap dots on the track ring instead of a continuous fill arc.
+    const bool isDotMode = (slider.getMinimum() == 0.0
+                         && slider.getMaximum() == 11.0
+                         && slider.getInterval() == 1.0);
+
+    if (!isDotMode)
     {
-        const float centreAngle = (rotaryStartAngle + rotaryEndAngle) * 0.5f;
-        const float val = (float)slider.getValue();
-        if (std::abs(val) > 0.5f)
+        // Detect bipolar knobs (min == -max, e.g. MOD FIX -50..+50).
+        // For these, draw the arc from noon (centre angle) to current position,
+        // coloured red (positive) or blue (negative).
+        const float sMin = (float)slider.getMinimum();
+        const float sMax = (float)slider.getMaximum();
+        const bool isBipolar = (sMin < 0.0f && sMax > 0.0f &&
+                                std::abs(sMin + sMax) < 0.01f);
+        if (isBipolar)
         {
-            const bool positive   = val > 0.0f;
-            const float arcStart  = positive ? centreAngle : endAngle;
-            const float arcEnd    = positive ? endAngle    : centreAngle;
-            const juce::Colour arcClr = positive
-                ? juce::Colour(0xFFE03030)   // red
-                : juce::Colour(0xFF3060FF);  // blue
+            const float centreAngle = (rotaryStartAngle + rotaryEndAngle) * 0.5f;
+            const float val = (float)slider.getValue();
+            if (std::abs(val) > 0.5f)
+            {
+                const bool positive   = val > 0.0f;
+                const float arcStart  = positive ? centreAngle : endAngle;
+                const float arcEnd    = positive ? endAngle    : centreAngle;
+                const juce::Colour arcClr = positive
+                    ? juce::Colour(0xFFE03030)   // red
+                    : juce::Colour(0xFF3060FF);  // blue
+                juce::Path fillArc;
+                fillArc.addArc(cx - trackR, cy - trackR, trackR * 2.0f, trackR * 2.0f,
+                               arcStart, arcEnd, true);
+                g.setColour(arcClr.withAlpha(0.90f));
+                g.strokePath(fillArc, thinStroke);
+            }
+        }
+        else
+        {
             juce::Path fillArc;
             fillArc.addArc(cx - trackR, cy - trackR, trackR * 2.0f, trackR * 2.0f,
-                           arcStart, arcEnd, true);
-            g.setColour(arcClr.withAlpha(0.90f));
+                           rotaryStartAngle, endAngle, true);
+            g.setColour(Clr::highlight.withAlpha(0.85f));
             g.strokePath(fillArc, thinStroke);
         }
     }
     else
     {
-        juce::Path fillArc;
-        fillArc.addArc(cx - trackR, cy - trackR, trackR * 2.0f, trackR * 2.0f,
-                       rotaryStartAngle, endAngle, true);
-        g.setColour(Clr::highlight.withAlpha(0.85f));
-        g.strokePath(fillArc, thinStroke);
+        // ── 12 snap dots on the track ring ────────────────────────────────────
+        const int curIdx = juce::jlimit(0, 11, (int)std::round(slider.getValue()));
+        for (int i = 0; i < 12; ++i)
+        {
+            const float t     = static_cast<float>(i) / 11.0f;
+            const float angle = rotaryStartAngle + t * (rotaryEndAngle - rotaryStartAngle);
+            const float dotX  = cx + trackR * std::sin(angle);
+            const float dotY  = cy - trackR * std::cos(angle);
+            g.setColour(i == curIdx ? Clr::highlight : Clr::accent.withAlpha(0.6f));
+            g.fillEllipse(dotX - 2.0f, dotY - 2.0f, 4.0f, 4.0f);
+        }
     }
 
     // ── Drop shadow ──────────────────────────────────────────────────────────
@@ -149,6 +173,14 @@ void PixelLookAndFeel::drawRotarySlider(juce::Graphics& g,
     g.fillEllipse(cx - 3.5f, cy - 3.5f, 7.0f, 7.0f);
     g.setColour(juce::Colour(0xFF484C5C));
     g.drawEllipse(cx - 3.5f, cy - 3.5f, 7.0f, 7.0f, 1.0f);
+
+    // ── Hover ring — drawn last so it appears on top of the knob body ─────────
+    if (slider.isMouseOver())
+    {
+        const float hoverR = trackR + 2.5f;
+        g.setColour(Clr::highlight.withAlpha(0.35f));
+        g.drawEllipse(cx - hoverR, cy - hoverR, hoverR * 2.0f, hoverR * 2.0f, 1.5f);
+    }
 }
 
 void PixelLookAndFeel::drawButtonBackground(juce::Graphics& g,
