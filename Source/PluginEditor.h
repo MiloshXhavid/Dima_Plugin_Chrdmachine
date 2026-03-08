@@ -458,6 +458,12 @@ private:
     // ── LFO panels ─────────────────────────────────────────────────────────────
     juce::ComboBox   lfoXShapeBox_,    lfoYShapeBox_;
     juce::ComboBox   lfoXCcDestBox_,   lfoYCcDestBox_;
+    // Inline editable labels for "Custom CC..." entry (Phase 38.2)
+    juce::Label lfoXCustomCcLabel_, lfoYCustomCcLabel_;
+    juce::Label filterXCustomCcLabel_, filterYCustomCcLabel_;
+    // Tracks which APVTS param the filter custom CC labels write to (swapped by INV)
+    juce::String filterXCustomCcParamId_ { "filterXCustomCc" };
+    juce::String filterYCustomCcParamId_ { "filterYCustomCc" };
     juce::ComboBox   lfoXSisterBox_,   lfoYSisterBox_;
     juce::Slider     lfoXRateSlider_,  lfoYRateSlider_;
     juce::Label      lfoXSyncSubdivLabel_, lfoYSyncSubdivLabel_;
