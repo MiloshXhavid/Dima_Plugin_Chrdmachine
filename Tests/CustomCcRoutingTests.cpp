@@ -1,6 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-// CustomCcRoutingHelpers.h will be created in Plan 02.
-// This include makes the tests RED now (file doesn't exist yet).
+// CustomCcRoutingHelpers.h created in Plan 02 (Wave 1).
 #include "../Source/CustomCcRoutingHelpers.h"
 
 TEST_CASE("ccDestToNumber - custom index 19 returns supplied value", "[cc-routing]")
