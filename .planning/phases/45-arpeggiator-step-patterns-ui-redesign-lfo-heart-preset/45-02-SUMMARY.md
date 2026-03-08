@@ -49,20 +49,20 @@ patterns-established:
 requirements-completed: [ARP-01, ARP-02, ARP-03]
 
 # Metrics
-duration: 20min
+duration: 45min
 completed: 2026-03-08
 ---
 
 # Phase 45 Plan 02: Arp Step Patterns UI Summary
 
-**8-cell step grid (2 rows x 4 cols) with ON/TIE/OFF click cycling, LEN combo, and 3-state RND SYNC button (FREE/INT/DAW) inside the unchanged 84px arp box**
+**8-cell step grid (2 rows x 4 cols) with ON/TIE/OFF click cycling, LEN combo, and 3-state RND SYNC button (FREE/INT/DAW) inside the unchanged 84px arp box — UAT approved; two post-UAT correctness fixes for arpLen wrap and TIE noteOff suppression**
 
 ## Performance
 
-- **Duration:** ~20 min
-- **Started:** 2026-03-08T21:40Z
-- **Completed:** 2026-03-08T22:00Z
-- **Tasks:** 2 (Tasks 1 and 2 combined into one commit)
+- **Duration:** ~45 min (including post-UAT fixes)
+- **Started:** 2026-03-08T21:00Z
+- **Completed:** 2026-03-08T21:46Z
+- **Tasks:** 2 code tasks + UAT checkpoint (approved) + 2 post-UAT bug fix commits
 - **Files modified:** 2
 
 ## Accomplishments
@@ -77,6 +77,10 @@ completed: 2026-03-08
 ## Task Commits
 
 1. **Task 1 + Task 2: Editor step grid, LEN combo, RND SYNC 3-state** - `e4d066b` (feat)
+2. **Post-UAT fix: arpStep wraps at arpLen, LEN combo triggers instant repaint** - `f2b71d6` (fix)
+3. **Post-UAT fix: TIE suppresses gate-time noteOff on upcoming TIE step** - `312ac04` (fix)
+
+**Plan metadata:** `e889d2a` (docs: complete plan)
 
 ## Files Created/Modified
 
@@ -101,10 +105,26 @@ completed: 2026-03-08
 - **Verification:** Build succeeded with 0 errors after fix
 - **Committed in:** e4d066b (task commit)
 
+**2. [Rule 1 - Bug] arpStep wrapped at seqLen instead of arpLen for pattern index**
+- **Found during:** Post-UAT playback verification
+- **Issue:** patStep = arpStep_ % seqLen used the voice-count denominator; steps beyond arpLen could be reached at engine level regardless of LEN setting
+- **Fix:** Changed pattern index wrap to arpStep_ % arpLen; voice cycling remains % seqLen (separate semantics). LEN combo change now triggers instant arpBlockBounds_ repaint.
+- **Files modified:** Source/PluginProcessor.cpp, Source/PluginEditor.cpp
+- **Verification:** Build clean; LEN=4 correctly stops at step 4 at runtime
+- **Committed in:** f2b71d6
+
+**3. [Rule 1 - Bug] TIE suppressed noteOff unconditionally instead of checking upcoming step**
+- **Found during:** Post-UAT playback verification
+- **Issue:** isTie guard suppressed the step-boundary noteOff whenever the current step was TIE; correct behavior requires checking whether the *upcoming* step is TIE (sustain across boundary)
+- **Fix:** Read next step state at (arpStep_+1)%arpLen; suppress noteOff only when nextState==TIE
+- **Files modified:** Source/PluginProcessor.cpp
+- **Verification:** Build clean; TIE steps sustain correctly; TIE->ON boundary fires a new note-on
+- **Committed in:** 312ac04
+
 ---
 
-**Total deviations:** 1 auto-fixed (Rule 1 — declaration ordering in header)
-**Impact on plan:** Single build error caused by forward reference; fixed inline with no behavior change.
+**Total deviations:** 3 auto-fixed (3 Rule 1 bugs)
+**Impact on plan:** All fixes were correctness requirements. No scope creep.
 
 ## Issues Encountered
 
@@ -116,10 +136,10 @@ Install the built VST3 (`do-reinstall.ps1` in admin PowerShell or manual copy fr
 
 ## Next Phase Readiness
 
-- Full Phase 45 feature set built and installed — ready for UAT (checkpoint:human-verify)
-- Step grid visual: 8 cells, ON/TIE/OFF rendering, active step highlight, LEN dimming
-- RND SYNC button shows FREE/INT/DAW with matching colors
-- All 10 APVTS params from Plan 01 wired to UI in Plan 02
+- Phase 45 complete (Plans 01 + 02). All ARP-01, ARP-02, ARP-03 requirements satisfied.
+- arpStepState0..7, arpLength, randomSyncMode wired end-to-end (processor + editor); UAT approved.
+- arpCurrentStep_ atomic available for future step-highlight improvements.
+- Preset save/load verified working for step states and LEN.
 
 ---
 *Phase: 45-arpeggiator-step-patterns-ui-redesign-lfo-heart-preset*

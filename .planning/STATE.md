@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
 status: unknown
-stopped_at: Completed 45-02-PLAN.md — arp step grid UI, LEN combo, RND SYNC 3-state, build clean
-last_updated: "2026-03-08T21:46:37.479Z"
+stopped_at: Completed 45-02-PLAN.md — arp step grid UI UAT approved, post-UAT arpLen wrap and TIE noteOff fixes
+last_updated: "2026-03-08T22:40:05.695Z"
 last_activity: 2026-03-07 — v1.8 milestone completion archived
 progress:
   total_phases: 26
@@ -300,6 +300,8 @@ Key v1.6 design decisions (locked):
 - [Phase 45]: arpLength APVTS choice index+1=actual length; arpStepState0..7 read as patStep=arpStep_%arpLen
 - [Phase 45]: TIE isTie=stepState==1&&arpActivePitch_>=0; OFF sends immediate noteOff+continue; ON uses existing note-on path
 - [Phase 45]: arpLengthAtt_ declared with full type in header (not ComboAtt alias) — using alias not yet visible at member declaration site
+- [Phase 45]: arpLengthAtt_ uses full type in header (not ComboAtt alias) — alias not visible before its declaration site
+- [Phase 45]: TIE suppression checks upcoming step at (arpStep_+1)%arpLen — not the current step; arpStep wraps at arpLen (not seqLen) for pattern index
 
 ### Pending Todos
 
@@ -311,6 +313,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T21:46:34.235Z
-Stopped at: Completed 45-02-PLAN.md — arp step grid UI, LEN combo, RND SYNC 3-state, build clean
+Last session: 2026-03-08T22:39:54.752Z
+Stopped at: Completed 45-02-PLAN.md — arp step grid UI UAT approved, post-UAT arpLen wrap and TIE noteOff fixes
 Next step: Phases 34-37 (cross-LFO modulation, arp subdivision, arp trigger sources, looper fix) for v1.8 completion.
