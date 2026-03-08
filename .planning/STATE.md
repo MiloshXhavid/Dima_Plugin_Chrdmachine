@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
 status: unknown
-stopped_at: "Completed 38-01-PLAN.md — backend: lane-clear API, DAW atomic, looper force-stop, joy offset, trigger flash, LFO freq display"
-last_updated: "2026-03-08T00:05:52.534Z"
+stopped_at: "Completed 38-02-PLAN.md — UI: play flash fix, rec lane 3-state colors + clear, joy sticky offset, build passed"
+last_updated: "2026-03-08T00:09:29.605Z"
 last_activity: 2026-03-07 — v1.8 milestone completion archived
 progress:
   total_phases: 21
-  completed_phases: 15
+  completed_phases: 16
   total_plans: 37
-  completed_plans: 36
+  completed_plans: 37
   percent: 97
 ---
 
@@ -236,6 +236,8 @@ Key v1.6 design decisions (locked):
 - [Phase 37]: Line 773 (internalBeat_=0.0) removed — fmod at line 758 already absorbs overshoot; sentinel was always wrong for free-running mode
 - [Phase 38-quick-fixes-rec-lane-undo]: looperJoyActive/gpXs/gpYs re-read inline at looper write-back site (processBlock) because buildChordParams() is a separate function — no shared scope
 - [Phase 38-quick-fixes-rec-lane-undo]: Lane-clear pending flags use same exchange pattern as deleteRequest_/resetRequest_ at top of LooperEngine::process()
+- [Phase 38-quick-fixes-rec-lane-undo]: LFO cross-mod Level tracking (case 10) was already correct from 38-01 — no UI change needed in 38-02
+- [Phase 38-quick-fixes-rec-lane-undo]: JoystickPad sticky offset: spring-damper suppressed for looperJoyMode && !mouseIsDown_ — cursor snaps to effective looper+offset position without ghost oscillation
 
 ### Pending Todos
 
@@ -247,6 +249,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T00:05:48.030Z
-Stopped at: Completed 38-01-PLAN.md — backend: lane-clear API, DAW atomic, looper force-stop, joy offset, trigger flash, LFO freq display
+Last session: 2026-03-08T00:09:22.561Z
+Stopped at: Completed 38-02-PLAN.md — UI: play flash fix, rec lane 3-state colors + clear, joy sticky offset, build passed
 Next step: Phases 34-37 (cross-LFO modulation, arp subdivision, arp trigger sources, looper fix) for v1.8 completion.
