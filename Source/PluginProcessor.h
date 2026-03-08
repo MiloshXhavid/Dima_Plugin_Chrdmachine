@@ -76,6 +76,24 @@ public:
     bool looperIsRecGates()    const { return looper_.isRecGates();   }
     bool looperIsRecFilter()   const { return looper_.isRecFilter();  }
 
+    // DAW playing state — written by audio thread each processBlock, read by UI
+    bool isDawPlaying() const { return dawPlaying_.load(std::memory_order_relaxed); }
+
+    // Joystick additive offset for looper playback (sticky mouse offset + non-sticky stick offset)
+    // Written by JoystickPad (message thread) on mouseDown/Drag; read by processBlock.
+    std::atomic<float> looperJoyOffsetX_ { 0.0f };
+    std::atomic<float> looperJoyOffsetY_ { 0.0f };
+
+    // Looper content query passthroughs (read by UI timerCallback and onClick handlers)
+    bool looperHasJoystickContent() const { return looper_.hasJoystickContent(); }
+    bool looperHasGateContent()     const { return looper_.hasGateContent();     }
+    bool looperHasFilterContent()   const { return looper_.hasFilterContent();   }
+
+    // Lane-clear API (called from UI onClick handlers)
+    void looperClearGateLane()   { looper_.clearGateLane();   }
+    void looperClearJoyLane()    { looper_.clearJoyLane();    }
+    void looperClearFilterLane() { looper_.clearFilterLane(); }
+
     void looperSetRecWaitForTrigger(bool b) { looper_.setRecWaitForTrigger(b); }
     bool looperIsRecWaitForTrigger()  const { return looper_.isRecWaitForTrigger(); }
     bool looperIsRecWaitArmed()         const { return looper_.isRecWaitArmed(); }
@@ -234,6 +252,7 @@ private:
     std::atomic<bool> lfoInstantCapture_ { false }; // set by UI, consumed in processBlock
     int lfoInstantCaptureSamplesLeft_ = 0;          // audio-thread countdown for Bug-2 one-cycle stop
     bool prevDawPlaying_ = false;                   // audio-thread edge detect for transport stop (Bug-3)
+    std::atomic<bool> dawPlaying_ { false };         // audio thread writes, UI reads
 
     // LFO direct CC dedup — audio-thread only. -1 = force-send on next block.
     int prevLfoCcX_ = -1;

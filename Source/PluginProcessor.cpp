@@ -543,10 +543,12 @@ ChordEngine::Params PluginProcessor::buildChordParams() const
     const float gpXs = std::abs(gpX) < kCenterSnap ? 0.0f : gpX;
     const float gpYs = std::abs(gpY) < kCenterSnap ? 0.0f : gpY;
 
-    // Prefer gamepad if any axis is active after snap.
-    // Allow during playback when: actively recording, or no joystick content recorded yet.
-    const bool gpActive = (!looper_.isPlaying() || looper_.isRecording() || !looper_.hasJoystickContent())
-                          && (std::abs(gpXs) + std::abs(gpYs)) > 0.0f;
+    // Gamepad pitch stick: active when any axis is deflected past snap threshold.
+    // When looper is playing with joystick content, stick acts as additive offset (applied below).
+    // When looper is not playing, stick overrides live mouse joystick as before.
+    const bool looperJoyActive = looper_.isPlaying() && looper_.hasJoystickContent();
+    const bool gpActive = !looperJoyActive
+                       && (std::abs(gpXs) + std::abs(gpYs)) > 0.0f;
     p.joystickX = gpActive ? gpXs : jx;
     p.joystickY = gpActive ? gpYs : jy;
 
@@ -795,6 +797,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         }
     }
     const bool hasDaw = isDawPlaying;
+    dawPlaying_.store(isDawPlaying, std::memory_order_relaxed);
 
     // Use free tempo knob when not DAW-synced; use DAW BPM when synced and DAW is rolling.
     const double freeTempo = static_cast<double>(
@@ -809,9 +812,34 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
     const auto loopOut = looper_.process(lp);
 
-    // Override joystick from looper playback if applicable
-    if (loopOut.hasJoystickX) joystickX.store(loopOut.joystickX);
-    if (loopOut.hasJoystickY) joystickY.store(loopOut.joystickY);
+    // Additive offset model: looper is the base; mouse sticky offset + gamepad live offset added on top.
+    // looperJoyOffsetX_/Y_ = sticky mouse offset (written by JoystickPad mouseDown/Drag).
+    // Gamepad right stick provides non-sticky live offset when looper is driving joystick content.
+    {
+        const bool  ljaSwap = stickSwap_.load();
+        const bool  ljaInv  = stickInvert_.load();
+        const float ljaRawX = ljaSwap ? gamepad_.getFilterX() : gamepad_.getPitchX();
+        const float ljaRawY = ljaSwap ? gamepad_.getFilterY() : gamepad_.getPitchY();
+        const float ljaGpX  = ljaInv ? ljaRawY : ljaRawX;
+        const float ljaGpY  = ljaInv ? ljaRawX : ljaRawY;
+        constexpr float kSnap = 0.01f;
+        const float ljaGpXs  = std::abs(ljaGpX) < kSnap ? 0.0f : ljaGpX;
+        const float ljaGpYs  = std::abs(ljaGpY) < kSnap ? 0.0f : ljaGpY;
+        const bool  looperJoyActive = looper_.isPlaying() && looper_.hasJoystickContent();
+
+        if (loopOut.hasJoystickX)
+        {
+            const float mouseOff = looperJoyOffsetX_.load(std::memory_order_relaxed);
+            const float stickOff = looperJoyActive ? ljaGpXs : 0.0f;
+            joystickX.store(juce::jlimit(-1.0f, 1.0f, loopOut.joystickX + mouseOff + stickOff));
+        }
+        if (loopOut.hasJoystickY)
+        {
+            const float mouseOff = looperJoyOffsetY_.load(std::memory_order_relaxed);
+            const float stickOff = looperJoyActive ? ljaGpYs : 0.0f;
+            joystickY.store(juce::jlimit(-1.0f, 1.0f, loopOut.joystickY + mouseOff + stickOff));
+        }
+    }
 
     // ── LFO Recording state machine — edge detection (Phase 22) ──────────────
     {
@@ -844,9 +872,19 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
 
         prevLooperRecording_ = looperNowRecording;
 
+        // Fix 4: transport stopped — force-stop looper when DAW Sync is ON.
         // Bug-3: transport stopped while LFO was recording → finalise capture.
         if (prevDawPlaying_ && !isDawPlaying)
         {
+            // Fix 4: force-stop looper when DAW Sync is ON and transport stops
+            if (looper_.isSyncToDaw() && looper_.isPlaying())
+            {
+                if (looper_.isRecording())
+                    looper_.record();   // finalize recording first (disarms, calls finaliseRecording)
+                looper_.startStop();    // stop playback; note-offs emitted via allNotesOff in next process()
+            }
+
+            // Existing LFO capture stop (Bug-3 from Phase 22) — unchanged
             if (lfoX_.getRecState() == LfoRecState::Recording) { lfoX_.stopCapture(); lfoXMidCycleRec_ = false; }
             if (lfoY_.getRecState() == LfoRecState::Recording) { lfoY_.stopCapture(); lfoYMidCycleRec_ = false; }
             lfoInstantCaptureSamplesLeft_ = 0;
@@ -1371,6 +1409,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
     {
         if (loopOut.gateOn[v])
         {
+            voiceTriggerFlash_[v].fetch_add(1, std::memory_order_relaxed);
             // Snapshot the pitch and channel at gate-on so gateOff uses the same values
             // even if heldPitch_[v] or the channel setting changes before the gate closes.
             looperActivePitch_[v] = heldPitch_[v];
@@ -1881,6 +1920,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             sentChannel_[voice] = ch;
             if (noteCount_[ch - 1][pitch]++ == 0)
                 midi.addEvent(juce::MidiMessage::noteOn(ch, pitch, (uint8_t)100), 0);
+            voiceTriggerFlash_[voice].fetch_add(1, std::memory_order_relaxed);
             arpActivePitch_  = pitch;
             arpActiveVoice_  = voice;
             arpCurrentVoice_.store(voice, std::memory_order_relaxed);
@@ -2358,6 +2398,48 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                     lfoXRateDisplay_.store(
                         (float)(int)*apvts.getRawParameterValue(ParamID::lfoXSubdiv),
                         std::memory_order_relaxed);
+            }
+
+            // Fix 7: free-rate LFO Freq display when filterMod is ON but no gamepad is active.
+            // Moving the MOD FIX offset knob with no gamepad still updates the slider visual.
+            if (!liveGamepad && filterModActive_.load(std::memory_order_relaxed))
+            {
+                const float xOffset = apvts.getRawParameterValue(ParamID::filterXOffset)->load();
+                const float yOffset = apvts.getRawParameterValue(ParamID::filterYOffset)->load();
+                static const juce::NormalisableRange<float> kLfoRange(0.01f, 20.0f, 0.0f, 0.35f);
+
+                // xMode == 4: X stick -> LFO-X Freq (free rate only)
+                if (xMode == 4 && !(*apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f))
+                {
+                    const float actual = kLfoRange.convertFrom0to1(
+                        juce::jlimit(0.0f, 1.0f, (xOffset + 50.0f) / 100.0f));
+                    lfoXRateDisplay_.store(actual, std::memory_order_relaxed);
+                    lfoXRateOverride_ = actual;
+                }
+                // xMode == 8: X stick -> LFO-Y Freq (cross-axis, free rate only)
+                if (xMode == 8 && !(*apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f))
+                {
+                    const float actual = kLfoRange.convertFrom0to1(
+                        juce::jlimit(0.0f, 1.0f, (xOffset + 50.0f) / 100.0f));
+                    lfoYRateDisplay_.store(actual, std::memory_order_relaxed);
+                    lfoYRateOverride_ = actual;
+                }
+                // yMode == 4: Y stick -> LFO-Y Freq (free rate only)
+                if (yMode == 4 && !(*apvts.getRawParameterValue(ParamID::lfoYSync) > 0.5f))
+                {
+                    const float actual = kLfoRange.convertFrom0to1(
+                        juce::jlimit(0.0f, 1.0f, (yOffset + 50.0f) / 100.0f));
+                    lfoYRateDisplay_.store(actual, std::memory_order_relaxed);
+                    lfoYRateOverride_ = actual;
+                }
+                // yMode == 8: Y stick -> LFO-X Freq (cross-axis, free rate only)
+                if (yMode == 8 && !(*apvts.getRawParameterValue(ParamID::lfoXSync) > 0.5f))
+                {
+                    const float actual = kLfoRange.convertFrom0to1(
+                        juce::jlimit(0.0f, 1.0f, (yOffset + 50.0f) / 100.0f));
+                    lfoXRateDisplay_.store(actual, std::memory_order_relaxed);
+                    lfoXRateOverride_ = actual;
+                }
             }
         }
     }

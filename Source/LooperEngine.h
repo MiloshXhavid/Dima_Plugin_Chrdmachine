@@ -77,6 +77,7 @@ public:
         bool    gateOff[4]   = {};
         bool    dawStopped   = false;  // true on the block where DAW stops (send all-notes-off)
         bool    looperReset  = false;  // true on the block where reset fires (seek to 0, cut looper notes)
+        bool    looperCycled = false;  // true on the block where playback position wraps to 0 (not during recording)
     };
 
     LooperEngine() = default;
@@ -86,6 +87,12 @@ public:
     void record();      // arm/disarm recording (only while playing); on disarm: finaliseRecording()
     void reset();       // sets resetRequest_ — audio thread clears state at next process()
     void deleteLoop();  // sets deleteRequest_ — audio thread clears events at next process()
+
+    // Lane-clear requests — called from message thread; serviced by audio thread at top of process().
+    // Each flag removes all events of the matching type(s) from playbackStore_.
+    void clearGateLane()   { pendingClearGates_.store(true,  std::memory_order_release); }
+    void clearJoyLane()    { pendingClearJoy_.store(true,    std::memory_order_release); }
+    void clearFilterLane() { pendingClearFilter_.store(true, std::memory_order_release); }
 
     bool isPlaying()   const { return playing_.load();   }
     bool isRecording() const { return recording_.load(); }
@@ -116,10 +123,11 @@ public:
     bool isRecJoy()          const { return recJoy_.load();                                                     }
     bool isRecGates()        const { return recGates_.load();                                                   }
     bool isRecFilter()       const { return recFilter_.load();                                                  }
-    // True once filter/joystick events exist in playbackStore_ (cleared on delete).
+    // True once filter/joystick/gate events exist in playbackStore_ (cleared on delete).
     // Used by processor to allow live stick when nothing has been recorded yet.
     bool hasFilterContent()   const { return hasFilterContent_.load(std::memory_order_relaxed);   }
     bool hasJoystickContent() const { return hasJoystickContent_.load(std::memory_order_relaxed); }
+    bool hasGateContent()     const { return hasGateContent_.load(std::memory_order_relaxed);     }
 
     void setRecWaitForTrigger(bool b) { recWaitForTrigger_.store(b); }
     bool isRecWaitForTrigger()    const { return recWaitForTrigger_.load(); }
@@ -180,6 +188,12 @@ private:
     // ── Destructive op request flags (UI sets, audio thread executes) ─────────
     std::atomic<bool> deleteRequest_ { false };
     std::atomic<bool> resetRequest_  { false };
+
+    // ── Lane-clear pending flags (UI sets, audio thread services at top of process()) ─
+    std::atomic<bool> pendingClearGates_  { false };
+    std::atomic<bool> pendingClearJoy_    { false };
+    std::atomic<bool> pendingClearFilter_ { false };
+    std::atomic<bool> hasGateContent_     { false };
 
     // ── Quantize state ──────────────────────────────────────────────────────────
     // Shadow copy for non-destructive post-record revert

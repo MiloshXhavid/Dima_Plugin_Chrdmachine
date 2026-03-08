@@ -352,17 +352,19 @@ void LooperEngine::finaliseRecording()
     // Update content flags so the processor knows which axes have recorded material.
     // This lets it allow the live stick when nothing has been recorded yet (no jumps).
     {
-        bool hasFilter = false, hasJoy = false;
+        bool hasFilter = false, hasJoy = false, hasGate = false;
         const int n = playbackCount_.load(std::memory_order_relaxed);
         for (int i = 0; i < n; ++i)
         {
             const auto t = playbackStore_[i].type;
             if (t == LooperEvent::Type::FilterX   || t == LooperEvent::Type::FilterY)   hasFilter = true;
             if (t == LooperEvent::Type::JoystickX || t == LooperEvent::Type::JoystickY) hasJoy    = true;
-            if (hasFilter && hasJoy) break;
+            if (t == LooperEvent::Type::Gate)                                            hasGate   = true;
+            if (hasFilter && hasJoy && hasGate) break;
         }
         hasFilterContent_.store  (hasFilter, std::memory_order_relaxed);
         hasJoystickContent_.store(hasJoy,    std::memory_order_relaxed);
+        hasGateContent_.store    (hasGate,   std::memory_order_relaxed);
     }
 
     // Reset shadow copy: old originals are stale after new recording.
@@ -613,9 +615,64 @@ LooperEngine::BlockOutput LooperEngine::process(const ProcessParams& p)
         playbackCount_.store(0,     std::memory_order_relaxed);
         hasFilterContent_.store  (false, std::memory_order_relaxed);
         hasJoystickContent_.store(false, std::memory_order_relaxed);
+        hasGateContent_.store    (false, std::memory_order_relaxed);
         quantizeActive_.store(false, std::memory_order_relaxed);
         hasOriginals_.store(false,   std::memory_order_relaxed);
         return out;
+    }
+
+    // ── Lane-clear requests (UI sets flags, audio thread compacts in-place) ───
+    if (pendingClearGates_.exchange(false, std::memory_order_acq_rel))
+    {
+        int newCount = 0;
+        const int total = playbackCount_.load(std::memory_order_relaxed);
+        for (int i = 0; i < total; ++i)
+        {
+            const auto& e = playbackStore_[i];
+            if (e.type != LooperEvent::Type::Gate)
+                playbackStore_[newCount++] = e;
+        }
+        playbackCount_.store(newCount, std::memory_order_release);
+        bool anyGate = false;
+        for (int i = 0; i < newCount; ++i)
+            if (playbackStore_[i].type == LooperEvent::Type::Gate) { anyGate = true; break; }
+        hasGateContent_.store(anyGate, std::memory_order_relaxed);
+    }
+
+    if (pendingClearJoy_.exchange(false, std::memory_order_acq_rel))
+    {
+        int newCount = 0;
+        const int total = playbackCount_.load(std::memory_order_relaxed);
+        for (int i = 0; i < total; ++i)
+        {
+            const auto& e = playbackStore_[i];
+            if (e.type != LooperEvent::Type::JoystickX && e.type != LooperEvent::Type::JoystickY)
+                playbackStore_[newCount++] = e;
+        }
+        playbackCount_.store(newCount, std::memory_order_release);
+        bool anyJoy = false;
+        for (int i = 0; i < newCount; ++i)
+            if (playbackStore_[i].type == LooperEvent::Type::JoystickX
+             || playbackStore_[i].type == LooperEvent::Type::JoystickY) { anyJoy = true; break; }
+        hasJoystickContent_.store(anyJoy, std::memory_order_relaxed);
+    }
+
+    if (pendingClearFilter_.exchange(false, std::memory_order_acq_rel))
+    {
+        int newCount = 0;
+        const int total = playbackCount_.load(std::memory_order_relaxed);
+        for (int i = 0; i < total; ++i)
+        {
+            const auto& e = playbackStore_[i];
+            if (e.type != LooperEvent::Type::FilterX && e.type != LooperEvent::Type::FilterY)
+                playbackStore_[newCount++] = e;
+        }
+        playbackCount_.store(newCount, std::memory_order_release);
+        bool anyFilter = false;
+        for (int i = 0; i < newCount; ++i)
+            if (playbackStore_[i].type == LooperEvent::Type::FilterX
+             || playbackStore_[i].type == LooperEvent::Type::FilterY) { anyFilter = true; break; }
+        hasFilterContent_.store(anyFilter, std::memory_order_relaxed);
     }
 
     // ── Post-record quantize service ──────────────────────────────────────────
