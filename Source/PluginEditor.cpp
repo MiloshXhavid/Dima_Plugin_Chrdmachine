@@ -4541,12 +4541,17 @@ void PluginEditor::paint(juce::Graphics& g)
             }
         }
 
-        // 1px vertical separator between the two rows (visual grouping)
+        // 1px vertical separator at centre column
         g.setColour(Clr::textDim.withAlpha(0.5f));
         const int sepX = arpStepRowABounds_.getX() + arpStepRowABounds_.getWidth() / 2;
         g.drawVerticalLine(sepX,
             (float)arpStepRowABounds_.getY(),
             (float)arpStepRowBBounds_.getBottom());
+
+        // 1px horizontal separator between row A and row B
+        g.drawHorizontalLine(arpStepRowABounds_.getBottom(),
+            (float)arpStepRowABounds_.getX(),
+            (float)arpStepRowABounds_.getRight());
     }
 
     drawLfoPanel(triggerBoxBounds_,    "TRIGGER");
