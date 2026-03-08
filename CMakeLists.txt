@@ -67,6 +67,7 @@ if(BUILD_TESTS)
         Tests/LfoEngineTests.cpp
         Tests/ChordNameTests.cpp
         Tests/CustomCcRoutingTests.cpp
+        Tests/LfoSisterAttenTests.cpp
     )
 
     set_target_properties(ChordJoystickTests PROPERTIES
