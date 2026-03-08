@@ -8,8 +8,10 @@ configure_file(
     @ONLY
 )
 
-# Static CRT — must precede all FetchContent calls so JUCE internals also get /MT
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# Static CRT — Windows/MSVC only; must precede FetchContent so JUCE internals also get /MT
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 include(FetchContent)
 
@@ -121,25 +123,30 @@ set(PLUGIN_COMPANY_NAME "Dimea Arcade")
 juce_add_plugin(ChordJoystick
     PRODUCT_NAME            "${PLUGIN_PRODUCT_NAME}"
     COMPANY_NAME            "${PLUGIN_COMPANY_NAME}"
-    FORMATS                 VST3
+    BUNDLE_ID               "com.dimeaarcade.chordcontrol"
+    FORMATS                 VST3 AU
     PLUGIN_MANUFACTURER_CODE "MxCJ"
     PLUGIN_CODE             "DCJM"
     VST3_CATEGORIES         "Instrument" "Fx"
+    AU_MAIN_TYPE            "kAudioUnitType_MusicDevice"
     IS_SYNTH                TRUE
     NEEDS_MIDI_INPUT        TRUE
     NEEDS_MIDI_OUTPUT       TRUE
     IS_MIDI_EFFECT          FALSE
+    HARDENED_RUNTIME_ENABLED TRUE
     COPY_PLUGIN_AFTER_BUILD TRUE
 )
 
 # Regenerate the Windows VERSIONINFO resource from the template so Reaper always
 # sees the correct ProductName / FileDescription in the DLL. configure_file() runs
 # at cmake-configure time and overwrites JUCE's auto-generated RC file.
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/Source/ChordJoystick_resources.rc.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/ChordJoystick_artefacts/JuceLibraryCode/ChordJoystick_resources.rc"
-    @ONLY
-)
+if(WIN32)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/Source/ChordJoystick_resources.rc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/ChordJoystick_artefacts/JuceLibraryCode/ChordJoystick_resources.rc"
+        @ONLY
+    )
+endif()
 
 set_target_properties(ChordJoystick PROPERTIES
     CXX_STANDARD          17
@@ -174,21 +181,37 @@ target_link_libraries(ChordJoystick PRIVATE
     SDL2-static
 )
 
-# After every successful build: wipe Reaper's VST cache so it always does a
-# full fresh rescan on next Reaper startup. Without this, Reaper uses the
-# cached checksum and never reloads the updated plugin factory info.
-set(REAPER_VST_CACHE
-    "C:/Users/Milosh Xhavid/AppData/Roaming/REAPER/reaper-vstplugins64.ini")
-add_custom_command(TARGET ChordJoystick_VST3 POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E rm -f "${REAPER_VST_CACHE}"
-    COMMENT "Cleared Reaper VST cache — restart Reaper to load the new build"
-    VERBATIM)
+if(WIN32)
+    # After every successful build: wipe Reaper's VST cache so it always does a
+    # full fresh rescan on next Reaper startup. Without this, Reaper uses the
+    # cached checksum and never reloads the updated plugin factory info.
+    set(REAPER_VST_CACHE
+        "C:/Users/Milosh Xhavid/AppData/Roaming/REAPER/reaper-vstplugins64.ini")
+    add_custom_command(TARGET ChordJoystick_VST3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${REAPER_VST_CACHE}"
+        COMMENT "Cleared Reaper VST cache — restart Reaper to load the new build"
+        VERBATIM)
 
-# Also copy to the user-local VST3 scan path so both locations stay in sync.
-set(LOCAL_VST3_DIR "$ENV{LOCALAPPDATA}/Programs/Common/VST3")
-add_custom_command(TARGET ChordJoystick_VST3 POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "$<TARGET_FILE_DIR:ChordJoystick_VST3>/../../"
-        "${LOCAL_VST3_DIR}/${PLUGIN_PRODUCT_NAME}.vst3"
-    COMMENT "Copied to local VST3 path: ${LOCAL_VST3_DIR}"
-    VERBATIM)
+    # Also copy to the user-local VST3 scan path so both locations stay in sync.
+    set(LOCAL_VST3_DIR "$ENV{LOCALAPPDATA}/Programs/Common/VST3")
+    add_custom_command(TARGET ChordJoystick_VST3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_FILE_DIR:ChordJoystick_VST3>/../../"
+            "${LOCAL_VST3_DIR}/${PLUGIN_PRODUCT_NAME}.vst3"
+        COMMENT "Copied to local VST3 path: ${LOCAL_VST3_DIR}"
+        VERBATIM)
+elseif(APPLE)
+    # Copy VST3 to system VST3 path and AU to user AU path after build.
+    add_custom_command(TARGET ChordJoystick_VST3 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_BUNDLE_DIR:ChordJoystick_VST3>"
+            "$ENV{HOME}/Library/Audio/Plug-Ins/VST3/${PLUGIN_PRODUCT_NAME}.vst3"
+        COMMENT "Copied VST3 to ~/Library/Audio/Plug-Ins/VST3/"
+        VERBATIM)
+    add_custom_command(TARGET ChordJoystick_AU POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "$<TARGET_BUNDLE_DIR:ChordJoystick_AU>"
+            "$ENV{HOME}/Library/Audio/Plug-Ins/Components/${PLUGIN_PRODUCT_NAME}.component"
+        COMMENT "Copied AU to ~/Library/Audio/Plug-Ins/Components/"
+        VERBATIM)
+endif()
