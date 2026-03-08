@@ -4549,6 +4549,7 @@ void PluginEditor::paint(juce::Graphics& g)
             (float)arpStepRowBBounds_.getBottom());
 
         // 2px horizontal separator between row A and row B
+        g.setColour(juce::Colours::white.withAlpha(0.25f));
         g.fillRect(arpStepRowABounds_.getX(), arpStepRowABounds_.getBottom(),
                    arpStepRowABounds_.getWidth(), 2);
     }
