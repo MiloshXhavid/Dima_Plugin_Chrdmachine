@@ -355,7 +355,7 @@ Plans:
 
 **Goal:** Allow users to assign any arbitrary MIDI CC number (0–127) to the LFO CC Dest and Left Stick X/Y Mode dropdowns, instead of being limited to the predefined named list.
 **Depends on:** Phase 38.1
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 - [ ] 38.2-01-PLAN.md — Wave 0: failing Catch2 test stubs for CC-CUSTOM-01/02/03 + CMakeLists registration
