@@ -404,6 +404,10 @@ Plans:
   4. All 4 octave and 4 interval buttons show 12 evenly-spaced 2 px filled dots at snap positions; red position ring removed; current value shown as a brighter dot
 **Plans**: 2 plans
 
+Plans:
+- [ ] 39-01-PLAN.md — VelocityKnob + VelocitySlider classes, ScaleSnapSlider base change, drawRotarySlider dots + hover ring, wire all in-scope members
+- [ ] 39-02-PLAN.md — Build + install + UAT checkpoint (all 4 SC)
+
 #### Phase 40: Pitch Axis Crosshair Visualization
 **Goal**: Two subtle lines extend from the cursor to the joystick pad edges with quantized note names — giving the player immediate pitch feedback without cluttering the space visual.
 **Depends on**: Phase 38

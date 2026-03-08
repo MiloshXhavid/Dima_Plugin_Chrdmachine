@@ -3,13 +3,29 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
 status: unknown
-stopped_at: Completed 45-02-PLAN.md — arp step grid UI UAT approved, post-UAT arpLen wrap and TIE noteOff fixes
-last_updated: "2026-03-08T22:44:21.993Z"
+stopped_at: Completed 39-01-PLAN.md — VelocityKnob+VelocitySlider, dot indicators, hover ring — build clean
+last_updated: "2026-03-08T23:19:42.867Z"
 last_activity: 2026-03-07 — v1.8 milestone completion archived
 progress:
   total_phases: 26
   completed_phases: 21
   total_plans: 49
+  completed_plans: 48
+  percent: 97
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.9
+milestone_name: Living Interface
+status: unknown
+stopped_at: Planned Phase 39 — 39-01 + 39-02 PLAN.md written and verified (plan checker PASS)
+last_updated: "2026-03-08T23:00:00.000Z"
+last_activity: 2026-03-08 — Phase 39 CONTEXT.md + plans created
+progress:
+  [██████████] 97%
+  completed_phases: 21
+  total_plans: 51
   completed_plans: 47
 ---
 
@@ -302,6 +318,7 @@ Key v1.6 design decisions (locked):
 - [Phase 45]: arpLengthAtt_ declared with full type in header (not ComboAtt alias) — using alias not yet visible at member declaration site
 - [Phase 45]: arpLengthAtt_ uses full type in header (not ComboAtt alias) — alias not visible before its declaration site
 - [Phase 45]: TIE suppression checks upcoming step at (arpStep_+1)%arpLen — not the current step; arpStep wraps at arpLen (not seqLen) for pattern index
+- [Phase 39-01]: VelocityKnob/VelocitySlider defined before PluginEditor in header; ScaleSnapSlider rebased to VelocityKnob; isDotMode check uses interval==1.0 guard; hover ring drawn last for correct z-order
 
 ### Pending Todos
 
@@ -313,6 +330,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-08T22:39:54.752Z
-Stopped at: Completed 45-02-PLAN.md — arp step grid UI UAT approved, post-UAT arpLen wrap and TIE noteOff fixes
+Last session: 2026-03-08T23:19:42.862Z
+Stopped at: Completed 39-01-PLAN.md — VelocityKnob+VelocitySlider, dot indicators, hover ring — build clean
 Next step: Phases 34-37 (cross-LFO modulation, arp subdivision, arp trigger sources, looper fix) for v1.8 completion.
