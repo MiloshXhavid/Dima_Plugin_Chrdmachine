@@ -35,9 +35,12 @@ public:
     juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override;
 
     void setPixelFont(const juce::Font& f) { pixelFont_ = f; }
+    void setScaleFactor(float s) { scaleFactor_ = s; }
+    float getScaleFactor() const { return scaleFactor_; }
 
 private:
     juce::Font pixelFont_ { 10.0f };
+    float scaleFactor_ { 1.0f };
 };
 
 // ─── GamepadDisplayComponent ─────────────────────────────────────────────────
@@ -436,6 +439,8 @@ private:
         int      transpose_ = 0;
     };
 
+    float scaleFactor_ { 1.0f };   // derived from window width / 1120, persisted via proc_.savedUiScale_
+
     PixelLookAndFeel pixelLaf_;
     juce::Font       pixelFont_ { 10.0f };
 
@@ -596,7 +601,7 @@ private:
     juce::Label      arpSubdivLabel_;
     juce::ComboBox   arpOrderBox_;
     juce::Label      arpOrderLabel_;
-    VelocityKnob     arpGateTimeKnob_;
+    VelocitySlider   arpGateTimeKnob_;
     juce::Label      arpGateTimeLabel_;
     juce::Rectangle<int> arpBlockBounds_;  // for drawing the panel in paint()
 

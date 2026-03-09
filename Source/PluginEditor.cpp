@@ -382,22 +382,22 @@ juce::Font PixelLookAndFeel::getLabelFont(juce::Label& label)
     // Use the label's own height/style but with a clean sans-serif typeface.
     auto f = label.getFont();
     return juce::Font(juce::Font::getDefaultSansSerifFontName(),
-                      f.getHeight(), f.getStyleFlags());
+                      f.getHeight() * scaleFactor_, f.getStyleFlags());
 }
 
 juce::Font PixelLookAndFeel::getComboBoxFont(juce::ComboBox& /*box*/)
 {
-    return juce::Font(juce::Font::getDefaultSansSerifFontName(), 10.5f, juce::Font::plain);
+    return juce::Font(juce::Font::getDefaultSansSerifFontName(), 10.5f * scaleFactor_, juce::Font::plain);
 }
 
 juce::Font PixelLookAndFeel::getTextButtonFont(juce::TextButton& button, int buttonHeight)
 {
     if (button.getName() == "small")
         return juce::Font(juce::Font::getDefaultSansSerifFontName(),
-                          juce::jmin(8.0f, (float)buttonHeight * 0.38f),
+                          juce::jmin(8.0f * scaleFactor_, (float)buttonHeight * 0.38f),
                           juce::Font::bold);
     return juce::Font(juce::Font::getDefaultSansSerifFontName(),
-                      juce::jmin(11.0f, (float)buttonHeight * 0.5f),
+                      juce::jmin(11.0f * scaleFactor_, (float)buttonHeight * 0.5f),
                       juce::Font::bold);
 }
 
@@ -1322,12 +1322,8 @@ void JoystickPad::timerCallback()
                                 (displayCx_ - padCx) / (padW * 0.5f));
         constexpr float kTurnRate = 0.004f;  // rad/tick at full deflection (~15°/s at 60 Hz)
         driftHeading_ += kTurnRate * deflX;
-
-        // Keep apparent flight direction fixed while INV rotation animates:
-        // screen direction = driftHeading_ - bgRotRad, so compensate each tick's delta.
-        const float bgRotRad = bgRotAngle_ * juce::MathConstants<float>::pi / 180.0f;
-        driftHeading_ += bgRotRad - bgRotPrev_;
-        bgRotPrev_ = bgRotRad;
+        // No compensation: world heading is unchanged so the apparent screen drift
+        // co-rotates with the background when INV rotates the canvas.
     }
 
     // ── Phase 43.2: Animate starfield (unified heading + parallax + respawn) ──
@@ -1435,6 +1431,9 @@ void JoystickPad::timerCallback()
             bgRotSpringActive_ = false;
             bgRotInvLast_      = invOn;
             bgRotInitialized_  = true;
+            // Sync bgRotPrev_ so the drift-heading compensation sees zero delta on the
+            // very next tick (prevents one-time π/2 heading jump that bunches stars).
+            bgRotPrev_         = newTarget * juce::MathConstants<float>::pi / 180.0f;
         }
         else if (invOn != bgRotInvLast_)
         {
@@ -2045,7 +2044,7 @@ void JoystickPad::paint(juce::Graphics& g)
             {
                 // Faint discoverability dot when crosshair is toggled OFF
                 g.setColour(juce::Colour(0xFF1E3A6E).withAlpha(0.15f));  // Clr::accent
-                g.fillEllipse(displayCx_ - 4.0f, displayCy_ - 4.0f, 8.0f, 8.0f);
+                g.fillEllipse(cx - 4.0f, cy - 4.0f, 8.0f, 8.0f);
             }
             // atCenter + crosshairOn: draw nothing (lines and dot both suppressed)
         }
@@ -2054,10 +2053,10 @@ void JoystickPad::paint(juce::Graphics& g)
             // Draw two half-segments from cursor to pad center axes
             g.setColour(juce::Colours::white.withAlpha(0.22f));
 
-            // Horizontal: cursor → (padCx, displayCy_)
-            g.drawLine(displayCx_, displayCy_, padCx, displayCy_, 1.0f);
-            // Vertical: cursor → (displayCx_, padCy)
-            g.drawLine(displayCx_, displayCy_, displayCx_, padCy, 1.0f);
+            // Horizontal: cursor → (padCx, cy)  — use rotated cx/cy so lines attach to dot
+            g.drawLine(cx, cy, padCx, cy, 1.0f);
+            // Vertical: cursor → (cx, padCy)
+            g.drawLine(cx, cy, cx, padCy, 1.0f);
 
             // Note name helper: MIDI note → "C4" style
             // octave = note/12 - 1  →  MIDI 60 = C4 (middle C)
@@ -2076,53 +2075,62 @@ void JoystickPad::paint(juce::Graphics& g)
 
             // Collision check helper: returns true if label center is too close to cursor
             auto tooClose = [&](float lx, float ly) -> bool {
-                const float dx = lx - displayCx_;
-                const float dy = ly - displayCy_;
+                const float dx = lx - cx;
+                const float dy = ly - cy;
                 return (dx*dx + dy*dy) < (kCollisionR * kCollisionR);
             };
 
-            // Horizontal segment midpoint (cursor X to pad center X, at cursor Y)
-            const float hMidX = (displayCx_ + padCx) * 0.5f;
-            const float hMidY = displayCy_;
+            // In INV mode (90° CCW visual rotation) the horizontal segment tracks the
+            // X axis (Fifth/Tension) and the vertical segment tracks the Y axis (Root/Third).
+            // voiceH0/voiceH1 = voices shown on the horizontal segment midpoint.
+            // voiceV0/voiceV1 = voices shown on the vertical segment midpoint.
+            const int voiceH0 = invOn ? 2 : 0;  // normal: Root(0); inv: Fifth(2)
+            const int voiceH1 = invOn ? 3 : 1;  // normal: Third(1); inv: Tension(3)
+            const int voiceV0 = invOn ? 0 : 2;  // normal: Fifth(2); inv: Root(0)
+            const int voiceV1 = invOn ? 1 : 3;  // normal: Tension(3); inv: Third(1)
 
-            // Root — above horizontal line
+            // Horizontal segment midpoint (cursor X to pad center X, at cursor Y)
+            const float hMidX = (cx + padCx) * 0.5f;
+            const float hMidY = cy;
+
+            // voiceH0 — above horizontal line
             {
                 const float lx = hMidX;
                 const float ly = hMidY - kLabelH * 0.5f - 2.0f;
                 if (!tooClose(lx, ly))
-                    g.drawText(midiToName(livePitch_[0]),
+                    g.drawText(midiToName(livePitch_[voiceH0]),
                                juce::Rectangle<float>(lx - kLabelW*0.5f, ly - kLabelH*0.5f, kLabelW, kLabelH),
                                juce::Justification::centred, false);
             }
-            // Third — below horizontal line
+            // voiceH1 — below horizontal line
             {
                 const float lx = hMidX;
                 const float ly = hMidY + kLabelH * 0.5f + 2.0f;
                 if (!tooClose(lx, ly))
-                    g.drawText(midiToName(livePitch_[1]),
+                    g.drawText(midiToName(livePitch_[voiceH1]),
                                juce::Rectangle<float>(lx - kLabelW*0.5f, ly - kLabelH*0.5f, kLabelW, kLabelH),
                                juce::Justification::centred, false);
             }
 
             // Vertical segment midpoint (cursor Y to pad center Y, at cursor X)
-            const float vMidX = displayCx_;
-            const float vMidY = (displayCy_ + padCy) * 0.5f;
+            const float vMidX = cx;
+            const float vMidY = (cy + padCy) * 0.5f;
 
-            // Fifth — left of vertical line
+            // voiceV0 — left of vertical line
             {
                 const float lx = vMidX - kLabelW * 0.5f - 2.0f;
                 const float ly = vMidY;
                 if (!tooClose(lx, ly))
-                    g.drawText(midiToName(livePitch_[2]),
+                    g.drawText(midiToName(livePitch_[voiceV0]),
                                juce::Rectangle<float>(lx - kLabelW*0.5f, ly - kLabelH*0.5f, kLabelW, kLabelH),
                                juce::Justification::centred, false);
             }
-            // Tension — right of vertical line
+            // voiceV1 — right of vertical line
             {
                 const float lx = vMidX + kLabelW * 0.5f + 2.0f;
                 const float ly = vMidY;
                 if (!tooClose(lx, ly))
-                    g.drawText(midiToName(livePitch_[3]),
+                    g.drawText(midiToName(livePitch_[voiceV1]),
                                juce::Rectangle<float>(lx - kLabelW*0.5f, ly - kLabelH*0.5f, kLabelW, kLabelH),
                                juce::Justification::centred, false);
             }
@@ -2584,7 +2592,12 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     logoImage_ = juce::ImageCache::getFromMemory(BinaryData::DimeaLogo_png,
                                                  BinaryData::DimeaLogo_pngSize);
 
-    setSize(1120, 840);
+    scaleFactor_ = (float)juce::jlimit(0.75, 2.0, proc_.savedUiScale_.load());
+    setSize(juce::roundToInt(1120.0f * scaleFactor_),
+            juce::roundToInt(840.0f  * scaleFactor_));
+    setResizeLimits(840, 630, 2240, 1680);                            // 0.75x min, 2.0x max
+    getConstrainer()->setFixedAspectRatio(1120.0 / 840.0);           // lock 4:3
+    setResizable(true, false);                                        // host resize; no JUCE corner handle
 
     // ── Tooltip window ────────────────────────────────────────────────────────
     addAndMakeVisible(tooltipWindow_);
@@ -3944,6 +3957,10 @@ PluginEditor::~PluginEditor()
 
 void PluginEditor::resized()
 {
+    scaleFactor_ = (float)getWidth() / 1120.0f;
+    pixelLaf_.setScaleFactor(scaleFactor_);
+    proc_.savedUiScale_.store((double)scaleFactor_);
+
     auto area = getLocalBounds().reduced(8);
     area.removeFromTop(28);   // header bar
     area.removeFromBottom(60); // footer instructions
@@ -4362,19 +4379,20 @@ void PluginEditor::resized()
             r.removeFromTop(4);
 
             // Row 2: RND SYNC (CLR-style, centred on knob) | FREE BPM knob (right)
-            auto row2 = r.removeFromTop(72);
+            // BPM label sits below the knob. Row height matches population knob row (70px).
+            auto row2 = r.removeFromTop(70);
             auto syncHalf = row2.removeFromLeft(hw);
             auto freeTempoHalf = row2;
-            const auto knobBounds = freeTempoHalf.removeFromTop(56).reduced(2, 2);
+            // Knob takes the top portion, BPM label below it.
+            const auto knobBounds = freeTempoHalf.removeFromTop(freeTempoHalf.getHeight() - 14).reduced(2, 0);
             randomFreeTempoKnob_.setBounds(knobBounds);
-            // CLR-style button vertically centred on the tempo knob, label 2px below
+            bpmDisplayLabel_.setBounds(freeTempoHalf.reduced(2, 0));
+            // CLR-style button vertically centred on the tempo knob
             constexpr int btnH = 22;
             const int btnY = knobBounds.getCentreY() - btnH / 2;
             randomSyncButton_.setBounds(syncHalf.getX() + 2, btnY, syncHalf.getWidth() - 4, btnH);
             randomSubdivLabel_.setBounds(syncHalf.getX() + 2, btnY + btnH + 2,
                                          syncHalf.getWidth() - 4, 12);
-            freeTempoHalf.removeFromTop(2);
-            bpmDisplayLabel_.setBounds(freeTempoHalf.removeFromTop(12));
         }
     }
 
@@ -4677,7 +4695,7 @@ void PluginEditor::paint(juce::Graphics& g)
     g.setColour(Clr::accent.brighter(0.6f));
     g.drawRect(header, 1);
     // Title: pixel font for branding, but bright/readable
-    g.setFont(pixelFont_.withHeight(11.0f));
+    g.setFont(pixelFont_.withHeight(11.0f * scaleFactor_));
     g.setColour(Clr::text);
     g.drawText("Arcade Chord Control (BETA-Test)", header, juce::Justification::centred);
 
@@ -4695,7 +4713,7 @@ void PluginEditor::paint(juce::Graphics& g)
 
     // Section labels
     g.setColour(Clr::textDim);
-    g.setFont(juce::Font(9.5f, juce::Font::bold));
+    g.setFont(juce::Font(9.5f * scaleFactor_, juce::Font::bold));
 
     auto drawSectionTitle = [&](const juce::String& t, juce::Rectangle<int> r)
     {
@@ -4952,7 +4970,7 @@ void PluginEditor::paint(juce::Graphics& g)
             {
                 // Unknown: "?" centred
                 g.setColour(Clr::textDim);
-                g.setFont(juce::Font(7.0f));
+                g.setFont(juce::Font(7.0f * scaleFactor_));
                 g.drawText("?", (int)bx, (int)by, (int)bw, (int)bh, juce::Justification::centred);
             }
             else
@@ -5057,7 +5075,7 @@ void PluginEditor::paint(juce::Graphics& g)
     // LFO slider row labels (Rate, Phase, Level, Dist)
     auto drawSliderLabel = [&](juce::Rectangle<int> sliderBounds, const juce::String& text)
     {
-        g.setFont(juce::Font(9.0f));
+        g.setFont(juce::Font(9.0f * scaleFactor_));
         g.setColour(Clr::textDim);
         g.drawText(text,
                    sliderBounds.getX() - 34, sliderBounds.getY(),
@@ -5405,21 +5423,30 @@ void PluginEditor::timerCallback()
             filterYModeAtt_.reset();
             filterXAttenAtt_.reset();
             filterYAttenAtt_.reset();
+            filterXOffsetAtt_.reset();
+            filterYOffsetAtt_.reset();
 
             if (invOn)
             {
-                // Physical stick X now drives logical Y axis — cross-wire the attachments.
+                // Physical stick X now drives logical Y axis — cross-wire mode/atten attachments.
                 filterXModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterYMode", filterXModeBox_);
                 filterYModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterXMode", filterYModeBox_);
-                filterXAttenAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYAtten", filterXAttenKnob_);
-                filterYAttenAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterXAtten", filterYAttenKnob_);
+                filterXAttenAtt_  = std::make_unique<SliderAtt>(proc_.apvts, "filterYAtten",  filterXAttenKnob_);
+                filterYAttenAtt_  = std::make_unique<SliderAtt>(proc_.apvts, "filterXAtten",  filterYAttenKnob_);
+                // MOD FIX offset knobs are NOT cross-wired: physical X always writes filterXOffset
+                // so turning MOD FIX X adjusts the offset for whatever CC physical X is sending.
+                // The display swap in timerCallback handles visual tracking of the live stick.
+                filterXOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterXOffset", filterXOffsetKnob_);
+                filterYOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYOffset", filterYOffsetKnob_);
             }
             else
             {
                 filterXModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterXMode", filterXModeBox_);
                 filterYModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterYMode", filterYModeBox_);
-                filterXAttenAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterXAtten", filterXAttenKnob_);
-                filterYAttenAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYAtten", filterYAttenKnob_);
+                filterXAttenAtt_  = std::make_unique<SliderAtt>(proc_.apvts, "filterXAtten",  filterXAttenKnob_);
+                filterYAttenAtt_  = std::make_unique<SliderAtt>(proc_.apvts, "filterYAtten",  filterYAttenKnob_);
+                filterXOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterXOffset", filterXOffsetKnob_);
+                filterYOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYOffset", filterYOffsetKnob_);
             }
 
             // Physically swap LEFT X and LEFT Y column positions so the rows
@@ -5442,8 +5469,7 @@ void PluginEditor::timerCallback()
             swapBounds(filterXModeBox_,     filterYModeBox_);
             swapBounds(filterXAttenLabel_,  filterYAttenLabel_);
             swapBounds(filterXAttenKnob_,   filterYAttenKnob_);
-            swapBounds(filterXOffsetLabel_, filterYOffsetLabel_);
-            swapBounds(filterXOffsetKnob_,  filterYOffsetKnob_);
+            // MOD FIX offset knobs do NOT swap: physical X always drives MOD FIX X knob.
             swapBounds(joyXAttenLabel_,     joyYAttenLabel_);
             swapBounds(joyXAttenKnob_,      joyYAttenKnob_);
             swapBounds(filterXCustomCcLabel_, filterYCustomCcLabel_);
@@ -5704,12 +5730,16 @@ void PluginEditor::timerCallback()
                 default: break;
             }
         }
-        // MOD FIX X knob always tracks live joystick regardless of LFO playback state.
-        // Not guarded by xPlayback — should always show the live modulated position.
-        if (!filterXOffsetDragging_)
-            filterXOffsetKnob_.setValue(
-                proc_.filterXOffsetDisplay_.load(std::memory_order_relaxed),
-                juce::dontSendNotification);
+        // MOD FIX X/Y knobs track live joystick regardless of LFO playback state.
+        // In INV mode physical X drives the logical Y axis, so we swap which display
+        // atomic feeds which knob so MOD FIX X always tracks the physical X stick.
+        {
+            const bool invForModFix = *proc_.apvts.getRawParameterValue("stickInvert") > 0.5f;
+            if (!filterXOffsetDragging_)
+                filterXOffsetKnob_.setValue(
+                    (invForModFix ? proc_.filterYOffsetDisplay_ : proc_.filterXOffsetDisplay_)
+                        .load(std::memory_order_relaxed),
+                    juce::dontSendNotification);
 
         // Y axis targets
         if (!yPlayback)
@@ -5797,12 +5827,12 @@ void PluginEditor::timerCallback()
             }
         }
 
-        // MOD FIX Y knob always tracks live joystick regardless of LFO playback state.
-        // Not guarded by yPlayback — should always show the live modulated position.
-        if (!filterYOffsetDragging_)
-            filterYOffsetKnob_.setValue(
-                proc_.filterYOffsetDisplay_.load(std::memory_order_relaxed),
-                juce::dontSendNotification);
+            if (!filterYOffsetDragging_)
+                filterYOffsetKnob_.setValue(
+                    (invForModFix ? proc_.filterXOffsetDisplay_ : proc_.filterYOffsetDisplay_)
+                        .load(std::memory_order_relaxed),
+                    juce::dontSendNotification);
+        }
 
         // ── Rate label — Hz in free mode, subdivision name in sync mode ──
         {
