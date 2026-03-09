@@ -1610,9 +1610,20 @@ void JoystickPad::paint(juce::Graphics& g)
     const int w  = getWidth(), h = getHeight();
     juce::ignoreUnused(w, h);
 
-    // ── Layer 1: Near-black background ───────────────────────────────────────
-    g.setColour(juce::Colour(0xff05050f));
-    g.fillRect(b);
+    // ── Layer 1: Near-black background with subtle hue drift (Phase 43.2) ────
+    {
+        const double ms = juce::Time::getMillisecondCounterHiRes();
+        const float hueOffset = (float)(std::sin(ms / 120000.0 *
+                                    juce::MathConstants<double>::twoPi) * 8.0);
+        const juce::Colour bgBase(0xFF131525);  // matches Clr::bg
+        const float baseHue = bgBase.getHue();
+        const juce::Colour bgShifted = juce::Colour::fromHSV(
+            std::fmod(baseHue + hueOffset / 360.0f + 1.0f, 1.0f),
+            bgBase.getSaturation(),
+            bgBase.getBrightness(), 1.0f);
+        g.setColour(bgShifted);
+        g.fillRect(b);
+    }
 
     // Mid-rotation pulse: bell curve 0→1→0 over the 12 s journey (0 at rest).
     // Used by layers 1.5 and 1.6 for subtle opacity boost and vignette deepening.
@@ -1669,19 +1680,82 @@ void JoystickPad::paint(juce::Graphics& g)
         g.drawImage(milkyWayCache_, b);
     }
 
+    // ── Layer 2.5: Nebula gas clouds (Phase 43.2) ─────────────────────────────
+    {
+        const float warpT = warpRamp_ * warpRamp_ * (3.0f - 2.0f * warpRamp_);
+        for (const auto& nb : nebulae_)
+        {
+            const float effectiveAlpha = nb.alpha * (1.0f - warpT);
+            if (effectiveAlpha < 0.005f) continue;  // skip fully faded blobs
+
+            const float px = nb.x * b.getWidth();
+            const float py = nb.y * b.getHeight();
+            juce::ColourGradient grad(
+                nb.colour.withAlpha(effectiveAlpha), px, py,
+                nb.colour.withAlpha(0.0f),           px + nb.rx, py,
+                true);  // isRadial = true → circular gradient
+            // Scale Graphics context to stretch circle → ellipse (rx vs ry)
+            juce::Graphics::ScopedSaveState ss(g);
+            g.addTransform(juce::AffineTransform::scale(1.0f, nb.ry / nb.rx, px, py));
+            g.setGradientFill(grad);
+            g.fillEllipse(px - nb.rx, py - nb.rx, nb.rx * 2.0f, nb.rx * 2.0f);
+        }
+    }
+
     // ── Layer 3: Starfield (count driven by randomPopulation 1-64) ───────────
     if (!starfield_.empty())
     {
         const float pop = proc_.apvts.getRawParameterValue("randomPopulation")->load();
         const int visCount = (int)std::floor((float)starfield_.size() * (pop - 1.0f) / 63.0f);
         const int count    = juce::jmin(visCount, (int)starfield_.size());
-        for (int i = 0; i < count; ++i)
         {
-            const auto& s = starfield_[i];
-            g.setColour(s.c);
-            g.fillEllipse(s.x * b.getWidth()  - s.r,
-                          s.y * b.getHeight() - s.r,
-                          s.r * 2.0f, s.r * 2.0f);
+            const float warpT = warpRamp_ * warpRamp_ * (3.0f - 2.0f * warpRamp_);
+            for (int i = 0; i < count; ++i)
+            {
+                const auto& s = starfield_[i];
+                const float twinkleOff = std::sin(s.twinklePhase) * 0.10f;  // ±10% brightness
+                const float warpFade   = 1.0f - warpT;
+                const float fadeAlpha  = (s.fadeIn == 0) ? 1.0f
+                                                         : (float)(30 - s.fadeIn) / 30.0f;
+                const juce::Colour tc = s.c.withMultipliedAlpha(
+                    juce::jlimit(0.0f, 1.0f, (1.0f + twinkleOff * warpFade) * fadeAlpha));
+                g.setColour(tc);
+                g.fillEllipse(s.x * b.getWidth()  - s.r,
+                              s.y * b.getHeight() - s.r,
+                              s.r * 2.0f, s.r * 2.0f);
+            }
+        }
+    }
+
+    // ── Layer 3.5: Shooting star streak (Phase 43.2) ──────────────────────────
+    if (shootingStar_.active)
+    {
+        const float warpT       = warpRamp_ * warpRamp_ * (3.0f - 2.0f * warpRamp_);
+        const float peakAlpha   = 0.5f * (1.0f - warpT);
+        if (peakAlpha > 0.005f)
+        {
+            const float prog        = shootingStar_.progress;  // 0..1
+            const float totalDistPx = juce::jmin(b.getWidth(), b.getHeight()) * 0.6f;
+
+            // Streak length: fades in (0→0.5) and fades out (0.7→1.0); max 60px
+            const float streakLen = juce::jmap(juce::jlimit(0.0f, 0.5f, prog),  0.0f, 0.5f, 0.0f, 60.0f)
+                                  * juce::jmap(juce::jlimit(0.7f, 1.0f, prog),  0.7f, 1.0f, 1.0f, 0.0f);
+
+            const float startX = shootingStar_.x * b.getWidth();
+            const float startY = shootingStar_.y * b.getHeight();
+            // Head position (tip of streak, moves forward)
+            const float hx = startX + std::cos(shootingStar_.angle) * prog * totalDistPx;
+            const float hy = startY + std::sin(shootingStar_.angle) * prog * totalDistPx;
+            // Tail position (behind head by streakLen pixels)
+            const float tx = hx - std::cos(shootingStar_.angle) * streakLen;
+            const float ty = hy - std::sin(shootingStar_.angle) * streakLen;
+
+            juce::ColourGradient sg(
+                juce::Colours::white.withAlpha(peakAlpha * 0.15f), tx, ty,  // tail: dim
+                juce::Colours::white.withAlpha(peakAlpha),          hx, hy,  // head: bright
+                false);  // linear gradient
+            g.setGradientFill(sg);
+            g.drawLine(tx, ty, hx, hy, 1.2f);
         }
     }
 
