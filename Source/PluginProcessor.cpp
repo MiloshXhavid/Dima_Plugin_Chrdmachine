@@ -2728,6 +2728,7 @@ void PluginProcessor::getStateInformation(juce::MemoryBlock& dest)
 {
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+    xml->setAttribute("uiScaleFactor", (double)savedUiScale_.load());
     copyXmlToBinary(*xml, dest);
 }
 
@@ -2745,6 +2746,8 @@ void PluginProcessor::setStateInformation(const void* data, int size)
             newParam->setAttribute("id", "randomSyncMode");
             newParam->setAttribute("value", wasSync ? 1.0 : 0.0);  // INT=1, FREE=0
         }
+        savedUiScale_.store(juce::jlimit(0.75, 2.0,
+            xml->getDoubleAttribute("uiScaleFactor", 1.0)));
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
     }
 }

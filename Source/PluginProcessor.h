@@ -40,6 +40,10 @@ public:
     void setStateInformation(const void*, int) override;
 
     // ── Public state (read by UI, written by UI / gamepad) ────────────────────
+    // UI scale factor — persisted via getStateInformation/setStateInformation.
+    // Editor reads this at construction time. Not an APVTS parameter (no automation).
+    std::atomic<double> savedUiScale_ { 1.0 };
+
     // Live joystick position from UI drag (-1..+1)
     // Default: center (0, 0)
     std::atomic<float> joystickX {0.0f};
