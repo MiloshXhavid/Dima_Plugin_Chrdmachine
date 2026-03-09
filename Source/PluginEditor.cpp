@@ -1441,6 +1441,7 @@ void JoystickPad::updateFromMouse(const juce::MouseEvent& e)
     }
     else
     {
+        proc_.mouseJoyActive_.store(true, std::memory_order_relaxed);
         proc_.joystickX.store(nx);
         proc_.joystickY.store(ny);
     }

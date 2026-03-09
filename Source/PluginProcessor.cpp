@@ -589,9 +589,19 @@ ChordEngine::Params PluginProcessor::buildChordParams() const
     // Gamepad pitch stick: active when any axis is deflected past snap threshold.
     // When looper is playing with joystick content, stick acts as additive offset (applied below).
     // When looper is not playing, stick overrides live mouse joystick as before.
+    //
+    // Hysteresis: the physical stick must cross kGpIntentThreshold to take over from the
+    // on-screen JoystickPad. This prevents stick drift (small constant offset just above
+    // the hardware deadzone) from silently overriding mouse input.
+    // mouseJoyActive_ is set by JoystickPad on mouseDown/Drag and cleared here once the
+    // physical stick is deliberately moved past the intent threshold.
+    constexpr float kGpIntentThreshold = 0.15f;
+    const float gpMag = std::abs(gpXs) + std::abs(gpYs);
     const bool looperJoyActive = looper_.isPlaying() && looper_.hasJoystickContent();
-    const bool gpActive = !looperJoyActive
-                       && (std::abs(gpXs) + std::abs(gpYs)) > 0.0f;
+    if (gpMag > kGpIntentThreshold)
+        mouseJoyActive_.store(false, std::memory_order_relaxed);
+    const bool mouseWins = mouseJoyActive_.load(std::memory_order_relaxed);
+    const bool gpActive = !looperJoyActive && !mouseWins && gpMag > 0.0f;
     p.joystickX = gpActive ? gpXs : jx;
     p.joystickY = gpActive ? gpYs : jy;
 

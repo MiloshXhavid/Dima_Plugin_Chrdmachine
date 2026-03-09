@@ -44,6 +44,9 @@ public:
     // Default: center (0, 0)
     std::atomic<float> joystickX {0.0f};
     std::atomic<float> joystickY {0.0f};
+    // Set by JoystickPad mouseDown/Drag; gives mouse priority over a drifting physical stick.
+    // Cleared by buildChordParams() when the physical stick crosses the deliberate-intent threshold.
+    mutable std::atomic<bool>  mouseJoyActive_ { false };
 
     // Touch-plate state (UI → processor)
     void setPadState(int voice, bool pressed) { trigger_.setPadState(voice, pressed); }
