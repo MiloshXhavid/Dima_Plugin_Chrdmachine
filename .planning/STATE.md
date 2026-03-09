@@ -373,8 +373,12 @@ Key v1.6 design decisions (locked):
 - [Phase 40]: kCollisionR=20px label suppression prevents note name labels from overlapping cursor sprite at close range
 
 - [Phase 41-01]: ChordNameContext struct + computeChordNameSmart inline function added to ChordNameHelper.h — scale-aware voice inference for absent third/seventh voices
-- [Phase 41-01]: 9 Unicode jazz symbols in kT[] using u8 prefix: △ (maj7 variants), ø (m7b5), °7 (dim7)
 - [Phase 41-01]: displayVoiceMask_ + pendingVoiceMask_ in PluginProcessor — written at 3 snapshot sites; Site 3 (arp) is NEW snapshot enabling rhythmic display updates
+- [Phase 41-02]: computeChordName wrapper updated to accept ChordNameContext and call computeChordNameSmart; timerCallback builds context from APVTS scalePreset/useCustomScale/scaleNote0..11 + getCurrentVoiceMask()
+- [Phase 41-02]: Unicode symbols (△, ø, °7) reverted to full-word notation (maj7, m7b5, dim7) per UAT feedback — plugin UI pixel font rendered symbols illegibly at chord label size
+- [Phase 41 extra fixes]: mouseJoyActive_ atomic bool gives on-screen JoystickPad priority over drifting physical stick (15% threshold in buildChordParams)
+- [Phase 41 extra fixes]: SDL init deferred 4 s to background thread — prevents Ableton HID/WASAPI deadlock at startup
+- [Phase 41 extra fixes]: phaseResetPending_ in LfoEngine resets phase/sampleCount/totalCycles on LFO ON button click
 
 ### Pending Todos
 
@@ -386,6 +390,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T02:00:00.000Z
-Stopped at: Completed 41-01-PLAN.md — ChordNameSmart + Unicode + displayVoiceMask_ built and tested (Wave 1). Wave 2 (41-02 editor wiring) next.
-Next step: Execute Phase 41 Plan 02 — wire computeChordNameSmart into PluginEditor.cpp timerCallback.
+Last session: 2026-03-09T03:00:00.000Z
+Stopped at: Completed 41-02-PLAN.md — smart chord display UAT approved, Phase 41 complete. 3 additional fixes committed (stick drift, SDL deferred init, LFO phase reset).
+Next step: Phase 41 verification + proceed to next phase.

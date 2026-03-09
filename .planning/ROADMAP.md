@@ -432,8 +432,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 41-01-PLAN.md — ChordNameHelper smart overload + Unicode symbols + PluginProcessor mask + TDD tests
-- [ ] 41-02-PLAN.md — PluginEditor wiring + build + install + UAT checkpoint
+- [x] 41-01-PLAN.md — ChordNameHelper smart overload + PluginProcessor mask + TDD tests (completed 2026-03-09)
+- [x] 41-02-PLAN.md — PluginEditor wiring + build + install + UAT checkpoint (completed 2026-03-09)
 
 #### Phase 42: Warp Space Effect
 **Goal**: When the looper enters playback mode, the joystick pad background transforms into a cinematic warp tunnel with 4000ms ease-in ramp.
@@ -461,12 +461,13 @@ Plans:
 **Goal**: Make the joystick pad feel alive in idle (non-warp) mode — pilot floating through space. All effects extremely subtle, active only when warp is off.
 **Depends on**: Phase 42 (warp foundation)
 **Success Criteria**:
-  1. Stars twinkle independently at ±10% brightness — imperceptible on a single frame, felt over time
-  2. A faint shooting star streak appears every ~20s (random interval 12–30s)
-  3. Stars at 3 depth layers drift at 100% / 60% / 30% speed — parallax felt during idle drift
-  4. 2–3 soft nebula blobs (purple/teal, alpha ~0.05) drift extremely slowly across the pad
-  5. Background hue shifts ±8° over a 120s cycle — noticed only when staring, not during play
-  6. All effects crossfade out as warp ramps in — no overlap with warp mode
+  1. Stars drift in a unified heading that accumulates from joystick input — banking right rotates heading clockwise; releasing the joystick holds the new heading (no snap back). Full 360° rotation possible.
+  2. Stars twinkle independently at ±10% brightness — imperceptible on a single frame, felt over time
+  3. A faint shooting star streak appears every ~20s (random interval 12–30s)
+  4. Stars at 3 depth layers drift at 100% / 60% / 30% speed — parallax depth felt clearly
+  5. 2–3 soft nebula blobs (purple/teal, alpha ~0.05) drift extremely slowly across the pad
+  6. Background hue shifts ±8° over a 120s cycle — subliminal
+  7. All living-space effects crossfade out as warp ramps in — no overlap
 **Plans**: 1 plan
 
 #### Phase 43.1: Mini Mode (INSERTED)
