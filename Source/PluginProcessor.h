@@ -235,6 +235,13 @@ public:
     // Note-on flash per voice — incremented on note-on, consumed by JoystickPad timerCallback.
     std::atomic<int>   voiceTriggerFlash_[4] {};
 
+    // Live pitch for crosshair visualization — written by audio thread after LFO application,
+    // read by JoystickPad::timerCallback() at 30 Hz. One-block latency (~6ms) — inaudible for display.
+    std::atomic<int> livePitch0_ { 60 };
+    std::atomic<int> livePitch1_ { 64 };
+    std::atomic<int> livePitch2_ { 67 };
+    std::atomic<int> livePitch3_ { 70 };
+
     // ── APVTS ─────────────────────────────────────────────────────────────────
     juce::AudioProcessorValueTreeState apvts;
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

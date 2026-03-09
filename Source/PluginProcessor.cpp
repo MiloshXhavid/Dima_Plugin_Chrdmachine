@@ -351,8 +351,8 @@ PluginProcessor::createParameterLayout()
         ParamID::lfoYRate, "LFO Y Rate",
         juce::NormalisableRange<float>(0.01f, 20.0f, 0.0f, 0.35f),
         1.0f));
-    addFloat(ParamID::lfoXLevel,      "LFO X Level",      0.0f, 1.0f, 0.0f);
-    addFloat(ParamID::lfoYLevel,      "LFO Y Level",      0.0f, 1.0f, 0.0f);
+    addFloat(ParamID::lfoXLevel,      "LFO X Level",      0.001f, 1.0f, 0.001f);
+    addFloat(ParamID::lfoYLevel,      "LFO Y Level",      0.001f, 1.0f, 0.001f);
     addFloat(ParamID::lfoXPhase,      "LFO X Phase",      0.0f, 360.0f, 0.0f);
     addFloat(ParamID::lfoYPhase,      "LFO Y Phase",      0.0f, 360.0f, 0.0f);
     addFloat(ParamID::lfoXDistortion, "LFO X Distortion", 0.0f, 1.0f, 0.0f);
@@ -399,6 +399,9 @@ PluginProcessor::createParameterLayout()
     // ── Stick routing overrides ───────────────────────────────────────────────
     addBool("stickSwap",   "Stick Swap",   false);
     addBool("stickInvert", "Stick Invert", false);
+
+    // ── Crosshair visualization (Phase 40) ───────────────────────────────────
+    addBool("crosshairVisible", "Crosshair Visible", true);
 
     return layout;
 }
@@ -1195,6 +1198,21 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
         chordP.joystickY = std::clamp(chordP.joystickY + (yLinked ? lfoYRampOut_ : 0.0f), -1.0f, 1.0f);
     }
     // ─────────────────────────────────── end LFO ──────────────────────────────
+
+    // ── Live pitch for crosshair display — uses fully-resolved chordP (post-LFO) ─
+    {
+        for (int v = 0; v < 4; ++v)
+        {
+            const int p = ChordEngine::computePitch(v, chordP);
+            switch (v)
+            {
+                case 0: livePitch0_.store(p, std::memory_order_relaxed); break;
+                case 1: livePitch1_.store(p, std::memory_order_relaxed); break;
+                case 2: livePitch2_.store(p, std::memory_order_relaxed); break;
+                case 3: livePitch3_.store(p, std::memory_order_relaxed); break;
+            }
+        }
+    }
 
     // ── Beat clock detection — fires beatOccurred_ once per beat ──────────────
     {
