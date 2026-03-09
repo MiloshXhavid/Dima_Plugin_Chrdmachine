@@ -132,7 +132,7 @@ TEST_CASE("ChordName - sus4 triad", "[chordname][3note]")
 
 TEST_CASE("ChordName - maj7", "[chordname][4note]")
 {
-    CHECK(cn(60, 64, 67, 71) == u8"C\u25b3");
+    CHECK(cn(60, 64, 67, 71) == "Cmaj7");
 }
 
 TEST_CASE("ChordName - m7", "[chordname][4note]")
@@ -147,12 +147,12 @@ TEST_CASE("ChordName - dominant 7", "[chordname][4note]")
 
 TEST_CASE("ChordName - dim7", "[chordname][4note]")
 {
-    CHECK(cn(60, 63, 66, 69) == u8"C\u00b0""7");
+    CHECK(cn(60, 63, 66, 69) == "Cdim7");
 }
 
 TEST_CASE("ChordName - m7b5 (half-dim)", "[chordname][4note]")
 {
-    CHECK(cn(60, 63, 66, 70) == u8"C\u00f8");
+    CHECK(cn(60, 63, 66, 70) == "Cm7b5");
 }
 
 TEST_CASE("ChordName - 6th chord", "[chordname][4note]")
@@ -176,7 +176,7 @@ TEST_CASE("ChordName - dominant 9th", "[chordname][jazz]")
 TEST_CASE("ChordName - major 9th", "[chordname][jazz]")
 {
     // C E B D
-    CHECK(cn(60, 64, 71, 62) == u8"C\u25b3""9");
+    CHECK(cn(60, 64, 71, 62) == "Cmaj9");
 }
 
 TEST_CASE("ChordName - minor 9th", "[chordname][jazz]")
@@ -206,13 +206,13 @@ TEST_CASE("ChordName - Lydian dominant (7#11)", "[chordname][jazz]")
 TEST_CASE("ChordName - Lydian major 7 (maj7#11)", "[chordname][jazz]")
 {
     // C E F# B
-    CHECK(cn(60, 64, 66, 71) == u8"C\u25b3""#11");
+    CHECK(cn(60, 64, 66, 71) == "Cmaj7#11");
 }
 
 TEST_CASE("ChordName - minor major 7th", "[chordname][jazz]")
 {
     // C Eb G B
-    CHECK(cn(60, 63, 67, 71) == u8"Cm\u25b3");
+    CHECK(cn(60, 63, 67, 71) == "Cmmaj7");
 }
 
 TEST_CASE("ChordName - dominant 13th", "[chordname][jazz]")
@@ -281,7 +281,7 @@ TEST_CASE("ChordName smart - major scale voice1 absent infers major third", "[ch
 {
     // Test B: mask=0xD=1101 → voice1 bit NOT set; root=C(60), voice2=G(67), voice3=B(71)
     // Major scale has major third (E=4) only → infers E → {C,E,G,B} = C△ (maj7)
-    CHECK(cnSmart(60, 64, 67, 71, 0xD, kMajor, kMajorSz) == u8"C\u25b3");
+    CHECK(cnSmart(60, 64, 67, 71, 0xD, kMajor, kMajorSz) == "Cmaj7");
 }
 
 TEST_CASE("ChordName smart - natural minor scale voice1 absent infers minor third", "[chordname][smart]")
@@ -295,7 +295,7 @@ TEST_CASE("ChordName smart - major scale voice3 absent infers maj7 (Unicode tria
 {
     // Test D: mask=0x7=0111 → voice3 NOT set; root=C, voice1=E(64), voice2=G(67)
     // Major scale has maj7 (B=11) only → infers B → {C,E,G,B} = C△
-    CHECK(cnSmart(60, 64, 67, 71, 0x7, kMajor, kMajorSz) == u8"C\u25b3");
+    CHECK(cnSmart(60, 64, 67, 71, 0x7, kMajor, kMajorSz) == "Cmaj7");
 }
 
 TEST_CASE("ChordName smart - mixolydian scale voice3 absent infers dominant 7", "[chordname][smart]")
@@ -317,5 +317,5 @@ TEST_CASE("ChordName smart - non-C root major scale voice1 absent infers major q
     // rootPc=7; major third of G = (7+4)%12=11=B; minor third = (7+3)%12=10=Bb
     // Major scale has B (interval 4) but not Bb (interval 3) → infer B
     // Effective: {G,B,D,F#} → intervals from G: 0,4,7,11 → G△ (Gmaj7)
-    CHECK(cnSmart(67, 71, 74, 78, 0xD, kMajor, kMajorSz) == u8"G\u25b3");
+    CHECK(cnSmart(67, 71, 74, 78, 0xD, kMajor, kMajorSz) == "Gmaj7");
 }

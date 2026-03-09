@@ -58,26 +58,26 @@ inline std::string computeChordNameStr(const int pitches[4])
     // extended names win when both would match.
     static const struct { int ivs[4]; const char* nm; } kT[] = {
         // ── 4-note jazz extensions ────────────────────────────────────────────
-        {{0, 2, 4,11}, u8"\u25b3""9"},      // C E B D  — major 9th (no 5th, jazz voicing)
-        {{0, 2, 3,11}, u8"m\u25b3""9"},     // C Eb B D — minor major 9th
+        {{0, 2, 4,11}, "maj9"},      // C E B D  — major 9th (no 5th, jazz voicing)
+        {{0, 2, 3,11}, "mmaj9"},     // C Eb B D — minor major 9th
         {{0, 2, 4,10}, "9"},         // C E Bb D — dominant 9th
         {{0, 2, 3,10}, "m9"},        // C Eb Bb D — minor 9th
         {{0, 1, 4,10}, "7b9"},       // C E Bb Db — dominant flat 9
         {{0, 3, 4,10}, "7#9"},       // C E Bb Eb — dominant sharp 9 (Hendrix)
         {{0, 4, 6,10}, "7#11"},      // C E F# Bb — Lydian dominant
-        {{0, 4, 6,11}, u8"\u25b3""#11"},   // C E F# B — Lydian major 7
-        {{0, 4, 9,11}, u8"\u25b3""13"},     // C E B A  — major 13th
-        {{0, 4, 8,11}, u8"\u25b3""#5"},    // C E Ab B — augmented major 7th
-        {{0, 3, 7,11}, u8"m\u25b3"},     // C Eb G B — minor major 7th
+        {{0, 4, 6,11}, "maj7#11"},   // C E F# B — Lydian major 7
+        {{0, 4, 9,11}, "maj13"},     // C E B A  — major 13th
+        {{0, 4, 8,11}, "maj7#5"},    // C E Ab B — augmented major 7th
+        {{0, 3, 7,11}, "mmaj7"},     // C Eb G B — minor major 7th
         {{0, 3, 9,10}, "m13"},       // C Eb Bb A — minor 13th
         {{0, 3, 5,10}, "m11"},       // C Eb F Bb — minor 11th
         {{0, 4, 9,10}, "13"},        // C E Bb A — dominant 13th
         // ── 4-note standard chords ────────────────────────────────────────────
-        {{0, 4, 7,11}, u8"\u25b3"},
+        {{0, 4, 7,11}, "maj7"},
         {{0, 3, 7,10}, "m7"},
         {{0, 4, 7,10}, "7"},
-        {{0, 3, 6,10}, u8"\u00f8"},
-        {{0, 3, 6, 9}, u8"\u00b0""7"},
+        {{0, 3, 6,10}, "m7b5"},
+        {{0, 3, 6, 9}, "dim7"},
         {{0, 4, 8,10}, "7#5"},
         {{0, 4, 7, 9}, "6"},
         {{0, 3, 7, 9}, "m6"},
