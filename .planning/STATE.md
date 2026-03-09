@@ -372,6 +372,10 @@ Key v1.6 design decisions (locked):
 - [Phase 40]: Faint Clr::accent dot (0.15 alpha, 4px radius) at cursor position when crosshair OFF — discoverability hint
 - [Phase 40]: kCollisionR=20px label suppression prevents note name labels from overlapping cursor sprite at close range
 
+- [Phase 41-01]: ChordNameContext struct + computeChordNameSmart inline function added to ChordNameHelper.h — scale-aware voice inference for absent third/seventh voices
+- [Phase 41-01]: 9 Unicode jazz symbols in kT[] using u8 prefix: △ (maj7 variants), ø (m7b5), °7 (dim7)
+- [Phase 41-01]: displayVoiceMask_ + pendingVoiceMask_ in PluginProcessor — written at 3 snapshot sites; Site 3 (arp) is NEW snapshot enabling rhythmic display updates
+
 ### Pending Todos
 
 None.
@@ -382,6 +386,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T01:05:00.000Z
-Stopped at: Completed 40-01-PLAN.md — pitch axis crosshair UAT approved, Phase 40 complete
-Next step: Continue v1.9 Living Interface — next phase after Phase 40 (Phase 41: Smart Chord Display).
+Last session: 2026-03-09T02:00:00.000Z
+Stopped at: Completed 41-01-PLAN.md — ChordNameSmart + Unicode + displayVoiceMask_ built and tested (Wave 1). Wave 2 (41-02 editor wiring) next.
+Next step: Execute Phase 41 Plan 02 — wire computeChordNameSmart into PluginEditor.cpp timerCallback.
