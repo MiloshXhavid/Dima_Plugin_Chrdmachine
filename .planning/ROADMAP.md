@@ -436,6 +436,10 @@ Plans:
   4. Scale factor persists across plugin save/load
 **Plans**: 2 plans
 
+Plans:
+- [ ] 43-01-PLAN.md — Processor savedUiScale_ + getStateInformation/setStateInformation round-trip + editor JUCE resize infrastructure
+- [ ] 43-02-PLAN.md — resized() full sc() wrapping + paint() font scaling + build + install + UAT checkpoint
+
 #### Phase 43.2: Living Space (INSERTED)
 **Goal**: Make the joystick pad feel alive in idle (non-warp) mode — pilot floating through space. All effects extremely subtle, active only when warp is off.
 **Depends on**: Phase 31 (starfield foundation)
