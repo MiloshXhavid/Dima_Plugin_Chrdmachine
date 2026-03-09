@@ -3,6 +3,21 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
 status: in-progress
+stopped_at: Completed 42-01-PLAN.md — warp engine (ramp, pool, animation) added to JoystickPad; VST3 builds clean
+last_updated: "2026-03-09T18:28:26.602Z"
+last_activity: 2026-03-07 — v1.8 milestone completion archived
+progress:
+  total_phases: 28
+  completed_phases: 24
+  total_plans: 54
+  completed_plans: 53
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.9
+milestone_name: Living Interface
+status: in-progress
 stopped_at: Completed 40-01-PLAN.md — pitch axis crosshair UAT approved, Phase 40 complete
 last_updated: "2026-03-09T00:22:16.457Z"
 last_activity: 2026-03-07 — v1.8 milestone completion archived
@@ -379,6 +394,7 @@ Key v1.6 design decisions (locked):
 - [Phase 41 extra fixes]: mouseJoyActive_ atomic bool gives on-screen JoystickPad priority over drifting physical stick (15% threshold in buildChordParams)
 - [Phase 41 extra fixes]: SDL init deferred 4 s to background thread — prevents Ableton HID/WASAPI deadlock at startup
 - [Phase 41 extra fixes]: phaseResetPending_ in LfoEngine resets phase/sampleCount/totalCycles on LFO ON button click
+- [Phase 42]: [Phase 42-01]: warpT is local variable computed from warpRamp_ at use sites — NOT stored as member; pool grows but never shrinks; large-star freeze uses warpRamp_ > 0.0f guard; seed 0xBEEF42CAFE0000LL replaces pseudocode from research notes
 
 ### Pending Todos
 
@@ -390,6 +406,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T03:00:00.000Z
-Stopped at: Completed 41-02-PLAN.md — smart chord display UAT approved, Phase 41 complete. 3 additional fixes committed (stick drift, SDL deferred init, LFO phase reset).
+Last session: 2026-03-09T18:28:21.438Z
+Stopped at: Completed 42-01-PLAN.md — warp engine (ramp, pool, animation) added to JoystickPad; VST3 builds clean
 Next step: Phase 41 verification + proceed to next phase.
