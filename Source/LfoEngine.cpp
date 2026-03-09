@@ -47,6 +47,14 @@ float LfoEngine::process(const ProcessParams& p)
         sampleCount_ = 0;   // reset free/stopped counter on DAW restart
     prevDawPlaying_ = p.isDawPlaying;
 
+    // ── 3b. Phase reset request (from LFO ON button click) ────────────────────
+    if (phaseResetPending_.exchange(false, std::memory_order_relaxed))
+    {
+        phase_       = 0.0;
+        sampleCount_ = 0;
+        totalCycles_ = 0.0;
+    }
+
     // ── 4. Phase derivation — three branches ──────────────────────────────────
     double normalizedPhase = 0.0;
     int64_t currentCycle   = 0;

@@ -83,6 +83,21 @@ public:
         return static_cast<LfoRecState>(recState_.load(std::memory_order_relaxed));
     }
 
+    // Request a phase reset on the next process() call (message-thread safe).
+    void requestPhaseReset() { phaseResetPending_.store(true, std::memory_order_relaxed); }
+
+    // Consume a pending phase reset immediately, even if LFO is disabled.
+    // Call unconditionally every processBlock so the reset takes effect on OFF, not ON.
+    void applyPhaseResetIfPending()
+    {
+        if (phaseResetPending_.exchange(false, std::memory_order_relaxed))
+        {
+            phase_       = 0.0;
+            sampleCount_ = 0;
+            totalCycles_ = 0.0;
+        }
+    }
+
 private:
     // ── Timing state ─────────────────────────────────────────────────────────
     double   phase_          = 0.0;    // normalized phase accumulator, free mode [0.0, 1.0)
@@ -126,5 +141,6 @@ private:
 
     // Atomic int (not atomic<LfoRecState>) — avoids MSVC C2338 on enum class in atomics.
     // Cast to/from LfoRecState on every store/load.
-    std::atomic<int> recState_ { 0 };  // 0 = Unarmed
+    std::atomic<int>  recState_          { 0 };     // 0 = Unarmed
+    std::atomic<bool> phaseResetPending_ { false };  // set by message thread, consumed in process()
 };
