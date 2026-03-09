@@ -1104,17 +1104,6 @@ void JoystickPad::resized()
     for (int i = (int)starfield_.size() - 1; i > 0; --i)
         std::swap(starfield_[i], starfield_[(int)(rng.nextFloat() * (i + 1))]);
 
-    // ── Init warp star pool (Phase 42) ────────────────────────────────────────
-    {
-        const float pop = proc_.apvts.getRawParameterValue("randomPopulation")->load();
-        const int capacity = juce::jmin(128, (int)(pop * 2.0f));
-        warpStars_.assign(capacity, WarpStar{});
-        // Scatter angles so stars don't all appear at angle=0 on first activation
-        juce::Random initRng(0xBEEF42CAFE0000LL);
-        for (auto& ws : warpStars_)
-            ws.angle = initRng.nextFloat() * juce::MathConstants<float>::twoPi;
-    }
-
     // Bug 1 fix: snap cursor to pad center on resize so it does not render at (0,0)
     // until the first timerCallback fires with valid dimensions.
     displayCx_  = getWidth()  * 0.5f;
@@ -1295,10 +1284,6 @@ void JoystickPad::timerCallback()
     // ── Animate starfield positions ───────────────────────────────────────────
     for (auto& s : starfield_)
     {
-        // Large stars (r > 1.2f) freeze during warp — they read as distant nebula
-        if (warpRamp_ > 0.0f && s.r > 1.2f)
-            continue;
-
         s.x += s.vx;
         s.y += s.vy;
         // Wrap around edges (normalized 0..1)
@@ -1380,43 +1365,6 @@ void JoystickPad::timerCallback()
     livePitch_[1] = proc_.livePitch1_.load(std::memory_order_relaxed);
     livePitch_[2] = proc_.livePitch2_.load(std::memory_order_relaxed);
     livePitch_[3] = proc_.livePitch3_.load(std::memory_order_relaxed);
-
-    // ── Warp ramp (Phase 42) ─────────────────────────────────────────────────
-    {
-        const bool isPlaying = proc_.looperIsPlaying();
-        const float step = 1.0f / (4.0f * 30.0f);   // 4 s at 30 Hz
-        warpRamp_ = isPlaying
-            ? juce::jmin(1.0f, warpRamp_ + step)
-            : juce::jmax(0.0f, warpRamp_ - step);
-    }
-
-    // ── Animate warp stars (Phase 42) ────────────────────────────────────────
-    if (warpRamp_ > 0.0f)
-    {
-        const float warpT = warpRamp_ * warpRamp_ * (3.0f - 2.0f * warpRamp_);  // smoothstep
-        const float pop = proc_.apvts.getRawParameterValue("randomPopulation")->load();
-        const int capacity = juce::jmin(128, (int)(pop * 2.0f));
-
-        // Grow pool if needed (never shrink mid-session to avoid free on audio-adjacent thread)
-        if ((int)warpStars_.size() < capacity)
-            warpStars_.resize(capacity, WarpStar{});
-
-        static juce::Random warpRng(0xBEEF42CAFE0000LL);
-
-        for (int i = 0; i < capacity && i < (int)warpStars_.size(); ++i)
-        {
-            auto& ws = warpStars_[i];
-            ws.speed += 0.0008f * warpT;
-            ws.dist  += ws.speed;
-
-            if (ws.dist > 1.2f)
-            {
-                ws.dist  = 0.0f;
-                ws.angle = warpRng.nextFloat() * juce::MathConstants<float>::twoPi;
-                ws.speed = 0.0f;
-            }
-        }
-    }
 
     repaint();
 }
