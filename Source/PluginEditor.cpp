@@ -1356,6 +1356,12 @@ void JoystickPad::timerCallback()
         }
     }
 
+    // Update live pitch cache for crosshair
+    livePitch_[0] = proc_.livePitch0_.load(std::memory_order_relaxed);
+    livePitch_[1] = proc_.livePitch1_.load(std::memory_order_relaxed);
+    livePitch_[2] = proc_.livePitch2_.load(std::memory_order_relaxed);
+    livePitch_[3] = proc_.livePitch3_.load(std::memory_order_relaxed);
+
     repaint();
 }
 
@@ -1452,9 +1458,16 @@ void JoystickPad::mouseDrag(const juce::MouseEvent& e)
     updateFromMouse(e);
 }
 
-void JoystickPad::mouseUp(const juce::MouseEvent&)
+void JoystickPad::mouseUp(const juce::MouseEvent& e)
 {
-    mouseIsDown_ = false;
+    mouseIsDown_ = false;   // always clear first — prevents stuck sparkle state on right-click
+    if (e.mods.isRightButtonDown())
+    {
+        auto* param = proc_.apvts.getParameter("crosshairVisible");
+        if (param != nullptr)
+            param->setValueNotifyingHost(param->getValue() > 0.5f ? 0.0f : 1.0f);
+        return;
+    }
     // Sticky offset model: do NOT clear looperJoyOffsetX_/Y_ on mouseUp.
     // The offset persists until the user clicks center or double-clicks.
 }
@@ -1801,6 +1814,110 @@ void JoystickPad::paint(juce::Graphics& g)
     g.drawLine(cx + dotR + 1.0f,   cy, cx + dotR + tickLen, cy, 1.0f);
     g.drawLine(cx, cy - dotR - tickLen, cx, cy - dotR - 1.0f, 1.0f);
     g.drawLine(cx, cy + dotR + 1.0f,   cx, cy + dotR + tickLen, 1.0f);
+
+    // ── Phase 40: Pitch axis crosshair ───────────────────────────────────────
+    {
+        const bool crosshairOn = *proc_.apvts.getRawParameterValue("crosshairVisible") > 0.5f;
+        const float mx = proc_.modulatedJoyX_.load(std::memory_order_relaxed);
+        const float my = proc_.modulatedJoyY_.load(std::memory_order_relaxed);
+        const float padW = static_cast<float>(getWidth());
+        const float padH = static_cast<float>(getHeight());
+        const float padCx = padW * 0.5f;
+        const float padCy = padH * 0.5f;
+
+        // Center suppression: hide everything when joystick is near center
+        const bool atCenter = (std::abs(mx) + std::abs(my)) < 0.01f;
+
+        if (!crosshairOn || atCenter)
+        {
+            if (!crosshairOn)
+            {
+                // Faint discoverability dot when crosshair is toggled OFF
+                g.setColour(juce::Colour(0xFF1E3A6E).withAlpha(0.15f));  // Clr::accent
+                g.fillEllipse(displayCx_ - 4.0f, displayCy_ - 4.0f, 8.0f, 8.0f);
+            }
+            // atCenter + crosshairOn: draw nothing (lines and dot both suppressed)
+        }
+        else
+        {
+            // Draw two half-segments from cursor to pad center axes
+            g.setColour(juce::Colours::white.withAlpha(0.22f));
+
+            // Horizontal: cursor → (padCx, displayCy_)
+            g.drawLine(displayCx_, displayCy_, padCx, displayCy_, 1.0f);
+            // Vertical: cursor → (displayCx_, padCy)
+            g.drawLine(displayCx_, displayCy_, displayCx_, padCy, 1.0f);
+
+            // Note name helper: MIDI note → "C4" style
+            // octave = note/12 - 1  →  MIDI 60 = C4 (middle C)
+            static const char* kNoteNames[] = {"C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"};
+            auto midiToName = [](int note) -> juce::String {
+                note = juce::jlimit(0, 127, note);
+                return juce::String(kNoteNames[note % 12]) + juce::String(note / 12 - 1);
+            };
+
+            g.setFont(juce::Font(10.0f));
+            g.setColour(juce::Colours::white.withAlpha(0.75f));
+
+            const float kLabelW = 28.0f;
+            const float kLabelH = 12.0f;
+            const float kCollisionR = 20.0f;  // hide label if center within 20px of cursor
+
+            // Collision check helper: returns true if label center is too close to cursor
+            auto tooClose = [&](float lx, float ly) -> bool {
+                const float dx = lx - displayCx_;
+                const float dy = ly - displayCy_;
+                return (dx*dx + dy*dy) < (kCollisionR * kCollisionR);
+            };
+
+            // Horizontal segment midpoint (cursor X to pad center X, at cursor Y)
+            const float hMidX = (displayCx_ + padCx) * 0.5f;
+            const float hMidY = displayCy_;
+
+            // Root — above horizontal line
+            {
+                const float lx = hMidX;
+                const float ly = hMidY - kLabelH * 0.5f - 2.0f;
+                if (!tooClose(lx, ly))
+                    g.drawText(midiToName(livePitch_[0]),
+                               juce::Rectangle<float>(lx - kLabelW*0.5f, ly - kLabelH*0.5f, kLabelW, kLabelH),
+                               juce::Justification::centred, false);
+            }
+            // Third — below horizontal line
+            {
+                const float lx = hMidX;
+                const float ly = hMidY + kLabelH * 0.5f + 2.0f;
+                if (!tooClose(lx, ly))
+                    g.drawText(midiToName(livePitch_[1]),
+                               juce::Rectangle<float>(lx - kLabelW*0.5f, ly - kLabelH*0.5f, kLabelW, kLabelH),
+                               juce::Justification::centred, false);
+            }
+
+            // Vertical segment midpoint (cursor Y to pad center Y, at cursor X)
+            const float vMidX = displayCx_;
+            const float vMidY = (displayCy_ + padCy) * 0.5f;
+
+            // Fifth — left of vertical line
+            {
+                const float lx = vMidX - kLabelW * 0.5f - 2.0f;
+                const float ly = vMidY;
+                if (!tooClose(lx, ly))
+                    g.drawText(midiToName(livePitch_[2]),
+                               juce::Rectangle<float>(lx - kLabelW*0.5f, ly - kLabelH*0.5f, kLabelW, kLabelH),
+                               juce::Justification::centred, false);
+            }
+            // Tension — right of vertical line
+            {
+                const float lx = vMidX + kLabelW * 0.5f + 2.0f;
+                const float ly = vMidY;
+                if (!tooClose(lx, ly))
+                    g.drawText(midiToName(livePitch_[3]),
+                               juce::Rectangle<float>(lx - kLabelW*0.5f, ly - kLabelH*0.5f, kLabelW, kLabelH),
+                               juce::Justification::centred, false);
+            }
+        }
+    }
+    // ── end crosshair ─────────────────────────────────────────────────────────
 
     // (no border)
 }

@@ -179,6 +179,9 @@ private:
     float bgRotProgressStep_ = 0.0f;   // per-frame increment (scales with journey length)
     float bgRotSpringVel_    = 0.0f;   // spring velocity (degrees/frame) in settle phase
     bool  bgRotSpringActive_ = false;  // true = spring settle phase active
+
+    // Phase 40: crosshair visualization
+    int  livePitch_[4]     = { 60, 64, 67, 70 };  // cached from proc_ atomics in timerCallback
 };
 
 // ─── TouchPlate ───────────────────────────────────────────────────────────────
