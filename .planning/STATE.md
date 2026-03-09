@@ -3,11 +3,27 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
 status: in-progress
+stopped_at: Completed 43.2-01-PLAN.md — living space animation backend (StarDot fields, drift heading, parallax starfield, shooting star, nebulae) build clean
+last_updated: "2026-03-09T19:05:46.482Z"
+last_activity: 2026-03-07 — v1.8 milestone completion archived
+progress:
+  total_phases: 28
+  completed_phases: 24
+  total_plans: 56
+  completed_plans: 53
+  percent: 95
+---
+
+---
+gsd_state_version: 1.0
+milestone: v1.9
+milestone_name: Living Interface
+status: in-progress
 stopped_at: Completed 40-01-PLAN.md — pitch axis crosshair UAT approved, Phase 40 complete
 last_updated: "2026-03-09T00:22:16.457Z"
 last_activity: 2026-03-07 — v1.8 milestone completion archived
 progress:
-  total_phases: 26
+  [██████████] 95%
   completed_phases: 23
   total_plans: 50
   completed_plans: 50
@@ -379,6 +395,7 @@ Key v1.6 design decisions (locked):
 - [Phase 41 extra fixes]: mouseJoyActive_ atomic bool gives on-screen JoystickPad priority over drifting physical stick (15% threshold in buildChordParams)
 - [Phase 41 extra fixes]: SDL init deferred 4 s to background thread — prevents Ableton HID/WASAPI deadlock at startup
 - [Phase 41 extra fixes]: phaseResetPending_ in LfoEngine resets phase/sampleCount/totalCycles on LFO ON button click
+- [Phase 43.2-living-space]: baseAngle stores ±15° variation relative to driftHeading_; vx/vy kept as legacy 0.0f padding; parallax by r threshold (1.4/0.8); ShootingStar timer seeded 720-1800 ticks in resized()
 
 ### Pending Todos
 
@@ -390,6 +407,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T03:00:00.000Z
-Stopped at: Completed 41-02-PLAN.md — smart chord display UAT approved, Phase 41 complete. 3 additional fixes committed (stick drift, SDL deferred init, LFO phase reset).
+Last session: 2026-03-09T19:05:46.476Z
+Stopped at: Completed 43.2-01-PLAN.md — living space animation backend (StarDot fields, drift heading, parallax starfield, shooting star, nebulae) build clean
 Next step: Phase 41 verification + proceed to next phase.
