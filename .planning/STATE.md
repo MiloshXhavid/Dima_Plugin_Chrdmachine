@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
 status: in-progress
-stopped_at: Completed 43.2-01-PLAN.md — living space animation backend (StarDot fields, drift heading, parallax starfield, shooting star, nebulae) build clean
-last_updated: "2026-03-09T19:05:46.482Z"
+stopped_at: Completed 43.2-02-PLAN.md — living space draw passes (hue drift, nebulae, twinkle, shooting star) + INV co-rotation, UAT approved
+last_updated: "2026-03-09T20:13:20.700Z"
 last_activity: 2026-03-07 — v1.8 milestone completion archived
 progress:
   total_phases: 28
-  completed_phases: 24
+  completed_phases: 25
   total_plans: 56
-  completed_plans: 53
+  completed_plans: 54
   percent: 95
 ---
 
@@ -396,6 +396,7 @@ Key v1.6 design decisions (locked):
 - [Phase 41 extra fixes]: SDL init deferred 4 s to background thread — prevents Ableton HID/WASAPI deadlock at startup
 - [Phase 41 extra fixes]: phaseResetPending_ in LfoEngine resets phase/sampleCount/totalCycles on LFO ON button click
 - [Phase 43.2-living-space]: baseAngle stores ±15° variation relative to driftHeading_; vx/vy kept as legacy 0.0f padding; parallax by r threshold (1.4/0.8); ShootingStar timer seeded 720-1800 ticks in resized()
+- [Phase 43.2-living-space]: INV co-rotation wraps starfield+shooting star in ScopedSaveState with bgRotAngle_; driftHeading_ compensated each tick to keep flight path stable during 12s INV animation
 
 ### Pending Todos
 
@@ -407,6 +408,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T19:05:46.476Z
-Stopped at: Completed 43.2-01-PLAN.md — living space animation backend (StarDot fields, drift heading, parallax starfield, shooting star, nebulae) build clean
+Last session: 2026-03-09T20:13:17.540Z
+Stopped at: Completed 43.2-02-PLAN.md — living space draw passes (hue drift, nebulae, twinkle, shooting star) + INV co-rotation, UAT approved
 Next step: Phase 41 verification + proceed to next phase.
