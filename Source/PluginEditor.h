@@ -182,6 +182,11 @@ private:
 
     // Phase 40: crosshair visualization
     int  livePitch_[4]     = { 60, 64, 67, 70 };  // cached from proc_ atomics in timerCallback
+
+    // Phase 42: Warp space effect
+    struct WarpStar { float angle = 0.0f, dist = 0.0f, speed = 0.0f; };
+    std::vector<WarpStar> warpStars_;
+    float warpRamp_ = 0.0f;   // 0..1 linear; warpT = smoothstep(warpRamp_) at use sites
 };
 
 // ─── TouchPlate ───────────────────────────────────────────────────────────────
