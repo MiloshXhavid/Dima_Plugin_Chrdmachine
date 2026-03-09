@@ -9,7 +9,7 @@
 - ✅ **v1.6 Triplets & Fixes** — Phases 26-30 (shipped 2026-03-03)
 - ✅ **v1.7 Space Joystick** — Phases 31-33.1 (shipped 2026-03-05)
 - ✅ **v1.8 Modulation Expansion + Arp/Looper Fixes** — Phases 34-37, 44 (shipped 2026-03-07)
-- 🔲 **v1.9 Living Interface** — Phases 38-43 (planned)
+- 🔲 **v1.9 Living Interface** — Phases 38-43.2 (planned)
 
 ## Phases
 
@@ -429,7 +429,11 @@ Plans:
   2. When Voice 1 not triggered, third inferred from active scale pattern relative to root — correct minor/major quality shown
   3. Display retains last chord name during silence — no update until next trigger fires
   4. Correctly identifies: minor, major, dom7, maj7, m7, 6th, sus2/sus4, tension extensions (#11, b9, #9)
-**Plans**: 1 plan
+**Plans**: 2 plans
+
+Plans:
+- [ ] 41-01-PLAN.md — ChordNameHelper smart overload + Unicode symbols + PluginProcessor mask + TDD tests
+- [ ] 41-02-PLAN.md — PluginEditor wiring + build + install + UAT checkpoint
 
 #### Phase 42: Warp Space Effect
 **Goal**: When the looper enters playback mode, the joystick pad background transforms into a cinematic warp tunnel with 4000ms ease-in ramp.
@@ -444,14 +448,37 @@ Plans:
 **Plans**: 2 plans
 
 #### Phase 43: Resizable UI
-**Goal**: Plugin window resizes proportionally from 0.5x to 2.0x with locked aspect ratio — remembered across sessions.
+**Goal**: Plugin window resizes proportionally from 0.75x to 2.0x with locked aspect ratio — remembered across sessions.
 **Depends on**: Phase 38
 **Success Criteria**:
   1. Dragging window corner in DAW resizes with locked aspect ratio — no overlap or distortion at any scale
-  2. At 0.5x all controls remain clickable and text readable; at 2.0x nothing overflows
+  2. At 0.75x all controls remain clickable and text readable; at 2.0x nothing overflows
   3. Resizing produces no MIDI output or parameter changes
   4. Scale factor persists across plugin save/load
 **Plans**: 2 plans
+
+#### Phase 43.2: Living Space (INSERTED)
+**Goal**: Make the joystick pad feel alive in idle (non-warp) mode — pilot floating through space. All effects extremely subtle, active only when warp is off.
+**Depends on**: Phase 42 (warp foundation)
+**Success Criteria**:
+  1. Stars twinkle independently at ±10% brightness — imperceptible on a single frame, felt over time
+  2. A faint shooting star streak appears every ~20s (random interval 12–30s)
+  3. Stars at 3 depth layers drift at 100% / 60% / 30% speed — parallax felt during idle drift
+  4. 2–3 soft nebula blobs (purple/teal, alpha ~0.05) drift extremely slowly across the pad
+  5. Background hue shifts ±8° over a 120s cycle — noticed only when staring, not during play
+  6. All effects crossfade out as warp ramps in — no overlap with warp mode
+**Plans**: 1 plan
+
+#### Phase 43.1: Mini Mode (INSERTED)
+**Goal**: 3-state window toggle — Full UI, Mini (pad-only at current scale), Maxi (pad-only fills display). Starfield, warp, and cursor run in both compact states.
+**Depends on**: Phase 43
+**Success Criteria**:
+  1. Header ◱ button → Mini: window shrinks to pad square at current scale factor; all controls hidden
+  2. Header ⛶ button → Maxi: window expands to fill available display as a square; pad fills it
+  3. In Mini/Maxi: overlay button (top-right corner) returns to Full view
+  4. Starfield, warp, cursor, crosshair, and burst particles render normally in both Mini and Maxi
+  5. Plugin always opens in Full view (mode not persisted)
+**Plans**: 1 plan
 
 ## Progress
 
