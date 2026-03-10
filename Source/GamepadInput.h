@@ -88,9 +88,11 @@ public:
     bool consumeDpadRight() { return dpadRightTrig_.exchange(false); }
     bool consumeRightStickTrigger() { return rightStickTrig_.exchange(false); }
 
-    // Option mode: 0=off (BPM/looper), 1=octaves (green), 2=transpose+intervals (red)
+    // Option mode: 0=off (BPM/looper), 1=octaves (green), 2=transpose+intervals (red), 3=mini (teal), 4=maxi (amber)
+    // 5-mode cycle — call resetOptionMode() to return to mode 0 programmatically.
     int  getOptionMode()       const { return optionMode_.load(std::memory_order_relaxed); }
-    bool isPresetScrollActive() const { return getOptionMode() != 0; }  // legacy compat
+    void resetOptionMode()           { optionMode_.store(0, std::memory_order_relaxed); }
+    bool isPresetScrollActive() const { return getOptionMode() == 1 || getOptionMode() == 2; }  // modes 1 & 2 only
 
     // Consume a pending D-pad delta in option mode (modes 1 or 2). 0=up 1=down 2=left 3=right.
     // Returns +1 (single press), -1 (fast double-click within kDpadDoubleClickMs), or 0 (nothing).
@@ -241,8 +243,8 @@ private:
     ButtonState btnDpadRight_;
     ButtonState btnRightStick_;
 
-    // Option mode — cycles 0→1→2→0 on each Option button press
-    std::atomic<int> optionMode_ { 0 };  // 0=off  1=octaves(green)  2=transpose+intervals(red)
+    // Option mode — cycles 0→1→2→3→4→0 on each Option button press
+    std::atomic<int> optionMode_ { 0 };  // 0=off  1=octaves(green)  2=transpose+intervals(red)  3=mini(teal)  4=maxi(amber)
     bool optionFrameFired_   = false;    // one-frame lockout: true in the frame Option toggles
     ButtonState btnOption_;              // debounce state for SDL_CONTROLLER_BUTTON_START
 

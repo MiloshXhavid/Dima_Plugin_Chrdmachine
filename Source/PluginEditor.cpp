@@ -3952,10 +3952,82 @@ PluginEditor::~PluginEditor()
 }
 
 
+// ─── Window mode ─────────────────────────────────────────────────────────────
+
+juce::Rectangle<int> PluginEditor::getOverlayButtonBounds() const
+{
+    const int sz = 24, inset = 4;
+    return { getWidth() - sz - inset, inset, sz, sz };
+}
+
+void PluginEditor::applyWindowMode(WindowMode newMode)
+{
+    if (windowMode_ == newMode) return;
+    windowMode_ = newMode;
+
+    const bool isFull = (newMode == WindowMode::Full);
+
+    // Show/hide children based on mode
+    if (!isFull)
+    {
+        // Entering compact mode — hide everything except the joystick pad
+        for (auto* child : getChildren())
+            if (child != &joystickPad_)
+                child->setVisible(false);
+    }
+    else
+    {
+        // Returning to Full — restore all children (resized() will re-layout them)
+        for (auto* child : getChildren())
+            child->setVisible(true);
+    }
+
+    // Compute target size
+    int targetW, targetH;
+    if (newMode == WindowMode::Full)
+    {
+        const float s = (float)juce::jlimit(0.75, 1.0, proc_.savedUiScale_.load());
+        targetW = juce::roundToInt(1120.0f * s);
+        targetH = juce::roundToInt(840.0f  * s);
+    }
+    else if (newMode == WindowMode::Mini)
+    {
+        const int padSize = juce::roundToInt(308.0f * scaleFactor_);
+        targetW = padSize;
+        targetH = padSize;
+    }
+    else  // Maxi
+    {
+        const auto display = juce::Desktop::getInstance()
+            .getDisplays().getDisplayContaining(getScreenBounds().getCentre());
+        const int sq = juce::jmin(display.userArea.getWidth(),
+                                   display.userArea.getHeight());
+        targetW = sq;
+        targetH = sq;
+    }
+
+    // Adjust constrainer BEFORE setSize to avoid aspect-ratio rejection
+    if (isFull)
+    {
+        setResizeLimits(840, 630, 1120, 840);
+        getConstrainer()->setFixedAspectRatio(1120.0 / 840.0);
+    }
+    else
+    {
+        getConstrainer()->setFixedAspectRatio(0.0);         // disable 4:3 lock
+        setResizeLimits(targetW, targetH, targetW, targetH); // exact square only
+    }
+
+    setSize(targetW, targetH);
+    // setSize triggers resized() which routes to the correct layout branch
+}
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
 void PluginEditor::resized()
 {
+    if (windowMode_ == WindowMode::Full)
+    {
     scaleFactor_ = (float)getWidth() / 1120.0f;
     pixelLaf_.setScaleFactor(scaleFactor_);
     proc_.savedUiScale_.store((double)scaleFactor_);
@@ -4172,6 +4244,25 @@ void PluginEditor::resized()
                 // Bottom row: Semitone Y — centered in the full Y-side width
                 joyYAttenLabel_.setBounds(botRow.removeFromTop(sc(14))); joyYAttenKnob_.setBounds(botRow);
             }
+        }
+
+        // INV column swap — applied on every resized() so the layout is always correct
+        // for the current INV state, including when resized() fires mid-transition via
+        // combo onChange. This replaces the old swapBounds calls in timerCallback.
+        if (*proc_.apvts.getRawParameterValue("stickInvert") > 0.5f)
+        {
+            auto swapB = [](juce::Component& a, juce::Component& b) {
+                auto tmp = a.getBounds(); a.setBounds(b.getBounds()); b.setBounds(tmp);
+            };
+            swapB(filterXModeBox_,       filterYModeBox_);
+            swapB(filterXCustomCcLabel_, filterYCustomCcLabel_);
+            swapB(filterXAttenLabel_,    filterYAttenLabel_);
+            swapB(filterXAttenKnob_,     filterYAttenKnob_);
+            swapB(filterXOffsetLabel_,   filterYOffsetLabel_);
+            swapB(filterXOffsetKnob_,    filterYOffsetKnob_);
+            swapB(joyXAttenLabel_,       joyYAttenLabel_);
+            swapB(joyXAttenKnob_,        joyYAttenKnob_);
+            std::swap(filterCutGroupBounds_, filterResGroupBounds_);
         }
 
         // X / Y sub-panel bounds — each half from below the button row to box bottom
@@ -4679,10 +4770,14 @@ void PluginEditor::resized()
         }
     }
 
-    // Persist scale factor so getStateInformation can write it back
-    proc_.savedUiScale_.store((double)scaleFactor_);
+        (void)rowH;
 
-    (void)rowH;
+    } // end if (windowMode_ == WindowMode::Full)
+    else  // Mini or Maxi — pad fills entire window
+    {
+        joystickPad_.setBounds(0, 0, getWidth(), getHeight());
+        joystickPad_.setVisible(true);
+    }
 }
 
 // ─── Paint ────────────────────────────────────────────────────────────────────
@@ -4690,6 +4785,10 @@ void PluginEditor::resized()
 void PluginEditor::paint(juce::Graphics& g)
 {
     g.fillAll(Clr::bg);
+
+    // In compact modes, the JoystickPad child fills the whole window — nothing else to draw.
+    if (windowMode_ != WindowMode::Full)
+        return;
 
     // Header bar
     auto header = getLocalBounds().removeFromTop(28);
@@ -4705,6 +4804,17 @@ void PluginEditor::paint(juce::Graphics& g)
     g.setFont(pixelFont_.withHeight(11.0f * scaleFactor_));
     g.setColour(Clr::text);
     g.drawText("Arcade Chord Control (BETA-Test)", header, juce::Justification::centred);
+
+    // Mini / Maxi buttons in header (Full mode only)
+    {
+        const auto miniBtnR = juce::Rectangle<int>(header.getRight()-44, header.getY()+4, 20, 20);
+        const auto maxiBtnR = juce::Rectangle<int>(header.getRight()-22, header.getY()+4, 20, 20);
+        g.setFont(pixelFont_.withHeight(13.0f * scaleFactor_));
+        g.setColour(Clr::textDim.withAlpha(isHoverMini_ ? 0.9f : 0.4f));
+        g.drawText(juce::String::charToString(0x25F1), miniBtnR, juce::Justification::centred);
+        g.setColour(Clr::textDim.withAlpha(isHoverMaxi_ ? 0.9f : 0.4f));
+        g.drawText(juce::String::charToString(0x2BD0), maxiBtnR, juce::Justification::centred);
+    }
 
     // Outer border
     g.setColour(Clr::accent.brighter(0.5f));
@@ -5408,6 +5518,17 @@ void PluginEditor::paintOverChildren(juce::Graphics& g)
         g.setColour(dotClr);
         g.fillEllipse(dotX, dotY, dotSize, dotSize);
     }
+
+    // Overlay return button — shown in Mini or Maxi mode (top-right corner of pad)
+    if (windowMode_ != WindowMode::Full)
+    {
+        const auto r = getOverlayButtonBounds();
+        g.setColour(juce::Colours::black.withAlpha(0.55f));
+        g.fillRect(r);
+        g.setColour(juce::Colours::white.withAlpha(0.80f));
+        g.setFont(pixelFont_.withHeight(14.0f));
+        g.drawText(juce::String::charToString(0x21A9), r, juce::Justification::centred);
+    }
 }
 
 // ─── Timer (UI refresh) ───────────────────────────────────────────────────────
@@ -5441,11 +5562,9 @@ void PluginEditor::timerCallback()
                 filterYModeAtt_  = std::make_unique<ComboAtt>(proc_.apvts, "filterXMode", filterYModeBox_);
                 filterXAttenAtt_  = std::make_unique<SliderAtt>(proc_.apvts, "filterYAtten",  filterXAttenKnob_);
                 filterYAttenAtt_  = std::make_unique<SliderAtt>(proc_.apvts, "filterXAtten",  filterYAttenKnob_);
-                // MOD FIX offset knobs are NOT cross-wired: physical X always writes filterXOffset
-                // so turning MOD FIX X adjusts the offset for whatever CC physical X is sending.
-                // The display swap in timerCallback handles visual tracking of the live stick.
-                filterXOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterXOffset", filterXOffsetKnob_);
-                filterYOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYOffset", filterYOffsetKnob_);
+                // Cross-wire offset knobs to match atten knobs: physical X drives filterYOffset in INV.
+                filterXOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYOffset", filterXOffsetKnob_);
+                filterYOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterXOffset", filterYOffsetKnob_);
             }
             else
             {
@@ -5457,13 +5576,6 @@ void PluginEditor::timerCallback()
                 filterYOffsetAtt_ = std::make_unique<SliderAtt>(proc_.apvts, "filterYOffset", filterYOffsetKnob_);
             }
 
-            // Physically swap LEFT X and LEFT Y column positions so the rows
-            // exchange sides when INV is toggled. Repaint updates all paint()-drawn labels.
-            auto swapBounds = [](juce::Component& a, juce::Component& b) {
-                auto tmp = a.getBounds();
-                a.setBounds(b.getBounds());
-                b.setBounds(tmp);
-            };
             // Swap which APVTS param the filter custom CC labels write to (mirrors attachment swap)
             if (invOn) {
                 // Physical X stick now drives logical Y param — X label writes filterYCustomCc
@@ -5474,14 +5586,10 @@ void PluginEditor::timerCallback()
                 filterYCustomCcParamId_ = "filterYCustomCc";
             }
 
-            swapBounds(filterXModeBox_,     filterYModeBox_);
-            swapBounds(filterXAttenLabel_,  filterYAttenLabel_);
-            swapBounds(filterXAttenKnob_,   filterYAttenKnob_);
-            // MOD FIX offset knobs do NOT swap: physical X always drives MOD FIX X knob.
-            swapBounds(joyXAttenLabel_,     joyYAttenLabel_);
-            swapBounds(joyXAttenKnob_,      joyYAttenKnob_);
-            swapBounds(filterXCustomCcLabel_, filterYCustomCcLabel_);
-            std::swap(filterCutGroupBounds_, filterResGroupBounds_);
+            // resized() re-applies the full column layout with the INV-aware swap block,
+            // so it is always correct regardless of whether onChange fires during
+            // attachment re-creation and resets bounds mid-transition.
+            resized();
             repaint();
         }
     }
@@ -6429,6 +6537,28 @@ void PluginEditor::timerCallback()
 // ── Step grid mouse hit-test ───────────────────────────────────────────────
 void PluginEditor::mouseDown(const juce::MouseEvent& e)
 {
+    // Overlay button (Mini/Maxi modes) — checked first, before any other hit-test
+    if (windowMode_ != WindowMode::Full)
+    {
+        if (getOverlayButtonBounds().contains(e.getPosition()))
+        {
+            proc_.getGamepad().resetOptionMode();
+            lastHighlightMode_ = -1;  // force re-evaluation on next timer tick
+            applyWindowMode(WindowMode::Full);
+            return;
+        }
+        return;  // swallow all other clicks in compact mode
+    }
+
+    // Header Mini/Maxi buttons (Full mode only)
+    {
+        const auto header = getLocalBounds().removeFromTop(28);
+        const auto miniBtnR = juce::Rectangle<int>(header.getRight()-44, header.getY()+4, 20, 20);
+        const auto maxiBtnR = juce::Rectangle<int>(header.getRight()-22, header.getY()+4, 20, 20);
+        if (miniBtnR.contains(e.getPosition())) { applyWindowMode(WindowMode::Mini); return; }
+        if (maxiBtnR.contains(e.getPosition())) { applyWindowMode(WindowMode::Maxi); return; }
+    }
+
     // Only handle clicks within the arp step grid rows
     const bool inRowA = arpStepRowABounds_.contains(e.getPosition());
     const bool inRowB = arpStepRowBBounds_.contains(e.getPosition());
@@ -6451,6 +6581,34 @@ void PluginEditor::mouseDown(const juce::MouseEvent& e)
         param->setValueNotifyingHost(param->convertTo0to1(static_cast<float>(next)));
     }
     repaint(arpStepRowABounds_.getUnion(arpStepRowBBounds_));
+}
+
+void PluginEditor::mouseMove(const juce::MouseEvent& e)
+{
+    if (windowMode_ == WindowMode::Full)
+    {
+        const auto header = getLocalBounds().removeFromTop(28);
+        const auto miniBtnR = juce::Rectangle<int>(header.getRight()-44, header.getY()+4, 20, 20);
+        const auto maxiBtnR = juce::Rectangle<int>(header.getRight()-22, header.getY()+4, 20, 20);
+        const bool hoverMini = miniBtnR.contains(e.getPosition());
+        const bool hoverMaxi = maxiBtnR.contains(e.getPosition());
+        if (hoverMini != isHoverMini_ || hoverMaxi != isHoverMaxi_)
+        {
+            isHoverMini_ = hoverMini;
+            isHoverMaxi_ = hoverMaxi;
+            repaint(header.getX(), header.getY(), header.getWidth(), header.getHeight());
+        }
+    }
+}
+
+void PluginEditor::mouseExit(const juce::MouseEvent&)
+{
+    if (isHoverMini_ || isHoverMaxi_)
+    {
+        isHoverMini_ = false;
+        isHoverMaxi_ = false;
+        repaint(0, 0, getWidth(), 28);
+    }
 }
 
 // ── RND SYNC button appearance helper ─────────────────────────────────────

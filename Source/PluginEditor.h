@@ -407,6 +407,15 @@ public:
     void paintOverChildren(juce::Graphics&) override;
     void resized() override;
 
+    // ── Window mode ───────────────────────────────────────────────────────────
+    enum class WindowMode { Full, Mini, Maxi };
+    WindowMode windowMode_ { WindowMode::Full };
+    bool isHoverMini_ { false };
+    bool isHoverMaxi_ { false };
+
+    void applyWindowMode(WindowMode newMode);
+    juce::Rectangle<int> getOverlayButtonBounds() const;
+
 private:
     PluginProcessor& proc_;
 
@@ -446,6 +455,8 @@ private:
 
     void timerCallback() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
     void updateRndSyncButtonAppearance();
 
     // ── Joystick ──────────────────────────────────────────────────────────────
