@@ -21,3 +21,40 @@ animation/
 # Internal planning documents
 reports/
 RAILROAD_ARCHITECTURE.md
+
+# CMake build directory
+build/
+
+# Installer binaries
+installer/Output/
+
+# pluginval tool
+pluginval/
+pluginval.zip
+pluginval_error.txt
+
+# Generated RC file (baked at cmake configure time)
+build/ChordJoystick_artefacts/JuceLibraryCode/ChordJoystick_resources.rc
+
+# Build log / output text files
+build_out.txt
+build31_out.txt
+build32_out.txt
+build_check_out.txt
+build_inv_fix_out.txt
+build_task1.txt
+build_task2.txt
+*_out.txt
+
+# VST3 install log files
+"DIMEA CHORD JOYSTICK MK2.vst3_*.txt"
+"Joystick Chord Control*.vst3_*.txt"
+*.vst3_*.txt
+
+# Stray artifacts
+;
+nul
+
+# Windows
+Thumbs.db
+Desktop.ini
