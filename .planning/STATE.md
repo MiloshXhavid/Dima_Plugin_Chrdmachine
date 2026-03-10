@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Living Interface
 status: in-progress
-stopped_at: Completed 43-01-PLAN.md — resize infrastructure + scaleFactor_ persistence wired, build clean
-last_updated: "2026-03-09T23:27:45.859Z"
+stopped_at: Completed 43.1-01-PLAN.md — Mini/Maxi window mode, gamepad 5-state cycle, build clean, awaiting UAT
+last_updated: "2026-03-10T00:12:12.036Z"
 last_activity: 2026-03-07 — v1.8 milestone completion archived
 progress:
   total_phases: 27
-  completed_phases: 26
-  total_plans: 56
-  completed_plans: 56
+  completed_phases: 27
+  total_plans: 57
+  completed_plans: 57
   percent: 95
 ---
 
@@ -401,6 +401,8 @@ Key v1.6 design decisions (locked):
 - [Phase 43-resizable-ui]: scaleFactor_ derived from getWidth()/1120.0f in resized() — single source of truth; constructor reads savedUiScale_ only for initial setSize
 - [Phase 43-resizable-ui]: setResizable(true, false) — host-driven resize only, no JUCE corner handle; setResizeLimits/setFixedAspectRatio/setResizable mandatory order respected
 - [Phase 43]: Phase 43 scale range changed to 0.75x-1.0x after UAT - upscaling deferred
+- [Phase 43.1-mini-mode]: applyWindowMode: constrainer adjustment BEFORE setSize; child visibility bulk-toggled; savedUiScale_ guarded in Full block only
+- [Phase 43.1-mini-mode]: GamepadInput D-pad dispatch restricted to modes 1 & 2 only — modes 3/4 (MINI/MAXI) use BPM/looper path same as mode 0
 
 ### Pending Todos
 
@@ -412,6 +414,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-09T22:58:46.857Z
-Stopped at: Completed 43-01-PLAN.md — resize infrastructure + scaleFactor_ persistence wired, build clean
+Last session: 2026-03-10T00:12:06.730Z
+Stopped at: Completed 43.1-01-PLAN.md — Mini/Maxi window mode, gamepad 5-state cycle, build clean, awaiting UAT
 Next step: Phase 41 verification + proceed to next phase.
