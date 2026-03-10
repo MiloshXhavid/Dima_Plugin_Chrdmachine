@@ -10,6 +10,7 @@
 - ✅ **v1.7 Space Joystick** — Phases 31-33.1 (shipped 2026-03-05)
 - ✅ **v1.8 Modulation Expansion + Arp/Looper Fixes** — Phases 34-37, 44 (shipped 2026-03-07)
 - ✅ **v1.9 Living Interface** — Phases 38-45 (shipped 2026-03-10)
+- 🔲 **v2.0 Cross-Platform Launch** — Phases 46-49 (in progress)
 
 ## Phases
 
@@ -90,6 +91,13 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 - [x] Phase 33: Version Sync — GitHub v1.7 Latest release, installer v1.7, desktop backup (completed 2026-03-05)
 
 </details>
+
+### v2.0 Cross-Platform Launch
+
+- [ ] **Phase 46: Mac Build Foundation** - Universal binary (arm64+x86_64) VST3+AU, auval clean pass, DAW smoke test, SDL2 gamepad on Mac
+- [ ] **Phase 47: License Key System** - LemonSqueezy activate/validate, first-launch overlay, offline grace period, mute restriction, deactivate flow
+- [ ] **Phase 48: Code Signing and Notarization** - Entitlements plist, Developer ID Application signing, notarytool+staple, Windows OV/EV signing
+- [ ] **Phase 49: macOS Distribution and GitHub Release** - PKG installer, Developer ID Installer signing+notarize, GitHub v2.0 release with both platform assets
 
 ## Phase Details
 
@@ -364,6 +372,56 @@ Full details: `.planning/milestones/v1.9-ROADMAP.md`
 
 </details>
 
+---
+
+### Phase 46: Mac Build Foundation
+**Goal**: The plugin builds as a universal binary (arm64 + x86_64) producing both VST3 and AU formats on macOS, passes auval validation with zero errors, and all three target DAWs detect and emit MIDI from the plugin — confirming the Mac codebase is a stable foundation before any licensing or signing work begins
+**Depends on**: Phase 45 (v1.9 codebase)
+**Requirements**: MAC-01, MAC-02, MAC-03, MAC-04, MAC-05
+**Success Criteria** (what must be TRUE):
+  1. `lipo -info` on both the `.vst3` and `.component` binaries reports `x86_64 arm64` — confirmed after a clean `cmake -G Xcode` configure and Release build
+  2. `auval -v aumu DCJM MxCJ` exits with zero errors and zero warnings — AU parameter version hints set on all existing APVTS parameters before any AU user receives the plugin
+  3. Logic Pro (AU), Reaper (VST3), and Ableton (VST3) each detect the plugin in their instrument slot and emit MIDI output — confirmed by DAW MIDI monitor showing chord notes
+  4. A PS4 or Xbox controller connected via USB on the Mac is detected by the plugin — `SDL_NumJoysticks()` returns non-zero and the plugin UI shows the controller type label
+  5. `cmake -G Xcode` configure completes with zero errors on Mac — the Inno Setup `configure_file` call is guarded in `if(WIN32)` and does not execute on macOS
+**Plans**: TBD
+
+### Phase 47: License Key System
+**Goal**: Users must activate the plugin with a LemonSqueezy license key on first launch; activated plugins validate silently on subsequent launches and operate normally for 7 days without internet; unlicensed plugins mute MIDI output after 10 minutes; users can deactivate to free a machine slot
+**Depends on**: Phase 46
+**Requirements**: LIC-01, LIC-02, LIC-03, LIC-04, LIC-05, LIC-06
+**Success Criteria** (what must be TRUE):
+  1. On first launch (no stored key), a license entry overlay appears over the plugin UI within 200ms — the overlay is a JUCE Component (not a blocking dialog), the host window does not freeze, and entering a valid key dismisses the overlay and starts the plugin
+  2. After successful activation, the plugin loads normally on the next DAW restart without showing the overlay — the `instance_id` persists across sessions and the `/validate` endpoint is not called again within 7 days
+  3. Disconnecting the Mac from the internet after a successful activation allows normal plugin operation for 7 days — the DAW MIDI monitor shows chord output with no connection; on day 8 the plugin enters restricted mode
+  4. After 10 minutes of use with no valid license, MIDI output stops completely — no note-on messages appear in the DAW MIDI monitor; a licensed plugin with a valid `instance_id` has no output restriction at any time
+  5. Clicking the deactivate button calls the LemonSqueezy `/deactivate` endpoint, clears the stored `instance_id`, and the next DAW load shows the license entry overlay again — the freed activation slot is visible in the LemonSqueezy dashboard
+**Plans**: TBD
+
+### Phase 48: Code Signing and Notarization
+**Goal**: All plugin bundles and installers are signed such that Gatekeeper on a clean Mac passes silently and the Windows installer installs without a SmartScreen warning — and the gamepad and license validation both work correctly in the notarized build
+**Depends on**: Phase 47
+**Requirements**: SIGN-01, SIGN-02, SIGN-03
+**Success Criteria** (what must be TRUE):
+  1. `codesign --verify --deep --strict` passes on both the `.vst3` and `.component` bundles — signed leaf-to-root without `--deep` during signing, hardened runtime enabled, entitlements plist includes `com.apple.security.network.client`, `com.apple.security.device.usb`, and `com.apple.security.device.bluetooth`
+  2. `spctl --assess -vvv --type install` on the notarized macOS PKG reports "accepted source=Notarized Developer ID" on a clean Mac that has never run the unsigned build — Gatekeeper does not block or quarantine the installer
+  3. A PS4 or Xbox controller is detected by the signed and notarized plugin on a clean Mac — `SDL_NumJoysticks()` returns non-zero, confirming the HID entitlements are in effect; LemonSqueezy license activation succeeds in the notarized build, confirming the network entitlement is in effect
+  4. The Windows `.exe` installer signed with OV/EV certificate or Azure Trusted Signing installs on a machine with no prior reputation for this binary without displaying a SmartScreen "Windows protected your PC" blocking dialog
+**Plans**: TBD
+
+### Phase 49: macOS Distribution and GitHub Release
+**Goal**: A complete, release-ready macOS PKG installer signed with Developer ID Installer installs the plugin to the correct system paths on a clean Mac, and a GitHub v2.0 release provides both Windows and macOS installers as downloadable assets with documentation covering all platform requirements
+**Depends on**: Phase 48
+**Requirements**: DIST-01, DIST-02, DIST-03, DIST-04
+**Success Criteria** (what must be TRUE):
+  1. Running the macOS PKG on a clean Mac (no prior plugin install) installs the VST3 to `~/Library/Audio/Plug-Ins/VST3/` and the AU component to `~/Library/Audio/Plug-Ins/Components/` — Logic Pro detects the AU and Reaper detects the VST3 without any manual scan path configuration
+  2. The PKG is signed with Developer ID Installer and notarized — `xcrun stapler validate` passes and the installer opens without a Gatekeeper warning on a clean Mac
+  3. The GitHub release tagged `v2.0` has both the Windows `.exe` installer and the macOS `.pkg` as downloadable release assets — each asset is downloadable and installs the plugin without platform errors
+  4. The release notes on the GitHub v2.0 release document: macOS 11+ minimum requirement, arm64 and Intel x86_64 support, Logic Pro AU + Reaper/Ableton VST3 compatibility, and the LemonSqueezy license activation steps
+**Plans**: TBD
+
+---
+
 ## Progress
 
 | Phase | Milestone | Status | Completed |
@@ -376,3 +434,7 @@ Full details: `.planning/milestones/v1.9-ROADMAP.md`
 | 31–33.1 | v1.7 | Complete | 2026-03-05 |
 | 34–37, 44 | v1.8 | Complete | 2026-03-07 |
 | 38–45 | v1.9 | Complete | 2026-03-10 |
+| 46 | v2.0 | Not started | — |
+| 47 | v2.0 | Not started | — |
+| 48 | v2.0 | Not started | — |
+| 49 | v2.0 | Not started | — |
