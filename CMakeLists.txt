@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(ChordJoystick VERSION 1.8.0)
+project(ChordJoystick VERSION 1.9.0)
 
 # Generate Inno Setup installer script from template (single version source of truth)
 configure_file(

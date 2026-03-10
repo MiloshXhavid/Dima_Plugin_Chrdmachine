@@ -1,5 +1,5 @@
 ; DimaChordJoystick-Setup.iss  (generated — edit DimaChordJoystick-Setup.iss.in instead)
-; Inno Setup 6.7.1 installer for Arcade Chord Control (BETA-Test) VST3 v@PROJECT_VERSION@
+; Inno Setup 6.7.1 installer for Arcade Chord Control (BETA-Test) VST3 v1.9.0
 ; Place this file in the installer/ subdirectory of the project root.
 
 [Setup]
@@ -7,7 +7,7 @@ AppName=Arcade Chord Control (BETA-Test)
 AppVersion=@PROJECT_VERSION@
 AppPublisher=Dimea Arcade
 AppPublisherURL=https://www.dimea.com
-AppComments=v@PROJECT_VERSION@ - Cross-LFO Modulation: left stick X/Y can now target the opposite LFO Freq, Phase, or Level with real-time visual tracking. Arp Subdivisions: full 17-item set (4/1 to 1/64T, all triplets) in arp rate dropdown. Arp All Sources: Joystick and Random Free trigger sources now work with arpeggiator active. Looper Fix: eliminated overdub double-scan bug causing phantom notes at loop boundary. Instrument Type: plugin now loads in instrument slot for universal DAW compatibility (Ableton, Reaper, Cakewalk, FL Studio).
+AppComments=v@PROJECT_VERSION@ - Living Interface: resizable UI (0.75x-2.0x), Mini/Maxi window modes, pitch axis crosshair with real-time note names, smart chord display, velocity-sensitive knob drag, 12-dot interval indicators, custom CC routing (0-127) for LFO and joystick targets, arpeggiator 8-step pattern grid (ON/TIE/OFF), sister LFO attenuation slider, living space starfield with parallax/shooting stars/nebulae, rec lane individual undo.
 OutputBaseFilename=DimeaArcade-ChordControl-v@PROJECT_VERSION@-Setup
 OutputDir=Output
 DefaultDirName={commoncf64}\VST3\Arcade Chord Control (BETA-Test).vst3
