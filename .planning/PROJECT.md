@@ -1,8 +1,18 @@
 # ChordJoystick
 
+## Current Milestone: v2.0 Cross-Platform Launch
+
+**Goal:** Ship ChordJoystick on macOS (VST3 + AU, universal binary) with LemonSqueezy license key validation, macOS installer/DMG, and a unified GitHub release for both platforms.
+
+**Target features:**
+- Mac build: Universal binary (arm64 + x86_64), VST3 + AU formats, CMake Xcode generator
+- License keys: LemonSqueezy API validation, first-launch dialog, feature gating, local key persistence
+- Mac installer: .pkg or .dmg with ad-hoc signing + quarantine removal for beta testers
+- GitHub release: Windows + Mac assets attached, updated release notes
+
 ## What This Is
 
-ChordJoystick is a paid JUCE VST3 MIDI generator plugin for Windows that sends 4-voice chord MIDI data to an external synthesizer. Musicians control chord voicings in real time by moving an XY joystick (Y axis = Root + Third, X axis = Fifth + Tension), quantizing to a selected scale. The plugin can be driven by mouse/keyboard or optionally by a PS4/PS5/Xbox gamepad, and includes a DAW-synced looper for recording and replaying joystick gestures and trigger events with live or post-record quantization.
+ChordJoystick is a paid JUCE VST3/AU MIDI generator plugin for Windows and macOS that sends 4-voice chord MIDI data to an external synthesizer. Musicians control chord voicings in real time by moving an XY joystick (Y axis = Root + Third, X axis = Fifth + Tension), quantizing to a selected scale. The plugin can be driven by mouse/keyboard or optionally by a PS4/PS5/Xbox gamepad, and includes a DAW-synced looper for recording and replaying joystick gestures and trigger events with live or post-record quantization.
 
 ## Core Value
 
@@ -185,4 +195,4 @@ An XY joystick mapped to harmonic space — combined with per-note trigger gates
 | IS_MIDI_EFFECT FALSE + IS_SYNTH TRUE + enabled output bus | Universal DAW instrument slot compatibility; audio.clear() ensures silence | ✓ Good |
 
 ---
-*Last updated: 2026-03-10 — v1.9 shipped*
+*Last updated: 2026-03-10 — v2.0 milestone started*
