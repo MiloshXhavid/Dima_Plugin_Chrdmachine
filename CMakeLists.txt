@@ -1,12 +1,20 @@
 cmake_minimum_required(VERSION 3.22)
 project(ChordJoystick VERSION 1.9.0)
 
-# Generate Inno Setup installer script from template (single version source of truth)
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/installer/DimeaArcade-ChordControl-Setup.iss.in"
-    "${CMAKE_CURRENT_SOURCE_DIR}/installer/DimeaArcade-ChordControl-Setup.iss"
-    @ONLY
-)
+# Generate Inno Setup installer script from template (Windows only — configure_file fails on Mac)
+if(WIN32)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/installer/DimeaArcade-ChordControl-Setup.iss.in"
+        "${CMAKE_CURRENT_SOURCE_DIR}/installer/DimeaArcade-ChordControl-Setup.iss"
+        @ONLY
+    )
+endif()
+
+# MAC: Universal binary — MUST be set before FetchContent so JUCE/SDL2 static libs are built fat
+if(APPLE)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures for macOS")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment target")
+endif()
 
 # Static CRT — Windows/MSVC only; must precede FetchContent so JUCE internals also get /MT
 if(MSVC)
