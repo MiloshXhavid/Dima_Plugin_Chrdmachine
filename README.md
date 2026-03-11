@@ -34,6 +34,8 @@ A MIDI chord generator VST3/AU plugin for Windows and macOS. Plug in a gamepad o
 4. Restart your DAW
 
 > **Gatekeeper warning:** Right-click the file → Open, or go to System Settings → Privacy & Security → Allow Anyway. This is expected until code signing is set up in a future release.
+>
+> **Optional (Terminal):** `sudo xattr -r -d com.apple.quarantine "/path/to/Arcade Chord Control Beta-Test.vst3"`
 
 ---
 
