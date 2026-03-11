@@ -99,22 +99,25 @@ PluginProcessor::createParameterLayout()
     auto addInt   = [&](const juce::String& id, const juce::String& name,
                         int min, int max, int def)
     {
-        layout.add(std::make_unique<juce::AudioParameterInt>(id, name, min, max, def));
+        layout.add(std::make_unique<juce::AudioParameterInt>(
+            juce::ParameterID { id, 1 }, name, min, max, def));
     };
     auto addFloat = [&](const juce::String& id, const juce::String& name,
                         float min, float max, float def)
     {
         layout.add(std::make_unique<juce::AudioParameterFloat>(
-            id, name, juce::NormalisableRange<float>(min, max, 0.01f), def));
+            juce::ParameterID { id, 1 }, name, juce::NormalisableRange<float>(min, max, 0.01f), def));
     };
     auto addBool  = [&](const juce::String& id, const juce::String& name, bool def)
     {
-        layout.add(std::make_unique<juce::AudioParameterBool>(id, name, def));
+        layout.add(std::make_unique<juce::AudioParameterBool>(
+            juce::ParameterID { id, 1 }, name, def));
     };
     auto addChoice = [&](const juce::String& id, const juce::String& name,
                          juce::StringArray choices, int def)
     {
-        layout.add(std::make_unique<juce::AudioParameterChoice>(id, name, choices, def));
+        layout.add(std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { id, 1 }, name, choices, def));
     };
 
     // ── Chord ─────────────────────────────────────────────────────────────────
