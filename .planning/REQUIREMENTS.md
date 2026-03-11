@@ -7,7 +7,7 @@
 
 ### Mac Build (MAC)
 
-- [ ] **MAC-01**: Plugin builds as universal binary (arm64 + x86_64) via `cmake -G Xcode` with both VST3 and AU targets
+- [x] **MAC-01**: Plugin builds as universal binary (arm64 + x86_64) via `cmake -G Xcode` with both VST3 and AU targets
 - [x] **MAC-02**: AU plugin passes `auval` validation with zero errors (NEEDS_MIDI_OUTPUT TRUE, uppercase manufacturer code, APVTS version hints on all params)
 - [ ] **MAC-03**: Plugin loads and produces correct MIDI in Logic Pro (AU), Reaper (VST3), and Ableton (VST3) on macOS
 - [ ] **MAC-04**: SDL2 gamepad (PS4/PS5/Xbox) works on macOS — controller detected, all buttons and axes functional
@@ -63,7 +63,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MAC-01 | Phase 46 | Pending |
+| MAC-01 | Phase 46 | Complete |
 | MAC-02 | Phase 46 | Complete |
 | MAC-03 | Phase 46 | Pending |
 | MAC-04 | Phase 46 | Pending |
