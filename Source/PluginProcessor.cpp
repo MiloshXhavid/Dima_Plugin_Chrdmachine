@@ -148,13 +148,13 @@ PluginProcessor::createParameterLayout()
     addInt  (ParamID::fifthOctave,     "Fifth Octave",      0, 11,  4);
     addInt  (ParamID::tensionOctave,   "Tension Octave",    0, 11,  3);
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::joystickXAtten, "Joy X Attenuator",
+        juce::ParameterID { ParamID::joystickXAtten, 1 }, "Joy X Attenuator",
         juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 24.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::joystickYAtten, "Joy Y Attenuator",
+        juce::ParameterID { ParamID::joystickYAtten, 1 }, "Joy Y Attenuator",
         juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 24.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::joystickThreshold, "Joystick Threshold",
+        juce::ParameterID { ParamID::joystickThreshold, 1 }, "Joystick Threshold",
         juce::NormalisableRange<float>(0.0f, 0.1f, 0.001f), 0.05f));
 
     // ── Scale ─────────────────────────────────────────────────────────────────
@@ -170,7 +170,7 @@ PluginProcessor::createParameterLayout()
     {
         static const bool kMajorDefault[12] = {1,0,1,0,1,1,0,1,0,1,0,1};
         layout.add(std::make_unique<juce::AudioParameterBool>(
-            "scaleNote" + juce::String(i),
+            juce::ParameterID { "scaleNote" + juce::String(i), 1 },
             "Scale Note " + juce::String(i),
             kMajorDefault[i]));
     }
@@ -197,13 +197,13 @@ PluginProcessor::createParameterLayout()
             "2/1T", "4/1T"   // indices 15-16, appended for backward compat
         };
         layout.add(std::make_unique<juce::AudioParameterChoice>(
-            "randomSubdiv0", "Random Subdiv Root",    subdivChoices, 8));  // default = 1/8 (index 8)
+            juce::ParameterID { "randomSubdiv0", 1 }, "Random Subdiv Root",    subdivChoices, 8));  // default = 1/8 (index 8)
         layout.add(std::make_unique<juce::AudioParameterChoice>(
-            "randomSubdiv1", "Random Subdiv Third",   subdivChoices, 8));
+            juce::ParameterID { "randomSubdiv1", 1 }, "Random Subdiv Third",   subdivChoices, 8));
         layout.add(std::make_unique<juce::AudioParameterChoice>(
-            "randomSubdiv2", "Random Subdiv Fifth",   subdivChoices, 8));
+            juce::ParameterID { "randomSubdiv2", 1 }, "Random Subdiv Fifth",   subdivChoices, 8));
         layout.add(std::make_unique<juce::AudioParameterChoice>(
-            "randomSubdiv3", "Random Subdiv Tension", subdivChoices, 8));
+            juce::ParameterID { "randomSubdiv3", 1 }, "Random Subdiv Tension", subdivChoices, 8));
     }
 
     // Random sync mode — 3-state: FREE / INT / DAW
@@ -225,33 +225,33 @@ PluginProcessor::createParameterLayout()
 
     // Free-running tempo for random triggers
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "randomFreeTempo", "Random Free Tempo",
+        juce::ParameterID { "randomFreeTempo", 1 }, "Random Free Tempo",
         juce::NormalisableRange<float>(30.0f, 240.0f, 0.1f), 120.0f));
 
     // ── Filter ────────────────────────────────────────────────────────────────
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::filterXAtten, "Filter Cutoff Attenuator",
+        juce::ParameterID { ParamID::filterXAtten, 1 }, "Filter Cutoff Attenuator",
         juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 99.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::filterYAtten, "Filter Resonance Attenuator",
+        juce::ParameterID { ParamID::filterYAtten, 1 }, "Filter Resonance Attenuator",
         juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 99.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::filterXOffset, "MOD FIX X",
+        juce::ParameterID { ParamID::filterXOffset, 1 }, "MOD FIX X",
         juce::NormalisableRange<float>(-50.0f, 50.0f, 1.0f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::filterYOffset, "MOD FIX Y",
+        juce::ParameterID { ParamID::filterYOffset, 1 }, "MOD FIX Y",
         juce::NormalisableRange<float>(-50.0f, 50.0f, 1.0f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "lfoXCustomCc", "LFO X Custom CC",
+        juce::ParameterID { "lfoXCustomCc", 1 }, "LFO X Custom CC",
         juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 74.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "lfoYCustomCc", "LFO Y Custom CC",
+        juce::ParameterID { "lfoYCustomCc", 1 }, "LFO Y Custom CC",
         juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 71.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "filterXCustomCc", "Filter X Custom CC",
+        juce::ParameterID { "filterXCustomCc", 1 }, "Filter X Custom CC",
         juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 74.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "filterYCustomCc", "Filter Y Custom CC",
+        juce::ParameterID { "filterYCustomCc", 1 }, "Filter Y Custom CC",
         juce::NormalisableRange<float>(0.0f, 127.0f, 1.0f), 71.0f));
     addInt  (ParamID::filterMidiCh, "Filter MIDI Channel",  1, 16, 1);
     {
@@ -347,11 +347,11 @@ PluginProcessor::createParameterLayout()
     // 0.35 puts 50% of slider ≈ 0.8 Hz — spreads the useful slow range (0.1–4 Hz)
     // evenly across most of the slider instead of cramming it into the top 50%.
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::lfoXRate, "LFO X Rate",
+        juce::ParameterID { ParamID::lfoXRate, 1 }, "LFO X Rate",
         juce::NormalisableRange<float>(0.01f, 20.0f, 0.0f, 0.35f),
         1.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
-        ParamID::lfoYRate, "LFO Y Rate",
+        juce::ParameterID { ParamID::lfoYRate, 1 }, "LFO Y Rate",
         juce::NormalisableRange<float>(0.01f, 20.0f, 0.0f, 0.35f),
         1.0f));
     addFloat(ParamID::lfoXLevel,      "LFO X Level",      0.001f, 1.0f, 0.001f);
@@ -382,13 +382,13 @@ PluginProcessor::createParameterLayout()
             "CC76 - Vibrato Rate","CC77 - Vibrato Depth",
             "CC91 - Reverb","CC93 - Chorus",
             "Custom CC..." };   // index 19 = kCustomCcDestIdx
-        layout.add(std::make_unique<juce::AudioParameterChoice>("lfoXCcDest","LFO X CC Dest",ccDests,0));
-        layout.add(std::make_unique<juce::AudioParameterChoice>("lfoYCcDest","LFO Y CC Dest",ccDests,0));
+        layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID { "lfoXCcDest", 1 },"LFO X CC Dest",ccDests,0));
+        layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID { "lfoYCcDest", 1 },"LFO Y CC Dest",ccDests,0));
     }
     {
         juce::StringArray sisterDests { "None", "Rate", "Phase", "Level", "Dist" };
-        layout.add(std::make_unique<juce::AudioParameterChoice>("lfoXSister","LFO X Sister Dest",sisterDests,0));
-        layout.add(std::make_unique<juce::AudioParameterChoice>("lfoYSister","LFO Y Sister Dest",sisterDests,0));
+        layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID { "lfoXSister", 1 },"LFO X Sister Dest",sisterDests,0));
+        layout.add(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID { "lfoYSister", 1 },"LFO Y Sister Dest",sisterDests,0));
     }
     addFloat("lfoXSisterAtten", "LFO X Sister Atten", -1.0f, 1.0f, 1.0f);
     addFloat("lfoYSisterAtten", "LFO Y Sister Atten", -1.0f, 1.0f, 1.0f);
