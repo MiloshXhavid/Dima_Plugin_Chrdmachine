@@ -127,7 +127,7 @@ juce_add_binary_data(ChordJoystickFonts
 )
 
 # Single source of truth for name strings — used by juce_add_plugin AND the RC template.
-set(PLUGIN_PRODUCT_NAME "Arcade Chord Control (BETA-Test)")
+set(PLUGIN_PRODUCT_NAME "Arcade Chord Control Beta-Test")
 set(PLUGIN_COMPANY_NAME "Dimea Arcade")
 
 juce_add_plugin(ChordJoystick

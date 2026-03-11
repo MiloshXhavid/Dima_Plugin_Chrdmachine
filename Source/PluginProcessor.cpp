@@ -1092,7 +1092,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 xp.isDawPlaying = isDawPlaying;
             }
             xp.rateHz       = (lfoXRateOverride_  >= 0.0f) ? lfoXRateOverride_
-                                                           : *apvts.getRawParameterValue(ParamID::lfoXRate);
+                                                           : apvts.getRawParameterValue(ParamID::lfoXRate)->load();
             {
                 const int  xCurMode = (int)apvts.getRawParameterValue("filterXMode")->load();
                 xp.subdivBeats = kLfoSubdivBeats[
@@ -1106,7 +1106,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             xp.waveform     = static_cast<Waveform>(
                 (int)*apvts.getRawParameterValue(ParamID::lfoXWaveform));
             xp.phaseShift   = ((lfoXPhaseOverride_ >= 0.0f) ? lfoXPhaseOverride_
-                                                             : *apvts.getRawParameterValue(ParamID::lfoXPhase))
+                                                             : apvts.getRawParameterValue(ParamID::lfoXPhase)->load())
                               / 360.0f;
             xp.distortion   = *apvts.getRawParameterValue(ParamID::lfoXDistortion);
             xp.level        = (lfoXLevelOverride_ >= 0.0f) ? lfoXLevelOverride_
@@ -1153,7 +1153,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
                 yp.isDawPlaying = isDawPlaying;
             }
             yp.rateHz       = (lfoYRateOverride_  >= 0.0f) ? lfoYRateOverride_
-                                                           : *apvts.getRawParameterValue(ParamID::lfoYRate);
+                                                           : apvts.getRawParameterValue(ParamID::lfoYRate)->load();
             {
                 const int  yCurMode = (int)apvts.getRawParameterValue("filterYMode")->load();
                 yp.subdivBeats = kLfoSubdivBeats[
@@ -1167,7 +1167,7 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& audio,
             yp.waveform     = static_cast<Waveform>(
                 (int)*apvts.getRawParameterValue(ParamID::lfoYWaveform));
             yp.phaseShift   = ((lfoYPhaseOverride_ >= 0.0f) ? lfoYPhaseOverride_
-                                                             : *apvts.getRawParameterValue(ParamID::lfoYPhase))
+                                                             : apvts.getRawParameterValue(ParamID::lfoYPhase)->load())
                               / 360.0f;
             yp.distortion   = *apvts.getRawParameterValue(ParamID::lfoYDistortion);
             yp.level        = (lfoYLevelOverride_ >= 0.0f) ? lfoYLevelOverride_
