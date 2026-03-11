@@ -384,7 +384,12 @@ Full details: `.planning/milestones/v1.9-ROADMAP.md`
   3. Logic Pro (AU), Reaper (VST3), and Ableton (VST3) each detect the plugin in their instrument slot and emit MIDI output — confirmed by DAW MIDI monitor showing chord notes
   4. A PS4 or Xbox controller connected via USB on the Mac is detected by the plugin — `SDL_NumJoysticks()` returns non-zero and the plugin UI shows the controller type label
   5. `cmake -G Xcode` configure completes with zero errors on Mac — the Inno Setup `configure_file` call is guarded in `if(WIN32)` and does not execute on macOS
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 46-01-PLAN.md — CMakeLists.txt: guard configure_file in if(WIN32), add CMAKE_OSX_ARCHITECTURES before FetchContent
+- [ ] 46-02-PLAN.md — PluginProcessor.cpp: update all APVTS parameter constructors to use juce::ParameterID { id, 1 }
+- [ ] 46-03-PLAN.md — xcodebuild Release ONLY_ACTIVE_ARCH=NO + lipo -info universal binary verification
+- [ ] 46-04-PLAN.md — auval validation + Logic/Reaper/Ableton smoke test + gamepad detection checkpoint
 
 ### Phase 47: License Key System
 **Goal**: Users must activate the plugin with a LemonSqueezy license key on first launch; activated plugins validate silently on subsequent launches and operate normally for 7 days without internet; unlicensed plugins mute MIDI output after 10 minutes; users can deactivate to free a machine slot
