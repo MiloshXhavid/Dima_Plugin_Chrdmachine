@@ -1,19 +1,39 @@
 # Arcade Chord Control
 
-A MIDI chord generator VST3 plugin for Windows. Plug in a gamepad or use the on-screen joystick — move it around and play chords in any scale, key, and voicing.
+A MIDI chord generator VST3/AU plugin for Windows and macOS. Plug in a gamepad or use the on-screen joystick — move it around and play chords in any scale, key, and voicing.
 
 ---
 
 ## Download
 
-**[Latest release — v1.9](https://github.com/MiloshXhavid/Dima_Plugin_Chrdmachine/releases/latest)**
+**[Latest release — v1.9.1 Beta](https://github.com/MiloshXhavid/Dimea_Arcade_Chord_Control/releases/latest)**
 
-Download `DimeaArcade-ChordControl-v1.9.0-Setup.exe`, run it, rescan plugins in your DAW.
+| Platform | File | Install |
+|----------|------|---------|
+| **Windows** | `DimeaArcade-ChordControl-v1.9.0-Setup.exe` | Run installer, rescan plugins in DAW |
+| **macOS** | `Arcade-Chord-Control-Beta-Test-macOS-v1.9.0.zip` | Unzip, copy to plugin folders (see below) |
 
-**Requirements**
+**Windows requirements**
 - Windows 10 or 11, 64-bit
 - VST3-compatible DAW (Ableton Live, REAPER, FL Studio, Bitwig, etc.)
 - Xbox, PS4, or PS5 controller — optional but recommended
+
+**macOS requirements**
+- macOS 11.0 (Big Sur) or later
+- Apple Silicon (arm64) and Intel (x86_64) — universal binary
+- VST3 or AU compatible DAW (Logic Pro, Ableton Live, Reaper, etc.)
+- Xbox, PS4, or PS5 controller — optional but recommended
+
+---
+
+## macOS Install
+
+1. Unzip the downloaded file
+2. Copy `Arcade Chord Control Beta-Test.vst3` → `~/Library/Audio/Plug-Ins/VST3/`
+3. Copy `Arcade Chord Control Beta-Test.component` → `~/Library/Audio/Plug-Ins/Components/`
+4. Restart your DAW
+
+> **Gatekeeper warning:** Right-click the file → Open, or go to System Settings → Privacy & Security → Allow Anyway. This is expected until code signing is set up in a future release.
 
 ---
 
@@ -85,9 +105,9 @@ The four chord voices go out on separate MIDI channels so you can route them to 
 
 ---
 
-## Installation
+## Windows Installation
 
-1. Download `DimeaArcade-ChordControl-v1.9.0-Setup.exe` from the [releases page](https://github.com/MiloshXhavid/Dima_Plugin_Chrdmachine/releases/latest)
+1. Download `DimeaArcade-ChordControl-v1.9.0-Setup.exe` from the [releases page](https://github.com/MiloshXhavid/Dimea_Arcade_Chord_Control/releases/latest)
 2. Run it — Windows SmartScreen may warn on first run, click "More info → Run anyway"
 3. Admin privileges required (installs to `C:\Program Files\Common Files\VST3\`)
 4. Open your DAW and rescan VST3 plugins
@@ -97,16 +117,27 @@ The four chord voices go out on separate MIDI channels so you can route them to 
 
 ## Building from source
 
-Requires: CMake 3.22+, Visual Studio 2022 or 2026, Windows SDK
+**Windows:**
+
+Requires: CMake 3.22+, Visual Studio 2022, Windows SDK
 
 ```bash
-git clone https://github.com/MiloshXhavid/Dima_Plugin_Chrdmachine.git
-cd Dima_Plugin_Chrdmachine
-cmake -B build -G "Visual Studio 18 2026" -A x64
+git clone https://github.com/MiloshXhavid/Dimea_Arcade_Chord_Control.git
+cd Dimea_Arcade_Chord_Control
+cmake -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config Release --target ChordJoystick_VST3
 ```
 
-The VST3 is output to `build/ChordJoystick_artefacts/Release/VST3/`.
+**macOS:**
+
+Requires: CMake 3.22+, Xcode 14+, macOS 11.0+
+
+```bash
+git clone https://github.com/MiloshXhavid/Dimea_Arcade_Chord_Control.git
+cd Dimea_Arcade_Chord_Control
+cmake -G Xcode -B build-mac -S . -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+xcodebuild -project build-mac/ChordJoystick.xcodeproj -scheme ChordJoystick_All -configuration Release ONLY_ACTIVE_ARCH=NO
+```
 
 ---
 
@@ -121,6 +152,7 @@ The VST3 is output to `build/ChordJoystick_artefacts/Release/VST3/`.
 - Sister LFO attenuation slider (−1…+1 bipolar)
 - Custom CC routing for LFO and left stick targets
 - Rec Lane Undo; velocity-sensitive knob drag
+- **macOS support** — universal binary (Apple Silicon + Intel), VST3 + AU
 
 ### v1.8
 - LFO engine — dual LFOs with oscilloscope, 6 shapes, DAW sync, JOY mode
