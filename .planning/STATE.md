@@ -2,24 +2,22 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Cross-Platform Launch
-status: in_progress
-stopped_at: ~
-last_updated: "2026-03-10"
-last_activity: 2026-03-10 — Roadmap created, phases 46-49 defined
+status: planning
+last_updated: "2026-03-11T13:02:28.547Z"
+last_activity: 2026-03-10 — Roadmap written, awaiting plan-phase 46
 progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 21
+  completed_phases: 18
+  total_plans: 44
+  completed_plans: 41
 ---
 
 ## Current Position
 
 Phase: 46 — Mac Build Foundation
-Plan: —
-Status: Ready to plan
-Last activity: 2026-03-10 — Roadmap written, awaiting plan-phase 46
+Plan: 02 complete (next: 03)
+Status: in_progress
+Last activity: 2026-03-11 — Completed 46-02: all AudioParameter constructors updated to use juce::ParameterID { id, 1 }
 
 ```
 v2.0 Progress: [░░░░░░░░░░░░░░░░░░░░] 0% (0/4 phases)
@@ -44,6 +42,7 @@ Phase 49: [ ] macOS Distribution and GitHub Release
 - Notarization: xcrun notarytool (altool retired Nov 2023 — do not use)
 - macOS PKG installer: pkgbuild + productbuild (not DMG drag-to-folder — fails silently on Sonoma for system paths)
 - Xcode version: prefer Xcode 15.x — Xcode 16.2 has confirmed AU universal binary regression
+- juce::ParameterID { id, 1 } required on all AudioParameter constructors — bare string IDs produce version hint 0 which causes auval warnings; applied to all 28+ parameters in createParameterLayout()
 
 ### Pre-Phase Research Flags
 - Phase 47 (before implementation): Decide Keychain vs PropertiesFile for license key storage; run manual LemonSqueezy API test for deactivation endpoint behavior (LOW confidence)
