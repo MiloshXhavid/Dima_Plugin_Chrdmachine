@@ -1,8 +1,8 @@
 # Arcade Chord Control
 
-Transform your Game Controller into a powerful MIDI Instrument to play your Softsynth or analog Synthesizer! 
+Transform your Game Controller into a powerful MIDI Instrument designed for harmonic chordgeneration. Game your Softsynth or analog Synthesizer with your Controller! 
 
-A MIDI chord generator VST3/AU plugin for Windows and macOS. Plug in a gamepad or use the on-screen joystick — move it around and play chords in any scale, key, and voicing across a x/y matrix.
+A MIDI chord Generator VST3/AU plugin for Windows and macOS. Plug in any gamepad or use the on-screen joystick — move it around and play chords in any scale, key, and voicing across a x/y matrix.
 
 ---
 
@@ -45,14 +45,14 @@ A MIDI chord generator VST3/AU plugin for Windows and macOS. Plug in a gamepad o
 
 Transform your Game Controller into a powerful MIDI Instrument! Move the right Joystick (or analog stick on a gamepad) and sellect a Chordstructure,then play the Notes individualy as you please. Per default the Y axis controls the root note and the third, the X axis controls the fifth and the tension. Every position snaps to the scale you choose, so everything stays in key automatically. Control CC MIDI Modulation with the left Joystick or with the integrated LFO Section. Go from gentle to using it as a selfgenetative Granular Engine. Internal looper, Triggerselection, CONTROLED Randomness, 8 Step Arpeggiator style Sequencer, X and Y lane Modulation and two crossmodulatable LFO's with Pitch or CC Modulation target.
 
-The four chord voices go out on separate MIDI channels so you can route them to different instruments or apply different effects per voice. Or select Single Chanel for controlling one External Synthesizer via one MIDI Channel.
+The four chord voices go out on separate MIDI channels so you can route them to different instruments or apply different effects per voice. Or select Single Channel to play an external Synthesizer via one selectable Channel.
 
-> THIS IS A MIDI INSTUMENT AND DOES NOT PRODUCE SOUND ON ITS OWN. 
-This Plugin controls a MIDI capable soundsource like every DAW instrument does or a physical Instrument with MIDI Capability.
+> THIS IS A MIDI INSTUMENT AND DOES NOT PRODUCE SOUND ON ITS OWN.
+This Plugin controls a MIDI capable soundsource like every DAW instrument does or any physical Instrument with MIDI capabilities.
 
 > Place the plugin on a MIDI track in your DAW, before your instrument. In Ableton Live: add it on a MIDI track, then route that track's output to an instrument track.
 
-(Manual included)
+> (Manual included)
 
 
 ---
