@@ -48,6 +48,12 @@ sudo xattr -dr com.apple.quarantine "/Library/Audio/Plug-Ins/VST3/Arcade Chord C
 ```
 Enter your Mac password when prompted, then restart your DAW.
 
+**Option C — If your DAW still refuses to load the plugin after the steps above:**
+```bash
+sudo codesign --force --deep --sign - "/Library/Audio/Plug-Ins/VST3/Arcade Chord Control Beta-Test.vst3"
+```
+This applies an ad-hoc signature, which some DAWs require even after quarantine is removed. Enter your Mac password when prompted, then rescan plugins in your DAW.
+
 This warning is expected for beta releases. Code signing will be added in a future release.
 
 ---
